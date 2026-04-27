@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ========== 注意：app 模块继承父 POM，不是 spring-boot ========== -->
+    <parent>
+        <groupId>lyjew.com</groupId>
+        <artifactId>LyClaw</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>lyclaw-web</artifactId>
+    <packaging>jar</packaging>
+    <name>LyClaw Web</name>
+    <description>Spring Boot 启动模块</description>
+
+    <dependencies>
+        <!-- 依赖 adapter 模块（会传递依赖 storage 和 common） -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-adapter</artifactId>
+        </dependency>
+
+        <!-- Spring Boot 启动器（只在 app 模块引入） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- 配置处理器 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- ========== 只有 app 模块需要这个插件 ========== -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

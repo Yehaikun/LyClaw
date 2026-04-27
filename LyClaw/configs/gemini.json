@@ -1,0 +1,1 @@
+{"id":"cfg-gemini-001","createdAt":"2026-04-27T14:12:37.487498357","updatedAt":"2026-04-27T14:12:37.582695087","name":"gemini","provider":"gemini","apiKey":"AIza-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","model":"gemini-2.5-pro","baseUrl":"https://generativelanguage.googleapis.com/v1beta","enabled":true}

@@ -1,0 +1,1 @@
+{"id":"cfg-deepseek-001","createdAt":"2026-04-27T14:12:37.480422073","updatedAt":"2026-04-27T14:12:37.480457262","name":"deepseek","provider":"deepseek","apiKey":"sk-deepseek-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","model":"deepseek-chat","baseUrl":"https://api.deepseek.com/v1","enabled":true}

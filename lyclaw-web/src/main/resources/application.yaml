@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: LyClaw
+server:
+  port: 8080
+
+lyclaw:
+  data-dir: /home/lyjew/Documents/Unicom/LyClaw/LyClaw
+
+logging:
+    level:
+      lyjew.com.lyclaw: DEBUG

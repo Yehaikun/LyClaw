@@ -1,0 +1,59 @@
+graph TB
+    subgraph 前端["Vue 3 前端"]
+        ChatView[对话界面]
+        SSE[SSE 流式消费]
+    end
+
+    subgraph 后端入口["API 网关层"]
+        Controller[ChatController<br/>SSE 端点]
+    end
+
+    subgraph 模型抽象层["模型抽象层（本层）"]
+        direction TB
+
+        subgraph 门面子层["门面子层"]
+            Service[ModelService<br/>统一入口 + 适配器路由]
+            Registry[AdapterRegistry<br/>适配器注册中心]
+        end
+
+        subgraph 适配器子层["适配器子层"]
+            Iface[ModelAdapter 接口<br/>适配器模式 + 策略模式]
+            Base[AbstractModelAdapter<br/>模板方法基类]
+            MiniMax[MiniMaxAdapter<br/>extends Base]
+            OpenAI[OpenAIAdapter<br/>第二版 extends Base]
+            Anthropic[AnthropicAdapter<br/>第二版 extends Base]
+        end
+
+        subgraph 传输子层["传输子层"]
+            HttpIface[ModelHttpClient 接口<br/>策略模式]
+            HttpBase[AbstractModelHttpClient<br/>模板基类]
+            OkHttp[OkHttpModelHttpClient<br/>第一版实现]
+            Apache[ApacheModelHttpClient<br/>备选]
+        end
+
+        subgraph 数据子层["数据子层"]
+            Resp[ModelResponse<br/>同步响应]
+            Delta[MessageDelta<br/>流式增量]
+            ToolDef[ToolDefinition<br/>工具定义]
+        end
+    end
+
+    subgraph 外部["外部服务"]
+        API[各大模型 API<br/>MiniMax / OpenAI / Anthropic]
+    end
+
+    ChatView -->|HTTP SSE| Controller
+    Controller --> Service
+    Service --> Registry
+    Service --> Iface
+    Iface -.实现.-> Base
+    Base -.继承.-> MiniMax
+    Base -.继承.-> OpenAI
+    Base --> HttpIface
+    HttpIface -.实现.-> HttpBase
+    HttpBase -.继承.-> OkHttp
+    HttpBase -.继承.-> Apache
+    OkHttp --> API
+    Base --> Resp
+    Base --> Delta
+    Base --> ToolDef
