@@ -8,5 +8,7 @@ lyclaw:
   data-dir: /home/lyjew/Documents/Unicom/LyClaw/LyClaw
 
 logging:
-    level:
-      lyjew.com.lyclaw: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %clr(%5p) [%15.15t] %clr(%-40.40logger{39}){cyan} : %m%n"
+  level:
+    lyjew.com.lyclaw: DEBUG
