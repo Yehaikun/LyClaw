@@ -1,1 +1,0 @@
-{"id":"cfg-deepseek-integration","createdAt":"2026-04-27T18:38:08.131808542","updatedAt":"2026-04-27T18:38:08.131843618","name":"deepseek-test","provider":"deepseek-openai","apiKey":"sk-b1da578246114c2383616f49b5651f1d","model":"deepseek-chat","baseUrl":"https://api.deepseek.com","enabled":true}

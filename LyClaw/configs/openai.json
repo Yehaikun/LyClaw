@@ -1,1 +1,0 @@
-{"id":"cfg-openai-001","createdAt":"2026-04-27T14:12:37.473495438","updatedAt":"2026-04-27T14:12:37.592968158","name":"openai","provider":"openai","apiKey":"sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","model":"gpt-4o","baseUrl":"https://api.openai-proxy.com/v1","enabled":true}
