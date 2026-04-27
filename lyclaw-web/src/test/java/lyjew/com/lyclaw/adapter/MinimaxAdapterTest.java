@@ -133,11 +133,11 @@ public class MinimaxAdapterTest {
                 .messages(List.of(
                         Message.builder()
                                 .role("user")
-                                .content("你好，请用一句话介绍你自己")
+                                .content("你好！请详细给我介绍许昌这个城市的方方面面，10000字吧！！")
                                 .build()
                 ))
                 .temperature(0.7)
-                .maxTokens(200)
+                .maxTokens(10000)
                 .build();
 
         // 发送请求
@@ -154,7 +154,7 @@ public class MinimaxAdapterTest {
         assertTrue(response.getUsage().getTotalTokens() > 0, "Token总量应 > 0");
 
         // 打印结果
-        System.out.println("📤 请求: 你好，请用一句话介绍你自己");
+        System.out.println("📤 请求: 你好！请详细给我介绍许昌这个城市的方方面面，10000字吧！！");
         System.out.println("📥 回复: " + response.getContent());
         System.out.println("   finishReason: " + response.getFinishReason());
         System.out.println("   Token用量: prompt=" + response.getUsage().getPromptTokens()

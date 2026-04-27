@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 public class OkHttpModelApiClient implements ModelApiClient {
 
     /** 请求超时时间（秒） */
-    private static final long TIMEOUT_SECONDS = 60;
+    private static final long TIMEOUT_SECONDS = 300;
 
     /** OkHttp 客户端实例——线程安全，全局复用 */
     private final OkHttpClient httpClient;
