@@ -7,9 +7,6 @@ import lyjew.com.lyclaw.exception.ModelException;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.ModelConfig;
 import lyjew.com.lyclaw.model.ModelResponse;
-import lyjew.com.lyclaw.model.Usage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
