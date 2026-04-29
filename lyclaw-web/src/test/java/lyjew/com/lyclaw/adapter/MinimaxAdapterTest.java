@@ -133,11 +133,11 @@ public class MinimaxAdapterTest {
                 .messages(List.of(
                         Message.builder()
                                 .role("user")
-                                .content("你好！请详细给我介绍许昌这个城市的方方面面，10000字吧！！")
+                                .content("你好！请详细给我介绍许昌这个城市的方方面面，100字吧！！")
                                 .build()
                 ))
                 .temperature(0.7)
-                .maxTokens(10000)
+                .maxTokens(1000)
                 .build();
 
         // 发送请求
