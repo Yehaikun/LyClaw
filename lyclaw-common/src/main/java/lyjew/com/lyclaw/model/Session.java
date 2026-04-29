@@ -17,7 +17,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Session extends BaseDTO {
-
+    private String sessionId;                // 会话ID
     private String name;                 // 会话名称
     private String model;               // 使用的模型
 

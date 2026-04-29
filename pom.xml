@@ -22,6 +22,7 @@
         <module>lyclaw-storage</module>
         <module>lyclaw-adapter</module>
         <module>lyclaw-web</module>
+        <module>lyclaw-engine</module>
     </modules>
 
     <!-- ========== properties 统一定义版本 ========== -->
@@ -74,6 +75,12 @@
             <dependency>
                 <groupId>lyjew.com</groupId>
                 <artifactId>lyclaw-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-engine</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

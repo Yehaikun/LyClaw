@@ -27,6 +27,9 @@ public class ChatRequest {
 
     // ========== 必填字段 ==========
 
+    /** 会话ID */
+    @Builder.Default
+    private String sessionId = "";
     /**
      * 消息历史列表，按时间顺序排列
      * 至少包含一条用户消息
@@ -138,8 +141,18 @@ public class ChatRequest {
         return "";
     }
 
+    /**
+     * 设置消息列表
+     * @param messages 可变消息列表，不允许 null
+     */
+    public void setMessages(List<Message> messages) {
+        this.messages = messages;
+    }
+
     /** 消息总数（不含 system） */
     public int getMessageCount() {
         return messages != null ? messages.size() : 0;
     }
+
+
 }

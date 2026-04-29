@@ -25,6 +25,11 @@
             <artifactId>lyclaw-adapter</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-engine</artifactId>
+        </dependency>
+
         <!-- Spring Boot 启动器（只在 app 模块引入） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

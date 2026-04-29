@@ -19,8 +19,8 @@ public class MarkdownFormatStrategy implements FormatStrategy<Memory> {
         sb.append("title: ").append(nullToDefault(entity.getTitle(), "记忆")).append("\n");
         sb.append("enabled: ").append(entity.isEnabled()).append("\n");
         sb.append("tags: [").append(String.join(", ", nullToEmpty(entity.getTags()))).append("]\n");
-        sb.append("createdAt: ").append(entity.getCreatedAt()).append("\n");
-        sb.append("updatedAt: ").append(entity.getUpdatedAt()).append("\n");
+        sb.append("createdAt: ").append(entity.getCreatedAt() != null ? entity.getCreatedAt() : "").append("\n");
+        sb.append("updatedAt: ").append(entity.getUpdatedAt() != null ? entity.getUpdatedAt() : "").append("\n");
         sb.append(DELIMITER).append("\n");
 
         // 正文
@@ -124,9 +124,15 @@ public class MarkdownFormatStrategy implements FormatStrategy<Memory> {
                 } else if (line.startsWith("tags:")) {
                     result.tags = parseTags(line.substring(5).trim());
                 } else if (line.startsWith("createdAt:")) {
-                    result.createdAt = LocalDateTime.parse(line.substring(10).trim());
+                    String val = line.substring(10).trim();
+                    if (!val.isEmpty() && !"null".equalsIgnoreCase(val)) {
+                        result.createdAt = LocalDateTime.parse(val);
+                    }
                 } else if (line.startsWith("updatedAt:")) {
-                    result.updatedAt = LocalDateTime.parse(line.substring(10).trim());
+                    String val = line.substring(10).trim();
+                    if (!val.isEmpty() && !"null".equalsIgnoreCase(val)) {
+                        result.updatedAt = LocalDateTime.parse(val);
+                    }
                 }
             }
             return result;
