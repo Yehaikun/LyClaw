@@ -50,7 +50,8 @@ public class ModelProviderImpl implements ModelProvider {
 
     @Override
     public String getDefaultProvider() {
-        return "deepseek-openai";
+//        return "deepseek-openai";
+        return "minimax";
     }
 
     @Override

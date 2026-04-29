@@ -111,7 +111,7 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
 
     @Override
     protected Object buildRequest(ChatRequest request) {
-        return buildOpenAIRequest(request, false);
+        return buildOpenAIRequest(request, request.isStream());
     }
 
     @Override

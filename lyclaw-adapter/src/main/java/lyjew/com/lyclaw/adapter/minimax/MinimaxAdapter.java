@@ -112,7 +112,7 @@ public class MinimaxAdapter extends AbstractModelAdapter {
 
     @Override
     protected Object buildRequest(ChatRequest request) {
-        return buildAnthropicRequest(request, false);
+        return buildAnthropicRequest(request, request.isStream());
     }
 
     @Override
@@ -242,6 +242,14 @@ public class MinimaxAdapter extends AbstractModelAdapter {
                     thinking += block.getThinking();
                 }
             }
+        }
+
+        // 当 content 为空但 thinking 非空时，用 thinking 兜底
+        // MiniMax 对部分 prompt（尤其是英文）可能只返回 thinking 块，没有 text 块
+        if (textContent.isEmpty() && !thinking.isEmpty()) {
+            log.debug("[{}] 响应中没有 text 块，使用 thinking 内容兜底，thinking长度={}",
+                    getProvider(), thinking.length());
+            textContent = thinking;
         }
 
         // ★ 当 content 为空时打印警告

@@ -90,23 +90,31 @@ public abstract class AbstractModelAdapter implements ModelAdapter {
     public ModelResponse chat(ChatRequest request) {
         checkConfigured();
 
+
+
         try {
             // 步骤1：预处理钩子（默认空实现，子类可重写）
-            beforeCall(request);//子类可选实现
+            beforeCall(request);
 
-            // 步骤2：构建厂商特定的 API 请求体
-            Object apiRequest = buildRequest(request); //钩子方法，子类必须实现，否则无法进行
+            // 步骤2：根据 request.isStream() 选择请求构建路径
+            Object apiRequest = request.isStream()
+                    ? buildStreamRequest(request)
+                    : buildRequest(request);
             logRequest(apiRequest);
 
-            // 步骤3：发送 HTTP 请求，获取原始响应字符串，
-            String rawResponse = sendRequest(apiRequest);//子类必须实现这个发生请求的方法
+            if (request.isStream()) {
+                // 流式路径：返回直接透传 SSE 流，不在 chat() 内拼装 ModelResponse
+                // 调用方（chatStream）负责消费这个 Flux
+                return null; // chat() 不处理流式，走 chatStream() 分支
+            }
+
+            // 同步路径：发送 HTTP 请求，获取原始响应字符串
+            String rawResponse = sendRequest(apiRequest);
             log.debug("[{}] 原始响应: {} 字符", getProvider(),
                     rawResponse != null ? rawResponse.length() : 0);
 
-            // ★ 增加：打印完整原始 JSON（需要时改为 INFO 或 DEBUG 级别查看）
             if (log.isDebugEnabled()) {
                 String displayJson = rawResponse != null ? rawResponse : "null";
-                // 如果太长就截断显示前 2000 字符
                 if (displayJson.length() > 2000) {
                     displayJson = displayJson.substring(0, 2000) + "...(截断)";
                 }
@@ -114,25 +122,25 @@ public abstract class AbstractModelAdapter implements ModelAdapter {
             }
 
             // 步骤4：解析原始响应为厂商特定的响应对象
-            Object apiResponse = parseResponse(rawResponse); // 子类必须实现
+            Object apiResponse = parseResponse(rawResponse);
 
             // 步骤5：转换为统一的 ModelResponse
-            ModelResponse unifiedResponse = toUnifiedResponse(apiResponse); // 子类必须实现
+            ModelResponse unifiedResponse = toUnifiedResponse(apiResponse);
 
             // 步骤6：后处理钩子（默认空实现，子类可重写）
-            afterCall(unifiedResponse); // 子类可选实现
+            afterCall(unifiedResponse);
 
             return unifiedResponse;
 
         } catch (ModelException e) {
-            // 已经是 ModelException，直接抛出
             throw e;
         } catch (Exception e) {
-            // 其他异常转成 ModelException
             handleError(e);
-            throw e; // handleError 可能已经抛出了异常，这里防止编译错误
+            throw e;
         }
     }
+
+
 
     // ========== 模板方法：流式对话 ==========
 
@@ -143,7 +151,7 @@ public abstract class AbstractModelAdapter implements ModelAdapter {
         try {
             beforeCall(request);
 
-            Object apiRequest = buildStreamRequest(request); // 子类必须实现
+            Object apiRequest = buildStreamRequest(request);
             logRequest(apiRequest);
 
             return sendStreamRequest(apiRequest)

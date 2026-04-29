@@ -27,6 +27,7 @@ public interface ModelAdapter {
      */
     ModelResponse chat(ChatRequest request);
 
+
     /**
      * 流式对话——以 SSE 流的方式逐步返回 token
      *

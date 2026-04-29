@@ -394,7 +394,7 @@ public class EngineIntegrationTest {
         Flux<String> flux = defaultEngine.execute(ChatRequest.builder()
                 .sessionId(minimaxSessionId)
                 .messages(List.of(createMessage("user", "用三句话介绍 Spring Boot")))
-                .temperature(0.7).maxTokens(200).build());
+                .temperature(0.7).maxTokens(200).stream(true).build());
 
         StringBuilder full = new StringBuilder();
         CountDownLatch latch = new CountDownLatch(1);
@@ -418,7 +418,7 @@ public class EngineIntegrationTest {
         Flux<String> flux = defaultEngine.execute(ChatRequest.builder()
                 .sessionId(deepseekSessionId)
                 .messages(List.of(createMessage("user", "Explain RESTful API in 3 sentences.")))
-                .temperature(0.7).maxTokens(200).build());
+                .temperature(0.7).maxTokens(200).stream(true).build());
 
         StringBuilder full = new StringBuilder();
         CountDownLatch latch = new CountDownLatch(1);

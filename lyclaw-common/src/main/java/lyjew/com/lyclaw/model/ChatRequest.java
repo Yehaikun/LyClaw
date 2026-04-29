@@ -37,6 +37,7 @@ public class ChatRequest {
     @Builder.Default
     private List<Message> messages = new ArrayList<>();
 
+
     // ========== 常用可选字段 ==========
 
     /**
@@ -60,6 +61,15 @@ public class ChatRequest {
      * null 或 0 表示使用厂商默认值
      */
     private Integer maxTokens;
+
+    /**
+     * 是否启用流式输出
+     * true  — 调用方使用 chatStream() 路径，SSE 逐 token 返回
+     * false — 调用方使用 chat() 路径，等待完整响应
+     * 适配器的 buildRequest/buildStreamRequest 根据此字段设置 stream 参数
+     */
+    @Builder.Default
+    private boolean stream = false;
 
     /**
      * 温度系数，控制输出的随机性

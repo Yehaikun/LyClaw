@@ -1,0 +1,91 @@
+---
+title: LyClaw AI 调度引擎层 — 业务功能架构图
+---
+
+flowchart LR
+
+  subgraph Web["📡 Web 入口层"]
+    W1["HTTP/REST 对话接口"]
+    W2["流式输出(SSE)"]
+    W3["多轮对话"]
+  end
+
+  subgraph Engine["⚙️ 引擎核心层"]
+
+    subgraph E0["对话引擎"]
+      EE1["支持多模型无缝切换"]
+      EE2["单轮/多轮对话"]
+      EE3["流式/非流式输出"]
+    end
+
+    subgraph R1["对话处理"]
+      P1["会话记忆加载<br/>自动加载历史消息<br/>保持对话上下文"]
+      P2["长期记忆注入<br/>跨会话记忆<br/>自动注入系统提示"]
+      P3["AI 模型对话<br/>多模型可选<br/>自动选择引擎"]
+      P4["工具调用循环<br/>自动识别工具请求<br/>执行工具返回结果"]
+    end
+
+    subgraph R2["工具系统"]
+      T1["联网搜索<br/>实时查询互联网<br/>返回搜索结果"]
+      T2["计算器<br/>执行数学计算<br/>返回计算结果"]
+      T3["当前时间<br/>查询系统时间<br/>返回格式化时间"]
+      T4["MCP 工具<br/>MCP协议工具调用<br/>扩展工具能力"]
+    end
+
+    subgraph R3["技能系统"]
+      SK1["预定义技能<br/>BUILTIN 内置技能<br/>USER 自定义技能<br/>COMPOSITE 组合技能"]
+      SK2["技能编排<br/>按 DAG 依赖执行<br/>拓扑排序确保顺序<br/>异步执行"]
+    end
+
+    subgraph R4["Agent 系统"]
+      AG1["多 Agent 协作<br/>任务拆解分发<br/>结果汇聚"]
+      AG2["Agent 间通信<br/>消息传递<br/>状态同步"]
+      AG3["任务跟踪<br/>任务执行记录<br/>状态追踪回溯"]
+    end
+
+    subgraph R5["对话安全与控制"]
+      S1["对话审核(预留)<br/>敏感内容过滤<br/>安全等级控制"]
+      S2["限流控制<br/>访问频率限制<br/>防止滥用"]
+      S3["对话记录<br/>日志记录<br/>可审计回溯"]
+    end
+  end
+
+  subgraph Adapter["🔌 模型适配层"]
+    A1["DeepSeek 模型<br/>OpenAI 协议接入<br/>支持流式"]
+    A2["MiniMax 模型<br/>Anthropic 协议接入<br/>支持流式"]
+    A3["模型扩展预留<br/>支持接入新模型<br/>统一调用接口"]
+  end
+
+  subgraph Storage["💽 存储层"]
+    S1["对话历史存储"]
+    S2["长期记忆存储"]
+    S3["模型配置存储"]
+    S4["技能存储"]
+  end
+
+  subgraph Common["📦 公共模型"]
+    C1["对话消息模型<br/>请求/响应/消息/会话"]
+    C2["配置管理模型<br/>模型配置/策略/用量"]
+  end
+
+  classDef web fill:#d0def0,stroke:#3366cc,stroke-width:2px,color:#1a1a1a
+  classDef eng fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#1a1a1a
+  classDef pipeline fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px,color:#1a1a1a
+  classDef tools fill:#fff9c4,stroke:#f9a825,stroke-width:2px,color:#1a1a1a
+  classDef skill fill:#d1c4e9,stroke:#6a1b9a,stroke-width:2px,color:#1a1a1a
+  classDef agent fill:#d1c4e9,stroke:#4527a0,stroke-width:2px,color:#1a1a1a
+  classDef security fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#1a1a1a
+  classDef adapter fill:#b3e5fc,stroke:#0277bd,stroke-width:2px,color:#1a1a1a
+  classDef storage fill:#d7ccc8,stroke:#4e342e,stroke-width:2px,color:#1a1a1a
+  classDef common fill:#b2dfdb,stroke:#00695c,stroke-width:2px,color:#1a1a1a
+
+  class W1,W2,W3 web
+  class EE1,EE2,EE3 eng
+  class P1,P2,P3,P4 pipeline
+  class T1,T2,T3,T4 tools
+  class SK1,SK2 skill
+  class AG1,AG2,AG3 agent
+  class S1,S2,S3 security
+  class A1,A2,A3 adapter
+  class S1,S2,S3,S4 storage
+  class C1,C2 common
