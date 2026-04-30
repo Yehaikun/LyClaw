@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.memory.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.memory.MemoryContent;
 import lyjew.com.lyclaw.memory.MemoryManager;
 
@@ -22,13 +23,16 @@ import java.util.List;
  * @since 1.0
  * @author LyClaw Team
  */
+@Slf4j
 @Component
 @ConditionalOnMissingBean(MemoryManager.class)
 public class NullMemoryManager implements MemoryManager {
 
     @Override
     public MemoryContent read() {
-        return new MemoryContent("", "null", false, Collections.emptyList(), 0.0);
+        MemoryContent aNull = new MemoryContent("", "null", false, Collections.emptyList(), 0.0);
+        log.debug("返回空记忆={}", aNull);
+        return aNull;
     }
 
     @Override

@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.memory.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.memory.MemoryContent;
 import lyjew.com.lyclaw.memory.MemoryManager;
 import lyjew.com.lyclaw.memory.MemoryStrategy;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Component;
  * @see MemoryStorage
  * @see Memory
  */
+@Slf4j
 @Component
 public class FileMemoryManager implements MemoryManager {
 
@@ -82,6 +84,7 @@ public class FileMemoryManager implements MemoryManager {
 
     @Override
     public MemoryContent read() {
+        log.debug("读取记忆{}" , current);
         return current;
     }
 

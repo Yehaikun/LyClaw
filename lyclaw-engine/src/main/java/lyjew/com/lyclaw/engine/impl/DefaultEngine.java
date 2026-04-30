@@ -106,7 +106,9 @@ public class DefaultEngine implements Engine {
         // ═══════════════════════════════════════════════════════════
         // 流式请求：直接调 adapter.chatStream()，不走 Pipeline
         // ═══════════════════════════════════════════════════════════
+
         if (request.isStream()) {
+
             ModelAdapter adapter = modelProvider.getConfiguredAdapter();
             log.debug("[{}] 流式请求开始", adapter.getProvider());
             return adapter.chatStream(request)

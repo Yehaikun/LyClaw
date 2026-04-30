@@ -48,8 +48,9 @@ public class ContextBuildStage implements PipelineStage {
                 context.getSession(), memory, toolDefinitions);
 
         // 将构建好的消息列表写回 ChatContext（替换会话原始消息）
-        context.getMessages().clear();
-        context.getMessages().addAll(builtMessages);
+//        context.getMessages().clear();
+//        context.getMessages().addAll(builtMessages);
+        context.getRequest().setMessages(builtMessages);
 
         chain.next(context);
     }

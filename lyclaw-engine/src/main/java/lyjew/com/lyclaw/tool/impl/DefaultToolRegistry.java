@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.tool.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
@@ -39,6 +40,7 @@ import org.springframework.stereotype.Component;
  * @see ToolRegistry
  * @see Tool
  */
+@Slf4j
 @Component
 public class DefaultToolRegistry implements ToolRegistry {
 
@@ -76,7 +78,9 @@ public class DefaultToolRegistry implements ToolRegistry {
         Tool old = tools.put(tool.getName(), tool);
         if (old != null) {
             // 同名工具被覆盖 —— 记录日志
+            log.debug("注册工具{}成功！, {}" , tool.getName(), "同名工具被覆盖");
         }
+        log.debug("注册工具 {} 成功！" , tool.getName());
     }
 
     /**

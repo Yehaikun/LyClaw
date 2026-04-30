@@ -23,7 +23,7 @@ import java.util.List;
  * @since 1.0
  * @author LyClaw Team
  * @see Tool
- * @see DefaultToolRegistry
+ * @see lyjew.com.lyclaw.tool.impl.DefaultToolRegistry
  */
 public interface ToolRegistry {
 
