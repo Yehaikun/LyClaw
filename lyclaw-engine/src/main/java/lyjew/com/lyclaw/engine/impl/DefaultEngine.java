@@ -27,7 +27,9 @@ import lyjew.com.lyclaw.storage.SessionStorage;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -104,73 +106,16 @@ public class DefaultEngine implements Engine {
     @Override
     public Flux<String> execute(ChatRequest request) {
         // ═══════════════════════════════════════════════════════════
-        // 流式请求：直接调 adapter.chatStream()，不走 Pipeline
+        // 公共前序：加载长期记忆、工具定义、会话（流式和非流式共用）
         // ═══════════════════════════════════════════════════════════
+        MemoryContent memory = memoryManager.read();
+        List<ToolDefinition> toolDefinitions = toolRegistry.getAllDefinitions();
+        Session session = loadOrCreateSession(request);
 
         if (request.isStream()) {
-
-            ModelAdapter adapter = modelProvider.getConfiguredAdapter();
-            log.debug("[{}] 流式请求开始", adapter.getProvider());
-            return adapter.chatStream(request)
-                    .doOnComplete(() ->
-                            log.debug("[{}] 流式对话完成", adapter.getProvider()));
+            return executeStream(request, session, memory, toolDefinitions);
         }
-
-        // 1. 读取长期记忆
-        MemoryContent memory = memoryManager.read();
-
-        // 2. 获取工具定义
-        List<ToolDefinition> toolDefinitions = toolRegistry.getAllDefinitions();
-
-        // ═══════════════════════════════════════════════════════════
-        // 3. 从 SessionStorage 加载已有会话（多轮对话支持）
-        // ═══════════════════════════════════════════════════════════
-        Session session = sessionStorage.get(request.getSessionId()).orElse(null);
-
-        if (session == null) {
-            session = new Session();
-            session.setSessionId(request.getSessionId());
-            session.setMessages(request.getMessages());
-        } else {
-            List<Message> allMessages = new ArrayList<>(session.getMessages());
-            if (request.getMessages() != null) {
-                allMessages.addAll(request.getMessages());
-            }
-            session.setMessages(allMessages);
-        }
-
-        // 4. 构建 ChatContext
-        ChatContext context = new ChatContext(
-                request, session, memory,
-                toolDefinitions, interceptorChain, modelProvider
-        );
-
-        // 5. 构建并执行 Pipeline
-        Pipeline pipeline = pipelineBuilder.build();
-        pipeline.execute(context);
-
-        // 6. 获取结果
-        ChatResult result = context.getResult();
-
-        // ═══════════════════════════════════════════════════════════
-        // 7. 非流式：将模型回复写入 Session 并持久化
-        // ═══════════════════════════════════════════════════════════
-        // 7. 非流式：将模型回复写入 Session 并持久化
-        // ═══════════════════════════════════════════════════════════
-        if (result != null) {
-            memoryManager.append(result.getContent());
-
-            Message assistantMsg = Message.builder()
-                    .role("assistant")
-                    .content(result.getContent())
-                    .build();
-
-            session.getMessages().add(assistantMsg);
-
-            sessionStorage.save(session);
-        }
-
-        return Flux.just(result != null ? result.getContent() : "");
+        return executeSync(request, session, memory, toolDefinitions);
     }
 
     @Override
@@ -182,5 +127,115 @@ public class DefaultEngine implements Engine {
                 List.of("chat"),
                 Set.of("chat")
         );
+    }
+
+    // ═════════════════════════════════════════════════════════════
+    // 私有方法：流式执行、同步执行、会话管理、结果持久化
+    // ═════════════════════════════════════════════════════════════
+
+    /**
+     * 流式执行路径。
+     * <p>不走 Pipeline，直接调 adapter.chatStream() 返回 SSE 流。
+     * 使用 ContextBuilder 构建完整上下文（含记忆+工具定义+会话历史），
+     * 在 doOnComplete 中异步保存回复到会话和记忆。</p>
+     */
+    private Flux<String> executeStream(ChatRequest request, Session session,
+                                       MemoryContent memory,
+                                       List<ToolDefinition> toolDefinitions) {
+        // 构建完整上下文
+        List<Message> fullMessages = contextBuilder.buildContext(session, memory, toolDefinitions);
+        request.setMessages(fullMessages);
+
+        ModelAdapter adapter = modelProvider.getConfiguredAdapter();
+        log.debug("[{}] 流式请求开始", adapter.getProvider());
+
+        StringBuilder collector = new StringBuilder();
+
+        return adapter.chatStream(request)
+                .doOnNext(collector::append)
+                .publishOn(Schedulers.boundedElastic())
+                .doOnComplete(() -> {
+                    String content = collector.toString();
+                    // 会话持久化
+                    saveAssistantMessage(session, content, adapter.getModel());
+                    memoryManager.append(content);
+                    log.debug("[{}] 流式对话完成", adapter.getProvider());
+                })
+                .doOnError(error -> {
+                    log.error("[{}] 流式对话失败", adapter.getProvider(), error);
+                    memoryManager.append("[流式对话失败] " + error.getMessage());
+                });
+    }
+
+    /**
+     * 同步执行路径。
+     * <p>走 Pipeline 完整流程：ContextBuild → Interceptor → ToolCallLoop → Metrics → ResponseBuild。
+     * Pipeline 内部的 ContextBuildStage 会再次调用 contextBuilder.buildContext() 构建上下文，
+     * 所以这里不需要提前构建（ChatContext 构造时传入了 session/memory/toolDefinitions，ContextBuildStage 会处理）。</p>
+     */
+    private Flux<String> executeSync(ChatRequest request, Session session,
+                                     MemoryContent memory,
+                                     List<ToolDefinition> toolDefinitions) {
+        // 构建 ChatContext
+        ChatContext context = new ChatContext(
+                request, session, memory,
+                toolDefinitions, interceptorChain, modelProvider
+        );
+
+        // 执行 Pipeline
+        Pipeline pipeline = pipelineBuilder.build();
+        pipeline.execute(context);
+
+        // 获取结果
+        ChatResult result = context.getResult();
+        String content = result != null ? result.getContent() : "";
+
+        if (!content.isEmpty()) {
+            ModelAdapter adapter = modelProvider.getConfiguredAdapter();
+            saveAssistantMessage(session, content, adapter.getModel());
+            memoryManager.append(content);
+        }
+
+        return Flux.just(content);
+    }
+
+    /**
+     * 加载或创建会话。
+     * <p>已有会话：加载历史消息并追加当前请求消息。
+     * 新会话：用当前请求消息初始化。</p>
+     */
+    private Session loadOrCreateSession(ChatRequest request) {
+        return sessionStorage.get(request.getSessionId())
+                .map(existingSession -> {
+                    List<Message> allMessages = new ArrayList<>(existingSession.getMessages());
+                    if (request.getMessages() != null) {
+                        allMessages.addAll(request.getMessages());
+                    }
+                    existingSession.setMessages(allMessages);
+                    return existingSession;
+                })
+                .orElseGet(() -> {
+                    Session newSession = new Session();
+                    newSession.setSessionId(request.getSessionId());
+                    newSession.setMessages(request.getMessages() != null
+                            ? new ArrayList<>(request.getMessages())
+                            : new ArrayList<>());
+                    return newSession;
+                });
+    }
+
+    /**
+     * 将 assistant 消息写入会话并持久化。
+     */
+    private void saveAssistantMessage(Session session, String content, String model) {
+        log.debug("开始消息持久化");
+        Message assistantMsg = Message.builder()
+                .role("assistant")
+                .content(content)
+                .model(model)
+                .createdAt(LocalDateTime.now())
+                .build();
+        session.getMessages().add(assistantMsg);
+        sessionStorage.save(session);
     }
 }

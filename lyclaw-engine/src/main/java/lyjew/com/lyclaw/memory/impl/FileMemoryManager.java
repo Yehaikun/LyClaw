@@ -59,6 +59,7 @@ public class FileMemoryManager implements MemoryManager {
         Optional<Memory> opt = storage.get(GLOBAL_MEMORY_ID);
         if (opt.isPresent()) {
             Memory mem = opt.get();
+            log.debug("加载长期记忆成功！");
             return new MemoryContent(
                     mem.getContent(), "file", mem.isEnabled(),
                     mem.getTags(), 0.0
