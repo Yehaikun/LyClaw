@@ -38,7 +38,7 @@ public class DeepSeekOpenAIAdapterTest {
 
     private ModelAdapter adapter;
 
-    private static final String API_KEY = "sk-b1da578246114c2383616f49b5651f1d";
+    private static final String API_KEY = System.getenv().getOrDefault("DEEPSEEK_API_KEY", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
     private static final String MODEL = "deepseek-chat";
     private static final String BASE_URL = "https://api.deepseek.com";
 

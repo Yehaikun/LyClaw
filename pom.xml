@@ -17,12 +17,42 @@
 
     <!-- ========== 声明子模块 ========== -->
     <modules>
+        <!-- L1 基础层 -->
         <module>lyclaw-common</module>
         <module>lyclaw-core</module>
-        <module>lyclaw-storage</module>
+
+        <!-- L0 基础设施层 -->
+        <module>lyclaw-infra</module>
+
+        <!-- L3 协议层 -->
+        <module>lyclaw-protocol</module>
+
+        <!-- L2 适配器层 -->
         <module>lyclaw-adapter</module>
-        <module>lyclaw-web</module>
+
+        <!-- L4 四元核心层 -->
+        <module>lyclaw-plan</module>
+        <module>lyclaw-memory</module>
+        <module>lyclaw-action</module>
+        <module>lyclaw-reflect</module>
+
+        <!-- L5 编排层 -->
+        <module>lyclaw-orchestration</module>
+
+        <!-- L6 门面层 -->
+        <module>lyclaw-facade</module>
+
+        <!-- 存储实现 -->
+        <module>lyclaw-storage</module>
+
+        <!-- 旧引擎 (逐步废弃) -->
         <module>lyclaw-engine</module>
+
+        <!-- L7 接口层 -->
+        <module>lyclaw-web</module>
+
+        <!-- L8 网关层 (Spring Cloud Gateway) -->
+        <module>lyclaw-gateway</module>
     </modules>
 
     <!-- ========== properties 统一定义版本 ========== -->
@@ -39,6 +69,10 @@
         <hutool.version>5.8.44</hutool.version>
         <reactor.version>3.6.8</reactor.version>
         <lombok.version>1.18.36</lombok.version>
+
+        <!-- Spring Cloud & Alibaba 微服务版本 -->
+        <spring-cloud.version>2024.0.1</spring-cloud.version>
+        <spring-cloud-alibaba.version>2023.0.3.2</spring-cloud-alibaba.version>
     </properties>
 
     <!-- ========== dependencyManagement 统一管理依赖 ========== -->
@@ -50,6 +84,24 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring Cloud BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring Cloud Alibaba BOM -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -82,6 +134,60 @@
                 <groupId>lyjew.com</groupId>
                 <artifactId>lyclaw-engine</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <!-- 新增模块 -->
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-infra</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-plan</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-memory</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-action</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-reflect</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-orchestration</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-facade</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-gateway</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Micrometer (可观测性) -->
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-core</artifactId>
+                <version>1.14.5</version>
             </dependency>
 
             <!-- 第三方依赖版本锁定 -->
@@ -144,10 +250,36 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>   <!-- ← 补上这行 -->
+                            <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+
+            <!-- Maven Enforcer：依赖图检查 + 禁止循环依赖 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[17,)</version>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.8,)</version>
+                                </requireMavenVersion>
+                                <dependencyConvergence/>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

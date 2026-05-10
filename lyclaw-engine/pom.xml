@@ -28,11 +28,11 @@
         </dependency>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-adapter</artifactId>
+            <artifactId>lyclaw-storage</artifactId>
         </dependency>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-storage</artifactId>
+            <artifactId>lyclaw-adapter</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

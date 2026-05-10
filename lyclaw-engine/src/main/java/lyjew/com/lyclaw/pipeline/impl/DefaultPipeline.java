@@ -7,31 +7,29 @@ import lyjew.com.lyclaw.pipeline.PipelineStage;
 import java.util.List;
 
 /**
- * Pipeline 默认实现 —— PipelineBuilder.build() 返回此实例。
+ * Pipeline 默认实现 —— PipelineBuilder 默认返回此实例。
  *
- * <p>内部持有按顺序排列的 PipelineStage 列表，execute() 时通过 DefaultChain
- * 依次调用每个阶段的 process() 方法。</p>
+ * <p>内部持有按 {@code getOrder()} 排序的 {@link PipelineStage} 列表，
+ * execute() 时通过 {@link DefaultChain} 按序遍历每个 Stage 的 process()。</p>
  *
- * <p><b>设计动机</b>：Pipeline 是接口，不能直接实例化。
- * PipelineBuilder.build() 需要一个具体实现来承载阶段列表和执行逻辑。
- * DefaultPipeline 就是这个具体实现，它对 builder 以外的模块透明。</p>
+ * <p>当前所有 Stage 都不调用 breakChain，因此 DefaultChain 表现为线性执行。
+ * 但通过 Chain 接口保留了每个 Stage "随时中断流程"的能力。</p>
  *
  * @since 1.0
  * @author LyClaw Team
  * @see Pipeline
  * @see PipelineStage
- * @see PipelineBuilder
  * @see DefaultChain
  */
 public class DefaultPipeline implements Pipeline {
 
-    /** 按执行顺序排列的阶段列表 */
+    /** 按执行顺序排列的阶段列表（不可变） */
     private final List<PipelineStage> stages;
 
     /**
-     * 包级私有构造器 —— 仅由 PipelineBuilder.build() 调用。
+     * 包级私有构造器 —— 由 PipelineBuilder 调用。
      *
-     * @param stages 按执行顺序排列的阶段列表
+     * @param stages 已排好序的阶段列表
      */
     DefaultPipeline(List<PipelineStage> stages) {
         this.stages = List.copyOf(stages);

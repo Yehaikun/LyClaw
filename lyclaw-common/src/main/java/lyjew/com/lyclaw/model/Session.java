@@ -1,13 +1,13 @@
 package lyjew.com.lyclaw.model;
 
-import cn.hutool.core.util.IdUtil;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import lyjew.com.lyclaw.base.BaseDTO;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
 /**
  * 会话
  */
@@ -15,17 +15,19 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @SuperBuilder
 @NoArgsConstructor
-@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Session extends BaseDTO {
-    private String sessionId;                // 会话ID
-    private String name;                 // 会话名称
-    private String model;               // 使用的模型
-
+    private String sessionId;
+    private String name;
+    private String model;
 
     @Builder.Default
-    private List<Message> messages=new ArrayList<>();      // 消息列表
+    private List<Message> messages = new ArrayList<>();
 
     public void addMessage(Message message) {
+        if (this.messages == null) {
+            this.messages = new ArrayList<>();
+        }
         this.messages.add(message);
     }
 }

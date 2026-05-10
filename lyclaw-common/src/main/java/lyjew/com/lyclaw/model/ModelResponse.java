@@ -95,5 +95,25 @@ public class ModelResponse {
         private String name;
         /** 函数参数，JSON 字符串格式 */
         private String arguments;
+        /** 流式 tool_calls 中的 index，用于多段拼接同一工具调用（DeepSeek 流式分段需要） */
+        private int index;
+
+        /** 追加 arguments JSON 片段（DeepSeek 流式分段需要） */
+        public void appendArguments(String argsFragment) {
+            if (argsFragment == null || argsFragment.isEmpty()) return;
+            if (this.arguments == null || this.arguments.isEmpty()) {
+                this.arguments = argsFragment;
+            } else {
+                String base = this.arguments.trim();
+                String frag = argsFragment.trim();
+                if (base.endsWith("}")) {
+                    base = base.substring(0, base.length() - 1);
+                }
+                if (frag.startsWith("{")) {
+                    frag = frag.substring(1);
+                }
+                this.arguments = base + frag;
+            }
+        }
     }
 }

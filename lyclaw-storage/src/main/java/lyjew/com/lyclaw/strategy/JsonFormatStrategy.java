@@ -1,7 +1,9 @@
 package lyjew.com.lyclaw.strategy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class JsonFormatStrategy<T> implements FormatStrategy<T> {
 
     private final ObjectMapper objectMapper;
@@ -24,7 +26,8 @@ public class JsonFormatStrategy<T> implements FormatStrategy<T> {
         try {
             return objectMapper.readValue(content, clazz);
         } catch (Exception e) {
-            throw new RuntimeException("JSON反序列化失败", e);
+            log.error("JSON反序列化失败 class={} content={}", clazz.getSimpleName(), content.substring(0, Math.min(200, content.length())), e);
+            throw new RuntimeException("JSON反序列化失败: " + e.getMessage(), e);
         }
     }
 

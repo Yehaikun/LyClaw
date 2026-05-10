@@ -39,10 +39,10 @@ public class AdapterStorageIntegrationTest {
     // ========================================================================
 
     /** MiniMax API Key */
-    private static final String MINIMAX_API_KEY = "sk-cp-f77oYRQUTcc0axeEVGq2KymcFp6mHEHhJD_uO1yUWEotBGhI90-zDwnJBAQIvlaoRzhL_vcrlVS_D4VqX2yFBkMNrTOcamt5_YscyumkPxJckbw1erj9vyI";
+    private static final String MINIMAX_API_KEY = System.getenv().getOrDefault("MINIMAX_API_KEY", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
     /** DeepSeek API Key */
-    private static final String DEEPSEEK_API_KEY = "sk-b1da578246114c2383616f49b5651f1d";
+    private static final String DEEPSEEK_API_KEY = System.getenv().getOrDefault("DEEPSEEK_API_KEY", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
     /** 记忆文件日期前缀 */
     private static final String TODAY = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));

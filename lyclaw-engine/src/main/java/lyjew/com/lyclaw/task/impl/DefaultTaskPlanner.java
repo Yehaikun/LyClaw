@@ -2,6 +2,9 @@ package lyjew.com.lyclaw.task.impl;
 
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.AgentResult;
+import lyjew.com.lyclaw.task.DecompositionStrategy;
+import lyjew.com.lyclaw.task.PlanGraph;
+import lyjew.com.lyclaw.task.ReflectionFeedback;
 import lyjew.com.lyclaw.task.TaskNode;
 import lyjew.com.lyclaw.task.TaskPlan;
 import lyjew.com.lyclaw.task.TaskPlanner;
@@ -87,6 +90,23 @@ public class DefaultTaskPlanner implements TaskPlanner {
 
         // 4. 通过 DefaultTaskPlan 内部类创建 TaskPlan
         return new DefaultTaskPlan(nodes);
+    }
+
+    @Override
+    public TaskPlan plan(ChatContext context, String userIntent) {
+        return plan(context);
+    }
+
+    @Override
+    public TaskPlan revise(TaskPlan original, ReflectionFeedback feedback) {
+        return original;
+    }
+
+    @Override
+    public PlanGraph decompose(TaskNode rootTask, DecompositionStrategy strategy) {
+        PlanGraph graph = new PlanGraph();
+        graph.addNode(rootTask);
+        return graph;
     }
 
     @Override

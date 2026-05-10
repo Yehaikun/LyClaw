@@ -45,7 +45,7 @@ public class DeepSeekChatTest {
 
     private static String sessionId;
 
-    private static final String MINIMAX_API_KEY = "sk-cp-f77oYRQUTcc0axeEVGq2KymcFp6mHEHhJD_uO1yUWEotBGhI90-zDwnJBAQIvlaoRzhL_vcrlVS_D4VqX2yFBkMNrTOcamt5_YscyumkPxJckbw1erj9vyI";
+    private static final String MINIMAX_API_KEY = System.getenv().getOrDefault("MINIMAX_API_KEY", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
     private static final String MINIMAX_MODEL = "MiniMax-M2.7";
     private static final String MINIMAX_BASE_URL = "https://api.minimaxi.com";
 
@@ -65,7 +65,7 @@ public class DeepSeekChatTest {
         // 所以必须显式配置两个适配器，并调用 adapterFactory.getConfiguredAdapter(ModelConfig) 来触发 configure()
         ModelConfig ds = ModelConfig.builder()
                 .id("cfg-deepseek-test").name("deepseek-openai").provider("deepseek-openai")
-                .apiKey("sk-b1da578246114c2383616f49b5651f1d").model("deepseek-chat")
+                .apiKey(System.getenv().getOrDefault("DEEPSEEK_API_KEY", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")).model("deepseek-chat")
                 .baseUrl("https://api.deepseek.com").enabled(true)
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
         configStorage.save(ds);

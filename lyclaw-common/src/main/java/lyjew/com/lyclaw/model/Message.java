@@ -1,12 +1,10 @@
 package lyjew.com.lyclaw.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
-import lombok.Builder.Default;
 import lombok.experimental.SuperBuilder;
 import lyjew.com.lyclaw.base.BaseDTO;
 
-
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -16,7 +14,7 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @SuperBuilder
 @NoArgsConstructor
-@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Message extends BaseDTO {
 
     private String role;        // system / user / assistant / tool
@@ -29,4 +27,7 @@ public class Message extends BaseDTO {
     private Usage usage;        // token用量
 
     private List<ToolCall> toolCalls;  // 工具调用
+
+    /** tool 角色消息特有关联 ID */
+    private String toolCallId;      // 工具调用ID（role=tool时设置，关联tool_calls.id）
 }

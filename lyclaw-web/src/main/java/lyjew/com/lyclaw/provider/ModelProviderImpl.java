@@ -1,46 +1,43 @@
 package lyjew.com.lyclaw.provider;
 
+import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.adapter.ModelAdapter;
 import lyjew.com.lyclaw.adapter.factory.ModelAdapterFactory;
-import lyjew.com.lyclaw.provider.ModelProvider;
-
-import java.util.Set;
+import lyjew.com.lyclaw.config.EngineProperties;
+import lyjew.com.lyclaw.model.ModelConfig;
+import lyjew.com.lyclaw.storage.ConfigStorage;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.util.Set;
+
 /**
- * ModelProvider 的适配器实现 —— 将 ModelAdapterFactory 适配为 ModelProvider 接口。
+ * ModelProvider implementation -- adapts ModelAdapterFactory to the ModelProvider interface.
  *
- * <p>加了 @Primary，Spring 在多个 ModelProvider 候选 Bean 中优先注入此实现。</p>
+ * <p>Marked @Primary so Spring prefers this bean when multiple ModelProvider candidates exist.</p>
  *
- * <p><b>设计动机</b>：ModelProvider 接口定义在 lyclaw-engine 模块，
- * 但具体实现需要依赖 lyclaw-adapter 模块的 ModelAdapterFactory。
- * 如果 engine 模块直接依赖 adapter 模块，会导致模块间循环依赖。
- * 因此 ModelProvider 的实现放在 adapter 模块中，
- * engine 层只依赖接口（仓鼠层隔离模式）。</p>
- *
- * <p><b>工作流程</b>：
- * <ol>
- *   <li>ToolCallLoopStage 需要调用模型时，通过 ModelProvider.getConfiguredAdapter() 获取适配器</li>
- *   <li>ModelProviderImpl 从 ModelAdapterFactory 获取对应厂商的适配器</li>
- *   <li>ModelAdapterFactory.getConfiguredAdapter(ModelConfig) 需要 ModelConfig 参数</li>
- *   <li>ModelProviderImpl 不持有 ModelConfig，所以 getConfiguredAdapter() 委托给内部逻辑</li>
- * </ol>
- * </p>
+ * <p>Fixed: getConfiguredAdapter() now properly loads config from ConfigStorage
+ * and calls adapter.configure() before returning the adapter.
+ * The default provider is read from EngineProperties instead of being hardcoded.</p>
  *
  * @since 1.0
  * @author LyClaw Team
- * @see ModelProvider
- * @see ModelAdapterFactory
  */
+@Slf4j
 @Primary
 @Component
 public class ModelProviderImpl implements ModelProvider {
 
     private final ModelAdapterFactory adapterFactory;
+    private final ConfigStorage configStorage;
+    private final EngineProperties engineProperties;
 
-    public ModelProviderImpl(ModelAdapterFactory adapterFactory) {
+    public ModelProviderImpl(ModelAdapterFactory adapterFactory,
+                             ConfigStorage configStorage,
+                             EngineProperties engineProperties) {
         this.adapterFactory = adapterFactory;
+        this.configStorage = configStorage;
+        this.engineProperties = engineProperties;
     }
 
     @Override
@@ -50,12 +47,24 @@ public class ModelProviderImpl implements ModelProvider {
 
     @Override
     public String getDefaultProvider() {
-        return "deepseek-openai";
+        return engineProperties.getDefaultProvider();
     }
 
     @Override
     public ModelAdapter getConfiguredAdapter() {
-        return adapterFactory.getAdapter(getDefaultProvider());
+        String provider = getDefaultProvider();
+        ModelAdapter adapter = adapterFactory.getAdapter(provider);
+
+        // Load config from storage and configure the adapter
+        configStorage.get(provider).ifPresentOrElse(
+            config -> {
+                adapter.configure(config);
+                log.debug("Adapter [{}] configured from stored config", provider);
+            },
+            () -> log.warn("No stored config found for provider [{}], adapter is NOT configured", provider)
+        );
+
+        return adapter;
     }
 
     @Override

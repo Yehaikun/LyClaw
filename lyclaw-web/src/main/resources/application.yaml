@@ -1,6 +1,10 @@
 spring:
   application:
     name: LyClaw
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+
 server:
   port: 8080
 
@@ -8,14 +12,27 @@ lyclaw:
   data-dir: /home/lyjew/Documents/Unicom/LyClaw/LyClaw
   engine:
     data-dir: ./LyClaw
-    default-provider: minimax
+    default-provider: deepseek-openai
     enabled: true
     pipeline:
       timeout: 30000
       max-tool-rounds: 10
+  providers:
+    deepseek-openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      model: deepseek-v4-pro
+      enabled: true
+  security:
+    sandbox-level: warn
+  persistence:
+    session-strategy: every_turn
+    memory-strategy: immediate
 
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %clr(%5p) [%15.15t] %clr(%-40.40logger{39}){cyan} : %m%n"
   level:
-    lyjew.com.lyclaw: DEBUG
+    lyjew: DEBUG
+    lyjew.com.lyclaw.pipeline.impl.ResponseBuildStage: DEBUG
+    lyjew.com.lyclaw.memory.impl.FileMemoryManager: DEBUG

@@ -5,6 +5,8 @@ import lyjew.com.lyclaw.model.ModelConfig;
 import lyjew.com.lyclaw.model.ModelResponse;
 import reactor.core.publisher.Flux;
 
+import java.util.List;
+
 /**
  * 模型适配器策略接口
  *
@@ -95,4 +97,38 @@ public interface ModelAdapter {
      * @return API 端点地址
      */
     String getBaseUrl();
+
+    // ========== SSE 数据解析方法（default 实现，适配器可选覆写） ==========
+
+    /**
+     * 从 SSE 数据流中提取工具调用请求。
+     * 不同厂商 SSE 格式不同，各适配器应实现自己的解析逻辑。
+     *
+     * @param rawSSE 一轮完整的 SSE 输出（含 data: 前缀和 [DONE] 标记）
+     * @return 工具调用请求列表，无工具调用时返回空列表
+     */
+    default List<ModelResponse.ToolCallRequest> extractSseToolCalls(String rawSSE) {
+        return List.of();
+    }
+
+    /**
+     * 从 SSE 数据流中提取纯文本（拼接 delta.content）。
+     *
+     * @param rawSSE 原始 SSE 输出
+     * @return 纯文本内容，无文本返回空串
+     */
+    default String extractSsePlainText(String rawSSE) {
+        return "";
+    }
+
+    /**
+     * 从 SSE 数据流中提取 Token 用量。
+     * 从最后一个含有 "usage" 字段的 SSE chunk 中提取。
+     *
+     * @param rawSSE 原始 SSE 输出
+     * @return 格式如 "prompt=6 completion=32 total=38"，无信息时返回 "prompt=0 completion=0 total=0"
+     */
+    default String extractSseTokenUsage(String rawSSE) {
+        return "prompt=0 completion=0 total=0";
+    }
 }

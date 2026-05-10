@@ -1,14 +1,10 @@
 package lyjew.com.lyclaw.engine.impl;
 
-import lyjew.com.lyclaw.adapter.ModelAdapter;
 import lyjew.com.lyclaw.context.ChatContext;
-import lyjew.com.lyclaw.context.ContextBuilder;
 import lyjew.com.lyclaw.dto.ChatResult;
 import lyjew.com.lyclaw.engine.Engine;
 import lyjew.com.lyclaw.engine.EngineMetadata;
-import lyjew.com.lyclaw.error.ErrorPolicy;
-import lyjew.com.lyclaw.event.EventBus;
-import lyjew.com.lyclaw.interceptor.impl.InterceptorChain;
+import lyjew.com.lyclaw.interceptor.InterceptorChain;
 import lyjew.com.lyclaw.memory.MemoryContent;
 import lyjew.com.lyclaw.memory.MemoryManager;
 import lyjew.com.lyclaw.model.ChatRequest;
@@ -16,81 +12,74 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.Pipeline;
-import lyjew.com.lyclaw.pipeline.impl.ContextBuildStage;
-import lyjew.com.lyclaw.pipeline.impl.InterceptorStage;
-import lyjew.com.lyclaw.pipeline.impl.MetricsStage;
 import lyjew.com.lyclaw.pipeline.impl.PipelineBuilder;
-import lyjew.com.lyclaw.pipeline.impl.ResponseBuildStage;
-import lyjew.com.lyclaw.pipeline.impl.ToolCallLoopStage;
 import lyjew.com.lyclaw.provider.ModelProvider;
 import lyjew.com.lyclaw.storage.SessionStorage;
-import lyjew.com.lyclaw.tool.ToolCallPolicy;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.publisher.Sinks;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
  * 默认引擎实现 —— engine 层的核心编排入口。
  *
- * <p>DefaultEngine 使用 Pipeline 模式组织对话流程：
+ * <p>DefaultEngine 使用 Pipeline 模式组织对话流程。Pipeine 由
+ * {@link PipelineBuilder} 自动构建——只需新建 {@code @Component}
+ * 实现的 {@code PipelineStage} 并设置正确的 {@code getOrder()} 顺序，
+ * Spring 启动时自动收集并按序注册，无需修改 DefaultEngine。</p>
+ *
+ * <p>流式和非流式路径<b>共享同一个 Pipeline</b>：
+ *
  * <ol>
- *   <li>ContextBuildStage — 加载记忆、构建上下文（消息列表初始化）</li>
+ *   <li>ContextBuildStage — 加载记忆、构建上下文</li>
  *   <li>InterceptorStage — 拦截器预处理</li>
- *   <li>ToolCallLoopStage — 模型调用 + 工具执行循环</li>
+ *   <li>ToolCallLoopStage — 模型调用 + 工具执行循环（流式/非流式统一）</li>
  *   <li>MetricsStage — 指标采集</li>
- *   <li>ResponseBuildStage — 构建响应</li>
+ *   <li>ResponseBuildStage — 构建响应 + 持久化（流式通过 doOnComplete 异步执行）</li>
  * </ol>
  * </p>
- *
- * <p><b>Spring 注入</b>：@Component，核心组件和 PipelineStage 全部通过构造器注入。</p>
  *
  * @since 1.0
  * @author LyClaw Team
  * @see Engine
  * @see Pipeline
+ * @see PipelineBuilder
  */
 @Slf4j
 @Component
 public class DefaultEngine implements Engine {
 
-    private final ContextBuilder contextBuilder;
-    private final InterceptorChain interceptorChain;
-    private final ModelProvider modelProvider;
-    private final ToolRegistry toolRegistry;
-    private final ToolCallPolicy toolCallPolicy;
-    private final ErrorPolicy errorPolicy;
-    private final EventBus eventBus;
     private final MemoryManager memoryManager;
-    private final PipelineBuilder pipelineBuilder;
-    private final SessionStorage sessionStorage;  // ← 新增：会话持久化
+    private final SessionStorage sessionStorage;
+    private final ToolRegistry toolRegistry;
+    private final ModelProvider modelProvider;
+    private final InterceptorChain interceptorChain;
 
-    public DefaultEngine(ContextBuilder contextBuilder,
-                         InterceptorChain interceptorChain,
-                         ModelProvider modelProvider,
+    /** 由 PipelineBuilder 自动构建的单例 Pipeline */
+    private final Pipeline pipeline;
+
+    public DefaultEngine(MemoryManager memoryManager,
+                         SessionStorage sessionStorage,
                          ToolRegistry toolRegistry,
-                         ToolCallPolicy toolCallPolicy,
-                         ErrorPolicy errorPolicy,
-                         EventBus eventBus,
-                         MemoryManager memoryManager,
-                         PipelineBuilder pipelineBuilder,
-                         SessionStorage sessionStorage) {   // ← 新增参数
-        this.contextBuilder = contextBuilder;
-        this.interceptorChain = interceptorChain;
-        this.modelProvider = modelProvider;
-        this.toolRegistry = toolRegistry;
-        this.toolCallPolicy = toolCallPolicy;
-        this.errorPolicy = errorPolicy;
-        this.eventBus = eventBus;
+                         ModelProvider modelProvider,
+                         InterceptorChain interceptorChain,
+                         PipelineBuilder pipelineBuilder) {
         this.memoryManager = memoryManager;
-        this.pipelineBuilder = pipelineBuilder;
-        this.sessionStorage = sessionStorage;               // ← 新增赋值
+        this.sessionStorage = sessionStorage;
+        this.toolRegistry = toolRegistry;
+        this.modelProvider = modelProvider;
+        this.interceptorChain = interceptorChain;
+
+        // PipelineBuilder 已通过 Spring 自动发现所有 PipelineStage，
+        // 按 getOrder() 排序注册。这里只需 build() 获取已构建的 Pipeline。
+        this.pipeline = pipelineBuilder.build();
+        log.info("[DefaultEngine] Pipeline 已就绪 ({} 个 Stage)", pipeline.getStages().size());
     }
 
     @Override
@@ -105,17 +94,42 @@ public class DefaultEngine implements Engine {
 
     @Override
     public Flux<String> execute(ChatRequest request) {
-        // ═══════════════════════════════════════════════════════════
-        // 公共前序：加载长期记忆、工具定义、会话（流式和非流式共用）
-        // ═══════════════════════════════════════════════════════════
+        log.info("[DefaultEngine] 开始处理请求 (stream={})", request.isStream());
         MemoryContent memory = memoryManager.read();
         List<ToolDefinition> toolDefinitions = toolRegistry.getAllDefinitions();
         Session session = loadOrCreateSession(request);
 
-        if (request.isStream()) {
-            return executeStream(request, session, memory, toolDefinitions);
+        if (session.getId() == null && session.getSessionId() != null) {
+            session.setId(session.getSessionId());
         }
-        return executeSync(request, session, memory, toolDefinitions);
+
+        ChatContext context = new ChatContext(
+                request, session, memory,
+                toolDefinitions, interceptorChain, modelProvider
+        );
+
+        if (request.isStream()) {
+            // 流式路径：Sinks 缓存数据，pipeline 在后台线程执行，主线程立即返回 Flux
+            Sinks.Many<String> realtimeSink = Sinks.many().replay().all();
+            context.setAttribute("__realtime_sink__", realtimeSink);
+            log.info("[DefaultEngine] 流式模式：Pipeline 在后台线程执行");
+
+            CompletableFuture.runAsync(() -> {
+                try {
+                    pipeline.execute(context);
+                } catch (Exception e) {
+                    log.error("[DefaultEngine] Pipeline 后台执行异常", e);
+                    realtimeSink.tryEmitError(e);
+                }
+            });
+
+            return realtimeSink.asFlux();
+        }
+
+        // 非流式路径：同步执行 Pipeline
+        log.info("[DefaultEngine] 同步模式：Pipeline 开始执行 ({} 个 Stage)", pipeline.getStages().size());
+        pipeline.execute(context);
+        return handleSyncResult(context);
     }
 
     @Override
@@ -129,81 +143,13 @@ public class DefaultEngine implements Engine {
         );
     }
 
-    // ═════════════════════════════════════════════════════════════
-    // 私有方法：流式执行、同步执行、会话管理、结果持久化
-    // ═════════════════════════════════════════════════════════════
-
-    /**
-     * 流式执行路径。
-     * <p>不走 Pipeline，直接调 adapter.chatStream() 返回 SSE 流。
-     * 使用 ContextBuilder 构建完整上下文（含记忆+工具定义+会话历史），
-     * 在 doOnComplete 中异步保存回复到会话和记忆。</p>
-     */
-    private Flux<String> executeStream(ChatRequest request, Session session,
-                                       MemoryContent memory,
-                                       List<ToolDefinition> toolDefinitions) {
-        // 构建完整上下文
-        List<Message> fullMessages = contextBuilder.buildContext(session, memory, toolDefinitions);
-        request.setMessages(fullMessages);
-
-        ModelAdapter adapter = modelProvider.getConfiguredAdapter();
-        log.debug("[{}] 流式请求开始", adapter.getProvider());
-
-        StringBuilder collector = new StringBuilder();
-
-        return adapter.chatStream(request)
-                .doOnNext(collector::append)
-                .publishOn(Schedulers.boundedElastic())
-                .doOnComplete(() -> {
-                    String content = collector.toString();
-                    // 会话持久化
-                    saveAssistantMessage(session, content, adapter.getModel());
-                    memoryManager.append(content);
-                    log.debug("[{}] 流式对话完成", adapter.getProvider());
-                })
-                .doOnError(error -> {
-                    log.error("[{}] 流式对话失败", adapter.getProvider(), error);
-                    memoryManager.append("[流式对话失败] " + error.getMessage());
-                });
-    }
-
-    /**
-     * 同步执行路径。
-     * <p>走 Pipeline 完整流程：ContextBuild → Interceptor → ToolCallLoop → Metrics → ResponseBuild。
-     * Pipeline 内部的 ContextBuildStage 会再次调用 contextBuilder.buildContext() 构建上下文，
-     * 所以这里不需要提前构建（ChatContext 构造时传入了 session/memory/toolDefinitions，ContextBuildStage 会处理）。</p>
-     */
-    private Flux<String> executeSync(ChatRequest request, Session session,
-                                     MemoryContent memory,
-                                     List<ToolDefinition> toolDefinitions) {
-        // 构建 ChatContext
-        ChatContext context = new ChatContext(
-                request, session, memory,
-                toolDefinitions, interceptorChain, modelProvider
-        );
-
-        // 执行 Pipeline
-        Pipeline pipeline = pipelineBuilder.build();
-        pipeline.execute(context);
-
-        // 获取结果
+    private Flux<String> handleSyncResult(ChatContext context) {
         ChatResult result = context.getResult();
         String content = result != null ? result.getContent() : "";
-
-        if (!content.isEmpty()) {
-            ModelAdapter adapter = modelProvider.getConfiguredAdapter();
-            saveAssistantMessage(session, content, adapter.getModel());
-            memoryManager.append(content);
-        }
-
+        log.info("[DefaultEngine] 同步结果: contentLen={}", content.length());
         return Flux.just(content);
     }
 
-    /**
-     * 加载或创建会话。
-     * <p>已有会话：加载历史消息并追加当前请求消息。
-     * 新会话：用当前请求消息初始化。</p>
-     */
     private Session loadOrCreateSession(ChatRequest request) {
         return sessionStorage.get(request.getSessionId())
                 .map(existingSession -> {
@@ -222,20 +168,5 @@ public class DefaultEngine implements Engine {
                             : new ArrayList<>());
                     return newSession;
                 });
-    }
-
-    /**
-     * 将 assistant 消息写入会话并持久化。
-     */
-    private void saveAssistantMessage(Session session, String content, String model) {
-        log.debug("开始消息持久化");
-        Message assistantMsg = Message.builder()
-                .role("assistant")
-                .content(content)
-                .model(model)
-                .createdAt(LocalDateTime.now())
-                .build();
-        session.getMessages().add(assistantMsg);
-        sessionStorage.save(session);
     }
 }

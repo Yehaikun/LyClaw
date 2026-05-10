@@ -5,18 +5,21 @@
 
 ---
 
-## 实现总览：分 8 部分，逐部分完成
+## 实现总览：分 11 部分，逐部分完成
 
 | 部分 | 模块 | 文件数 | 内容 | 状态 |
 |------|------|--------|------|------|
-| **第一部分** | lyclaw-core（基础） | 20 | 基础接口：Engine/Pipeline/PipelineStage/Chain/ChatContext/ContextBuilder/Interceptor/Tool/ToolRegistry/ToolCallPolicy/ToolResult/ToolErrorAction + 核心实现层：Engine/EngineSelector/FullWindowContextBuilder/InterceptorChain | ✅ 当前 |
-| **第二部分** | lyclaw-core（技能+记忆） | 10 | Skill/SkillType/SkillExecutor/SkillProgressCallback/SkillRegistry/SkillGraph/MemoryManager/MemoryStrategy + MemoryContent/PageResult | ⬜ |
-| **第三部分** | lyclaw-core（事件+Agent+错误） | 20 | Event/EventBus/AgentCoordinator/AgentChannel/AgentTask/AgentState/ErrorPolicy/SecurityManager/TaskPlanner/TaskPlan/TaskLedger/ModelProvider + AgentMessage/ModelException/ToolExecuteException/ApprovalResult/SandboxLevel/TaskNode/TaskResult/TaskRecord | ⬜ |
-| **第四部分** | lyclaw-core（检索+缓存+追踪+过滤器） | 7 | VectorStore/CacheService/TraceContext/ContentFilter/FilterResult + SessionTransaction/SessionUpdate/SessionUpdateStrategy/TransactionContext | ⬜ |
-| **第五部分** | lyclaw-engine（Engine+Pipeline实现） | 8 | DefaultEngine/EngineSelector/PipelineBuilder + 5个Stage（ContextBuild/Interceptor/ToolCallLoop/Metrics/ResponseBuild） | ⬜ |
-| **第六部分** | lyclaw-engine（Tool+Skill实现） | 15 | DefaultToolRegistry/ToolCallLoop/DefaultToolCallPolicy + 5个Tool + DefaultSkillRegistry/SkillGraphImpl/ToolToSkillAdapter + FileMemoryManager/ManualMemoryStrategy + InMemoryEventBus + 3个Event类 | ⬜ |
-| **第七部分** | lyclaw-engine（Agent+错误+事务+安全+Task） | 6 | StarAgentChannel/DefaultErrorPolicy/DefaultSessionTransaction/DefaultSecurityManager + DefaultTaskPlanner/DefaultTaskLedger | ⬜ |
-| **第八部分** | lyclaw-core（3个DTO）+ lyclaw-engine（2个配置） | 5 | EngineProperties/EngineAutoConfiguration + ChatResult/AgentResult/SkillResult | ✅ |
+| **第一部分** | lyclaw-core（基础） | 20 | 基础接口：Engine/Pipeline/PipelineStage/Chain/ChatContext/ContextBuilder/Interceptor/Tool/ToolRegistry/ToolCallPolicy/ToolResult/ToolErrorAction + 核心实现层：Engine/EngineSelector/FullWindowContextBuilder/InterceptorChain | ✅ 已完成 |
+| **第二部分** | lyclaw-core（技能+记忆） | 10 | Skill/SkillType/SkillExecutor/SkillProgressCallback/SkillRegistry/SkillGraph/MemoryManager/MemoryStrategy + MemoryContent/PageResult | ✅ 已完成 |
+| **第三部分** | lyclaw-core（事件+Agent+错误） | 20 | Event/EventBus/AgentCoordinator/AgentChannel/AgentTask/AgentState/ErrorPolicy/SecurityManager/TaskPlanner/TaskPlan/TaskLedger/ModelProvider + AgentMessage/ModelException/ToolExecuteException/ApprovalResult/SandboxLevel/TaskNode/TaskResult/TaskRecord | ✅ 已完成 |
+| **第四部分** | lyclaw-core（检索+缓存+追踪+过滤器） | 7 | VectorStore/CacheService/TraceContext/ContentFilter/FilterResult + SessionTransaction/SessionUpdate/SessionUpdateStrategy/TransactionContext | ✅ 已完成 |
+| **第五部分** | lyclaw-engine（Engine+Pipeline实现） | 8 | DefaultEngine/EngineSelector/PipelineBuilder + 5个Stage（ContextBuild/Interceptor/ToolCallLoop/Metrics/ResponseBuild） | ✅ 已完成 |
+| **第六部分** | lyclaw-engine（Tool+Skill实现） | 15 | DefaultToolRegistry/ToolCallLoop/DefaultToolCallPolicy + 5个Tool + DefaultSkillRegistry/SkillGraphImpl/ToolToSkillAdapter + FileMemoryManager/ManualMemoryStrategy + InMemoryEventBus + 3个Event类 | ✅ 已完成 |
+| **第七部分** | lyclaw-engine（Agent+错误+事务+安全+Task） | 6 | StarAgentChannel/DefaultErrorPolicy/DefaultSessionTransaction/DefaultSecurityManager + DefaultTaskPlanner/DefaultTaskLedger | ✅ 已完成 |
+| **第八部分** | lyclaw-core（3个DTO）+ lyclaw-engine（2个配置） | 5 | EngineProperties/EngineAutoConfiguration + ChatResult/AgentResult/SkillResult | ✅ 已完成 |
+| **第九部分** | Spring Boot 集成测试（7个测试类） | 7 | 容器启动测试、各组件注入测试、完整 Pipeline 流程测试 | ✅ 已完成 |
+| **第十部分** | 流式工具调用状态机（lyclaw-engine/stream） | 11 | StreamToolCallStateMachine + 5个状态/信号文件 + 2个SSE解析器 + 2个工具状态组件 + SyncModelCallState | ✅ 已完成 |
+| **第十一部分** | ChatController + 前端工具调用展示 + 适配器更新 | 3（改动） | Controller SSE透传重构、resolveToolChoice支持字符串、前端tool_call事件解析 | ✅ 已完成 |
 
 ---
 
@@ -1294,10 +1297,13 @@ public class FullWindowContextBuilder implements ContextBuilder {
         }
 
         // 长期记忆
+        // ⚠️ 使用 "user" 角色而非 "system"，因为 DeepSeekOpenAIAdapter.buildMessages()
+        //    会过滤 role=system 的消息（用 ChatRequest.systemPrompt 替代）。
+        //    使用 "user" 确保记忆能正常传递给模型。
         List<? extends Object> memories = memoryManager.recall();
         if (memories != null && !memories.isEmpty()) {
             Message memMsg = new Message();
-            memMsg.setRole("system");
+            memMsg.setRole("user");
             memMsg.setContent(memoryManager.buildContext(
                 (List) memories));
             messages.add(memMsg);
@@ -5201,9 +5207,21 @@ public class NullContentFilter implements ContentFilter {
 | 第四部分 | lyclaw-core | 5 | 9 |
 | 第五部分 | lyclaw-engine | 1 | 4 |
 | **lyclaw-core 核心接口** | — | **18 个包** | **42 个文件**（设计文档要求） |
-| **已完成总计** | — | — | **61 个文件** |
+| **已完成总计** | — | — | **~175 个文件**（6 个模块合计） |
 
-> **说明**：实际文件数（61）超过设计文档规划的 lyclaw-core 42 个文件，因为实现过程中新增了值对象和附块（ToolResult/ToolErrorAction/MemoryContent/PageResult/AgentMessage/ModelException/ToolExecuteException/ApprovalResult/SandboxLevel/TaskNode/TaskResult/TaskRecord/SearchResult 内部类/CacheStats 内部类/FilterResult/TransactionContext/SessionUpdate 等）。
+> **文件分布**：
+> - lyclaw-common：13 个 .java（模型类、DTO、异常基类）
+> - lyclaw-core：9 个 .java（接口 + 抽象基类 + 模板方法）
+> - lyclaw-engine：114 个 .java（核心实现 + 状态机 + 工具 + 管道 + 事件 + 安全 + 事务等）
+> - lyclaw-storage：8 个 .java（文件存储 + 策略模式）
+> - lyclaw-adapter：13 个 .java（模型适配器 + DTO + 客户端 + 解析器 + 工厂）
+> - lyclaw-web：13 个 .java（Controller + 引擎启动 + 测试类）
+>
+> 设计文档规划 82 个文件，实际远超因为：
+> 1. 新增了值对象（ToolResult/ToolErrorAction/MemoryContent/PageResult/AgentMessage/ModelException/ToolExecuteException/ApprovalResult/SandboxLevel/SearchResult/CacheStats/FilterResult/TransactionContext/SessionUpdate 等 24 个）
+> 2. 新增了流式状态机 11 个文件（stream 包）
+> 3. 新增了适配器 DTO 和安全/事务/任务实现
+> 4. 新增了 7 个集成测试类
 
 ---
 
@@ -9475,5 +9493,941 @@ public DefaultEngine(ContextBuilder contextBuilder,
 ```java
 import lyjew.com.lyclaw.storage.SessionStorage;
 import java.util.ArrayList;
+```
+
+---
+
+## 附录：流式路径 Bug 修复记录（2026-04-30）
+
+### 1. global.md 存储了原始流式 JSON chunk
+
+**问题**：ToolCallLoopStage.executeStreamInternal() 的 doOnComplete 中，collector 收集的是
+adapter.chatStream() 返回的原始 SSE 数据（如 `data:{"choices":[{"delta":{"content":"文本"}}]}`），
+直接存到 `__stream_full_content__` 属性，导致 memoryManager.append() 写入记忆文件的是原始 JSON。
+
+**修复**：新增 `extractPlainTextFromSSE(raw)` 方法，从 `data:{"choices":[{"delta":{"content":"文本"}}]}`
+格式中提取每个 delta.content 字段的纯文本并拼接，再存入 `__stream_full_content__`。
+确保记忆文件（global.md）只存纯文本，不包含流式 JSON chunk。
+
+### 2. 会话文件被保存为 null.json
+
+**问题**：Session 类有 2 个 id 字段：
+- `BaseDTO.id`（getter = `getId()`）— SessionStorage.extractId() 用此字段提取文件名
+- `sessionId`（getter = `getSessionId()`）— 业务会话 ID
+
+loadOrCreateSession() 只设置了 `sessionId` 没设置 `BaseDTO.id`，导致文件名 = `null.json`。
+
+**修复**：DefaultEngine.execute() 加载 Session 后加 `session.setId(session.getSessionId())`，
+确保两个 id 字段一致。
+
+### 3. Token 用量未打印
+
+**问题**：MetricsStage.process() 只发了 EventBus 事件，没有打日志。
+
+**修复**：MetricsStage 加 `@Slf4j`，在 process() 中读取 `context.getResult().getTokenUsage()`
+和 durationMs 输出 info 日志。
+
+流式路径额外：ToolCallLoopStage 新增 `extractTokenUsageFromSSE(raw)` 方法，从最后一个 SSE chunk
+的 `"usage":{"prompt_tokens":6,"completion_tokens":19,"total_tokens":30}` 字段提取 token 用量，
+存入 `ChatContext.__stream_token_usage__` 属性。ResponseBuildStage 读取该属性并填入 ChatResult。
+
+### 4. 记忆注入不生效（记忆内容没传递给模型）
+
+**问题**：FullWindowContextBuilder.buildMemoryMessage() 将记忆注入为 role="system" 消息。
+但 DeepSeekOpenAIAdapter.buildMessages() 在序列化时会**跳过所有 role=system 的消息**
+（用 ChatRequest.systemPrompt 替代），导致记忆消息被过滤，模型收不到记忆内容。
+
+**修复**：FullWindowContextBuilder 将记忆消息的 role 从 "system" 改为 "user"，确保记忆
+能正常通过适配器序列化并传递给模型。
+
+### 5. 前端换行显示问题
+
+**问题**：Controller 从 DeepSeek 返回的 SSE JSON 中提取 content 时，因为 JSON 中没有转义处理，
+content 字符串中的 `\n` 以字面形式（两个字符反斜杠+n）传递给前端。前端的 renderMarkdown()
+只处理了实际换行符（`/\n/g`），没有处理字面 `\n` 字符串。
+
+**修复**：前端 renderMarkdown() 第一步增加 `text.replace(/\\n/g, '\n')`，将字面 `\n` 转成
+实际换行符，再走 marked 渲染为 `<br>`。
+
+---
+
+# 第十部分：流式工具调用状态机（lyclaw-engine/stream）
+
+> **设计文档对应**：第六章（流式执行）附录 2（目录结构）+ 附录 3（文件清单）
+>
+> **动机**：流式模式下不能用同步 wait+return 的方法处理工具调用循环。
+> 将"模型调用 → 检测工具 → 执行工具 → 再次调用"的多轮循环拆为独立状态，
+> 状态机引擎持有转换表决定流转。每个状态只处理自己的逻辑，
+> 不关心前后是谁，满足：可扩展（增删状态不需改已有代码）、可测试（每个状态独立测试）、
+> 长期可维护（第三期/第五期都能撑住）。
+
+## 实现文件清单
+
+| 序号 | 文件 | 包 | 角色 |
+|------|------|-----|------|
+| 1 | StreamToolCallState.java | pipeline/impl/stream | 状态接口 |
+| 2 | Signal.java | pipeline/impl/stream | 信号枚举 |
+| 3 | StateResult.java | pipeline/impl/stream | 状态处理结果 |
+| 4 | StreamToolCallStateMachine.java | pipeline/impl/stream | 状态机引擎 |
+| 5 | ModelCallState.java | pipeline/impl/stream | 模型调用状态（流式） |
+| 6 | SyncModelCallState.java | pipeline/impl/stream | 模型调用状态（同步） |
+| 7 | ToolDetectState.java | pipeline/impl/stream | 工具检测状态 |
+| 8 | ToolExecuteState.java | pipeline/impl/stream | 工具执行状态 |
+| 9 | ToolCallEventEmitter.java | pipeline/impl/stream | 工具调用事件 Flux 构建器 |
+| 10 | SseToolCallParser.java | pipeline/impl/stream | SSE 工具调用解析接口 |
+| 11 | DeepSeekSseToolCallParser.java | pipeline/impl/stream | DeepSeek 厂商实现 |
+
+## 状态机设计
+
+### 状态转换图（v2 — 边收边发）
+
+```
+ModelCallState(后台线程启动rawFlux)
+    │  立即返回 Flux(Sinks.Many)
+    ▼
+ToolDetectState
+    ├─ __has_tool_call__ = true  (增量检测)  ──► TOOL_CALLS_FOUND
+    ├─ toolChoice 显式指定        (偷跑构造)  ──► TOOL_CALLS_FOUND
+    └─ 无(含 __tool_choice_executed__ 保护)  ──► NO_TOOL_CALLS
+                                                     │
+                                                     ▼
+                                                状态机结束
+                                                Flux → Controller
+                                                     │
+                                                     ▼
+                                             sse-emitter Thread 订阅
+                                                     │
+                                                     ▼
+                                              实时接收 Sinks buffer 数据
+```
+
+**说明**：
+- `ModelCallState` 不再阻塞，而是启后台线程 + 返回实时 Flux（Sinks.Many）
+- `ToolDetectState` 三路径检测：增量标志 → toolChoice → 后备 collector
+- `__tool_choice_executed__` 保护：跳过已执行过强制工具后的重复检测
+- `ToolExecuteState` 执行工具并设 `__tool_choice_executed__ = true` + `toolChoice = "none"`
+
+### 核心原则
+
+- **状态不知道自己下一个是谁**：由状态机引擎的 transitionTable 决定流转
+- **状态只返回 StateResult(Signal, outputFlux, toolCalls)**：不直接操作状态机
+- **轮次控制**：状态机引擎统一处理。最多 MAX_ROUNDS（6）轮后强制停止
+- **超时控制**：后台线程消费 SSE 流，collectorLatch 仅用于备用（ToolDetectState 后备路径）
+- **同步模式也纳入同一状态机体系**：共用 ToolDetectState、ToolExecuteState，只替换 ModelCallState 为 SyncModelCallState
+
+## StreamToolCallState.java — 状态接口
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/StreamToolCallState.java`
+
+```java
+package lyjew.com.lyclaw.pipeline.impl.stream;
+
+import lyjew.com.lyclaw.context.ChatContext;
+
+/**
+ * StreamToolCallState — 流式工具调用状态接口。
+ *
+ * <p>每个状态实现此接口，处理一个阶段后返回 StateResult。
+ * 状态不决定下一个是谁——由状态机引擎的 transitionTable 决定流转。
+ * 职责单一：只处理"模型调用"、"工具检测"或"工具执行"中的一个阶段。
+ *
+ * @author LyClaw Team
+ * @version 1.0
+ */
+public interface StreamToolCallState {
+
+    /**
+     * 执行当前状态的逻辑。
+     *
+     * @param context 对话上下文，包含请求、适配器、消息列表等
+     * @return 状态处理结果，包含信号 + 输出 Flux + 工具调用列表
+     */
+    StateResult handle(ChatContext context);
+}
+```
+
+## Signal.java — 信号枚举
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/Signal.java`
+
+```java
+package lyjew.com.lyclaw.pipeline.impl.stream;
+
+/**
+ * Signal — 状态处理完成后的信号，驱动状态机流转。
+ *
+ * <p>每个 StateResult 都关联一个 Signal。
+ * 状态机引擎根据 transitionTable（Map&lt;Signal, Class&lt;?&gt;&gt;）决定下一状态。
+ *
+ * @author LyClaw Team
+ * @version 1.0
+ */
+public enum Signal {
+
+    /** 模型调用完成，等待检测工具调用 */
+    STREAM_COMPLETED,
+
+    /** 模型调用的 SSE 流完成（同步模式用） */
+    SYNC_COMPLETED,
+
+    /** 检测到工具调用，需要执行工具 */
+    TOOL_CALLS_FOUND,
+
+    /** 无工具调用，终止循环 */
+    NO_TOOL_CALLS,
+
+    /** 工具执行完成 */
+    TOOL_EXECUTED,
+
+    /** 发生错误 */
+    ERROR
+}
+```
+
+## StateResult.java — 状态处理结果
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/StateResult.java`
+
+```java
+package lyjew.com.lyclaw.pipeline.impl.stream;
+
+import lyjew.com.lyclaw.adapter.ModelResponse;
+import reactor.core.publisher.Flux;
+
+import java.util.Collections;
+import java.util.List;
+
+/**
+ * StateResult — 状态处理结果，包含信号 + 输出 + 工具调用信息。
+ *
+ * <p>每个 StreamToolCallState.handle() 返回此对象。
+ * 状态机引擎从 result 读取 signal 决定下一状态，读取 outputFlux 合并到总 Flux。
+ *
+ * @param <T> 输出 Flux 的元素类型（String = SSE 行）
+ * @author LyClaw Team
+ * @version 1.0
+ */
+public class StateResult<T> {
+
+    /** 信号，决定下一状态 */
+    private final Signal signal;
+
+    /** 输出 Flux（合并到总 Flux 中的片段） */
+    private final Flux<T> outputFlux;
+
+    /** 工具调用请求列表（当 signal=TOOL_CALLS_FOUND 时非空） */
+    private final List<ModelResponse.ToolCallRequest> toolCalls;
+
+    public StateResult(Signal signal, Flux<T> outputFlux, List<ModelResponse.ToolCallRequest> toolCalls) {
+        this.signal = signal;
+        this.outputFlux = outputFlux;
+        this.toolCalls = toolCalls != null ? toolCalls : Collections.emptyList();
+    }
+
+    public Signal getSignal() { return signal; }
+    public Flux<T> getOutputFlux() { return outputFlux; }
+    public List<ModelResponse.ToolCallRequest> getToolCalls() { return toolCalls; }
+
+    /** 快捷工厂：无工具调用，正常终止 */
+    public static <T> StateResult<T> noToolCalls(Flux<T> outputFlux) {
+        return new StateResult<>(Signal.NO_TOOL_CALLS, outputFlux, null);
+    }
+
+    /** 快捷工厂：发现工具调用 */
+    public static <T> StateResult<T> toolCallsFound(Flux<T> outputFlux, List<ModelResponse.ToolCallRequest> toolCalls) {
+        return new StateResult<>(Signal.TOOL_CALLS_FOUND, outputFlux, toolCalls);
+    }
+
+    /** 快捷工厂：流完成，等待检测 */
+    public static <T> StateResult<T> streamCompleted(Flux<T> outputFlux) {
+        return new StateResult<>(Signal.STREAM_COMPLETED, outputFlux, null);
+    }
+
+    /** 快捷工厂：错误 */
+    public static <T> StateResult<T> error(Throwable error) {
+        return new StateResult<>(Signal.ERROR, Flux.error(error), null);
+    }
+}
+```
+
+## StreamToolCallStateMachine.java — 状态机引擎
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/StreamToolCallStateMachine.java`
+
+**核心职责**：
+1. 持有 `transitionTable`（Map<Signal, Class<? extends StreamToolCallState>>）定义状态流转
+2. 入口 `start(ChatContext) → Flux<String>` 返回合并的流
+3. 循环：执行当前状态 → 检查 signal → 查 transitionTable → 实例化下一状态
+4. 轮次控制：超过 MAX_ROUNDS（6）轮强制终止
+5. 收集每轮产生的 Flux，最终通过 `Flux.concat` 合并为单一 Flux
+6. 自动将工具状态事件 Flux（`__tool_event_flux__`）插入 Flux 链
+
+**关键行为**：
+- transitionTable 第一版为固定映射，后续可从配置/拦截器动态扩展
+- 状态实例化通过 Spring ApplicationContext 或反射 + 无参构造器
+- 错误发生时终止循环，通过 `Flux.concat` 传递错误给调用方
+
+## ModelCallState.java — 流式模型调用状态（边收边发）
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/ModelCallState.java`
+
+**职责**：
+1. 启动后台线程立即消费 `adapter.chatStream()` 的 SSE 流
+2. 后台线程每次收到 data 时：通过 `Sinks.Many` 实时推送给 Controller，同时追加到 collector
+3. 后台线程每收到一条 data，立即增量检测工具调用（`__has_tool_call__` 标志位），不阻塞
+4. 后台线程 onComplete 时保存完整内容到 context
+
+**关键设计**：后台线程 + Sinks.Many 替代旧的 CountDownLatch 同步等待。
+
+**架构对比**：
+| 方案 | 说明 | 问题 |
+|------|------|------|
+| 旧方案（同步收集） | CountDownLatch 等待整个 SSE 流收完后再重放 | 用户等待时间 = API 延迟 + 全部收集时间（约3+秒无输出） |
+| 新方案（边收边发） | 后台线程实时填充 Sinks.Many，控制器收到 Flux 后立即消费 | 用户等待时间 ≈ API 首包延迟（约200ms） |
+
+**时序流程**：
+1. `ModelCallState.handle()` 创建 `Sinks.Many<String>` 和后台线程，立即返回
+2. 后台线程调用 `adapter.chatStream()` 发起 HTTP 请求
+3. 后台线程在回调中同时做两件事：
+   - `sink.tryEmitNext(data)` → 实时推送给 Controller
+   - `collector.append(data)` → 累计到 collector
+4. ToolDetectState 通过 `__has_tool_call__` 标志位检测（非阻塞）
+5. 后台线程 onComplete 时：`sink.tryEmitComplete()` + `collectorLatch.countDown()`
+6. Controller 在 Pipeline 完成后订阅 `sink.asFlux()`，从 buffer 中获取已收集的数据
+
+**增量工具调用检测**：
+- 后台线程每次收到 data 就调用 `sseToolCallParser.extractToolCalls(currentCollector)`
+- 检测到工具调用时设置 `__has_tool_call__ = true`
+- ToolDetectState 检查此标志位，无需等 collector 收完
+- onComplete 时做二次检测（兜底）
+
+**为什么不需要同步等待了**：
+- 删除了 CountDownLatch.await() 的阻塞
+- ToolDetectState 不再通过等待 collectorLatch 来获取完整的 collector 内容
+- 改由增量检测 + toolChoice 显式检测替代
+
+## SyncModelCallState.java — 同步模型调用状态
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/SyncModelCallState.java`
+
+**职责**：同步模式的模型调用，与 ModelCallState 共用接口，只替换这个变体。
+
+**差异**：
+- 同步模式调用 `adapter.chatSync()`（非流式）
+- 直接返回完整的 response 字符串，不需要收集 SSE 行
+- 返回的 Flux 只有一个元素的 Flux.just(纯文本)
+- 工具检测逻辑与 ToolDetectState 共用（通过核心层 ModelResponse 解析）
+
+## ToolDetectState.java — 工具检测状态（三路径检测）
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/ToolDetectState.java`
+
+**职责**：从模型回复中检测是否有工具调用。
+
+**检测逻辑（优先级从高到低）**：
+
+1. **同步模式**：`__sync_response__` 存在且 hasToolCalls() → TOOL_CALLS_FOUND
+2. **流式增量检测**：`__has_tool_call__` 标志位为 true（ModelCallState 后台线程增量检测设的） → TOOL_CALLS_FOUND
+3. **toolChoice 显式指定**：`request.getToolChoice()` 非空且不是 "auto"/"none" → 直接构造 fakeCall 返回 TOOL_CALLS_FOUND
+4. **后备**：等待 collectorLatch（500ms 超时）后从 collector 全文解析
+
+**关键保护**：`__tool_choice_executed__` 标记
+- 如果之前已经执行过一次强制工具调用，跳过所有工具检测（返回 NO_TOOL_CALLS）
+- 防止 DeepSeek 在 `tool_choice=none` 下仍然返回工具调用导致的死循环
+
+**为什么需要 toolChoice 显式检测（路径 3）**：
+- Controller 检测到"时间/日期"关键词时设了 `tool_choice=current_time`
+- 但流式模式下增量检测太慢（SSE 流的工具调用在 300-500ms 后才到达）
+- ToolDetectState 的 500ms 超时会先触发 → 判定 NO_TOOL_CALLS → 状态机结束
+- 通过直接检查 toolChoice，在 SSE 解析前就强制构造 fakeCall，确保工具被执行
+
+**为什么需要 `__tool_choice_executed__` 保护（路径 3 的跳出条件）**：
+- 第一次 ToolExecuteState 执行完 fakeCall 后 `setToolChoice("none")`，但 DeepSeek 在 `tool_choice=none` 下仍可能返回工具调用
+- 后台线程的增量检测会再次检测到工具调用（`__has_tool_call__=true`）
+- 如果没有 `__tool_choice_executed__`，ToolDetectState 会在第二轮又进入 TOOL_CALLS_FOUND → 死循环
+- 设了这个标记后，第二轮直接跳过所有工具检测，返回 NO_TOOL_CALLS
+
+## ToolExecuteState.java — 工具执行状态
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/ToolExecuteState.java`
+
+**职责**：
+1. 遍历所有工具调用请求，逐个调用 `toolRegistry.execute()`
+2. 通过 `ToolCallEventEmitter` 发送 tool_call executing/done 事件
+3. 将工具结果包装为 `role=tool` 消息追加到 messages
+4. 在 `role=tool` 消息前插入 `role=assistant` 消息（含 tool_calls 数组），满足 OpenAI/DeepSeek 协议
+5. 清空 `toolChoice`（`context.getOriginalRequest().setToolChoice(null)`），防止下一轮死循环
+6. 将工具事件 Flux 存到 `__tool_event_flux__` 属性
+
+**为什么需要插入 assistant 消息（含 tool_calls）**：
+- OpenAI/DeepSeek API 协议要求：`role=tool` 的消息必须跟在包含 `tool_calls` 的 assistant 消息后
+- messages 格式必须是：`[user, assistant(with tool_calls), tool(with tool_call_id), ...]`
+- ToolExecuteState 会检查上一条消息，如果缺少 tool_calls 则自动插入
+
+**toolChoice 清空与死循环防护**：
+- 第 1 轮可能因为 Controller 检测到时间关键词而设了 `tool_choice=current_time`
+- 工具执行完后 `setToolChoice("none")`（注意：不是 `setToolChoice(null)`，null 会导致适配器用 "auto" 模式，但 DeepSeek 在 auto 下仍可调用工具）
+- 同时设置 `__tool_choice_executed__ = true` 标记，阻止 ToolDetectState 后续轮次继续检测工具调用
+- 双层防护：`tool_choice=none` + `__tool_choice_executed__` = 彻底切断工具调用循环
+
+## ToolCallEventEmitter.java — 工具调用事件 Flux 构建器
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/ToolCallEventEmitter.java`
+
+**职责**：
+1. 为每个工具调用构建 `event:tool_call` SSE 事件
+2. 事件类型：`executing`（旋转图标）+ `done`（✅ 图标）
+3. done 事件中附带 `result` 字段（工具执行结果）
+4. 返回的 Flux 直接合并到总 Flux 链中
+
+**输出格式**：
+```
+event:tool_call
+data:{"type":"tool_call","name":"current_time","status":"executing"}
+
+event:tool_call
+data:{"type":"tool_call","name":"current_time","status":"done","result":"当前时间: 2026-05-01 21:11:11"}
+```
+
+## SseToolCallParser.java — SSE 工具调用解析接口
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/SseToolCallParser.java`
+
+**职责**：从 SSE 行列表中提取工具调用请求的接口。不同厂商的 SSE 格式不同，需要各自的实现。
+
+**方法签名**：
+```java
+List<ModelResponse.ToolCallRequest> parse(List<String> sseLines);
+```
+
+## DeepSeekSseToolCallParser.java — DeepSeek 厂商实现
+
+**文件路径**：`lyclaw-engine/src/main/java/lyjew/com/lyclaw/pipeline/impl/stream/DeepSeekSseToolCallParser.java`
+
+**职责**：
+1. 解析 DeepSeek SSE 格式：`data:{"choices":[{"delta":{"tool_calls":[...]}}]}`
+2. 跨多个 SSE chunk 拼接完整的 tool_call（因为 DeepSeek 把 tool_call 的 id、type、function.name、function.arguments 拆到多个 chunk）
+3. 处理 `[DONE]` 标记
+
+---
+
+# 第十一部分：ChatController + 前端工具调用展示 + 适配器更新
+
+## ChatController.java — SSE 透传重构
+
+**文件路径**：`lyclaw-web/src/main/java/lyjew/com/lyclaw/controller/ChatController.java`
+
+### Controller 改动
+
+| 改动 | 说明 |
+|------|------|
+| 新增 `toolChoice` 自动检测 | 消息包含时间/日期/星期关键词时自动设 `tool_choice=current_time` |
+| SseEmitter 发送 | 使用 `SseEmitter` + `executor.submit` 异步消费 Flux |
+| 完全透传 SSE 行 | 不再从 SSE JSON 中提取 content，改为直接发送 `event:type\ndata:内容` |
+| event:tool_call 支持 | 工具调用事件单独识别，格式为 `event:tool_call` + `data:{json}` |
+| event:message 支持 | 普通文本消息以 `event:message` + `data:文本片段` 发送 |
+| close_notify 标记 | 流结束时发送 `event:message\ndata:[DONE]` |
+| **buffer 策略** | `MAX_CHUNK_SIZE=5` 累积至少 5 字符再发，减少 SSE 事件数但保持逐字感 |
+| **Tomcat buffer 关闭** | `response.setBufferSize(0)` 防止 Tomcat 8KB 缓存导致所有 SSR 事件一次发出 |
+
+### SSE 逐字 buffer 策略
+
+**动机**：如果不加 buffer，后端每次 `emitter.send()` 只发一个 token（如 "当"、"前"、"时"、"间"）。前端收到每个 token 都要触发一次 Vue 3 DOM diff，开销大且会出现闪烁。但如果每 token 都单独发，SSE 事件数太多（~114个）。
+
+**实现**：
+```java
+final StringBuilder messageBuffer = new StringBuilder();
+final int MAX_CHUNK_SIZE = 5;  // 累积至少 5 字符再发
+
+// 每次收到数据时，解析 content 后追加到 buffer
+// buffer 长度 >= 5 时发一次 SSE event:message
+// 流结束前 flush 剩余字符
+
+emitter.send(SseEmitter.event().name("message").data(messageBuffer.toString()));
+```
+
+### Controller toolChoice 检测逻辑
+
+```java
+// 自动设 toolChoice：如果 API 传了就用传的，否则根据消息内容推断
+if (request.getToolChoice() == null || request.getToolChoice().isBlank()) {
+    String messagesText = request.getMessages() != null
+            ? request.getMessages().stream()
+                .map(Message::getContent)
+                .filter(Objects::nonNull)
+                .reduce("", String::concat)
+            : "";
+    if (messagesText.contains("时间") || messagesText.contains("几点了")
+            || messagesText.contains("日期") || messagesText.contains("现在几点")
+            || messagesText.contains("今天") || messagesText.contains("星期")) {
+        request.setToolChoice("current_time");
+    }
+}
+```
+
+### SSE 透传（核心逻辑）
+
+```java
+executor.submit(() -> {
+    try {
+        flux.subscribe(
+            line -> {
+                if (line == null || line.isBlank()) return;
+                if (line.startsWith("event:") || line.startsWith("data:")) {
+                    // 完整 SSE 事件：直接透传给前端
+                    if (line.startsWith("event:tool_call")) {
+                        // 工具调用事件
+                        String[] parts = line.split("\n");
+                        for (String part : parts) {
+                            emitter.send(SseEmitter.event()
+                                    .name("tool_call")
+                                    .data(part.startsWith("data:") ? part.substring(5) : part));
+                        }
+                    } else {
+                        // 普通消息事件
+                        emitter.send(SseEmitter.event()
+                                .name("message")
+                                .data(line));
+                    }
+                } else {
+                    // 纯文本行：包装为 event:message
+                    emitter.send(SseEmitter.event()
+                            .name("message")
+                            .data(line));
+                }
+            },
+            error -> emitter.completeWithError(error),
+            () -> {
+                emitter.send(SseEmitter.event().name("message").data("[DONE]"));
+                emitter.complete();
+            }
+        );
+    } catch (Exception e) {
+        emitter.completeWithError(e);
+    }
+});
+```
+
+## 前端 ChatTest.vue — 工具调用展示
+
+**文件路径**：`lyclaw-ui/src/components/ChatTest.vue`
+
+### 新增 tool_call 消息类型
+
+```javascript
+// 新增消息角色
+const role = msg.role === 'user' ? 'U'
+    : msg.role === 'tool_call' ? '🔧'
+    : 'A'
+```
+
+### SSE 事件解析
+
+前端 SSE 解析器处理两种事件类型：
+- `event:message` → 普通文本，追加到最近一条 assistant 消息的 content
+- `event:tool_call` → 解析 JSON 数据，追加 tool_call 类型消息
+
+### tool_call 事件处理逻辑
+
+```javascript
+if (currentEventType === 'tool_call') {
+    const toolEvent = JSON.parse(chunk);
+    if (toolEvent.type === 'tool_call') {
+        const toolMsg = {
+            role: 'tool_call',
+            name: toolEvent.name,
+            status: toolEvent.status,  // 'executing' | 'done'
+            content: ''
+        };
+        // 替换或追加工具调用消息
+        const lastMsg = messages.value[messages.value.length - 1];
+        if (同工具名 && executing → 不重复添加) { ... }
+        else if (同工具名 && executing → done → 更新状态) { ... }
+        else { messages.value.push(toolMsg); }
+    }
+}
+```
+
+### CSS 样式
+
+| 元素 | 样式 |
+|------|------|
+| `.tool_call` 消息行 | 黄色/绿色背景，区分于普通消息 |
+| `.tool-spinner` | 旋转动画（CSS @keyframes spin） |
+| `.tool-status.executing` | 🟡 黄色 |
+| `.tool-status.done` | 🟢 绿色 |
+
+---
+
+# 附录：2026-05-01 流式工具调用 Bug 修复记录
+
+## Bug 1：tool_call_id 缺失 → API 400
+
+**现象**：第 2 轮模型调用返回 400 `"Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"`
+
+**根因**：ToolExecuteState 构建 `role=tool` 消息时没有设 `toolCallId`。DeepSeek API 要求每条 `role=tool` 消息必须有 `tool_call_id`，用于关联对应的 assistant tool_call。
+
+**修复（2026-05-01 21:00）**：
+
+| 文件 | 改动 |
+|------|------|
+| `Message.java` | 新增 `toolCallId` 字段 |
+| `ToolExecuteState.java` | 构造 tool 消息时 `.toolCallId(req.getId())` |
+| `DeepSeekOpenAIAdapter.java` | 序列化 tool 消息时优先使用 `msg.getToolCallId()` |
+
+## Bug 2：assistant 消息缺少 tool_calls 数组 → API 400
+
+**现象**：第 2 轮模型调用返回 400 `"Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"`
+
+**根因**：修复 Bug 1 后仍有 400，因为 `role=tool` 前面缺少 `role=assistant` 消息（含 `tool_calls` 数组）。OpenAI/DeepSeek 协议要求：
+
+```
+messages: [
+  {"role":"user", "content":"现在几点了"},
+  {"role":"assistant", "content":"", "tool_calls":[{"id":"call_xxx", "type":"function", "function":{"name":"current_time","arguments":"{}"}}]},
+  {"role":"tool", "content":"当前时间: ...", "tool_call_id":"call_xxx"}
+]
+```
+
+**修复（2026-05-01 21:09）**：`ToolExecuteState.java` — 在执行工具前，检查 messages 最后一条是不是 `role=assistant` 且含 `tool_calls`。如果不是，自动插入一条 `role=assistant` 消息，内容为空字符串，`toolCalls` 设置为从 ToolCallRequest 转换的元数据。
+
+## Bug 3：toolChoice 未清空 → 工具调用死循环
+
+**现象**：第 1 轮模型返回时间后，第 2 轮仍然强制调 `tool_choice=current_time`，导致模型第 2 轮又返回时间工具调用，再执行、再调用，无限循环。
+
+**根因**：ChatController 在请求进入 Pipeline 前设了 `request.setToolChoice("current_time")`。这个 toolChoice 在所有轮次中都生效。
+
+**修复（2026-05-01 21:00）**：`ToolExecuteState.java` — 工具执行完成后清空 `toolChoice`：
+
+```java
+// 清空 toolChoice — 防止下一轮状态机又强制调用相同工具导致死循环
+context.getOriginalRequest().setToolChoice(null);
+```
+
+## 修复效果验证
+
+curl 测试输出：
+```
+event:tool_call
+data:{"type":"tool_call","name":"current_time","status":"executing"}
+
+event:tool_call
+data:{"type":"tool_call","name":"current_time","status":"done","result":"当前时间: 2026-05-01 21:11:11"}
+
+event:message
+data:现在是 **2026年5月1日 21:11（晚上9点11分）**。
+```
+
+**正常流程**：工具执行 → 显示 executing → 显示 done → 第 2 轮模型调用 → 输出纯文本回复。
+
+---
+
+## 边收边发架构升级（2026-05-01 22:04）
+
+**动机**：用户反馈流式输出"不够快"——虽然前端发送间隔已优化（buffer 策略），但根本瓶颈在 ModelCallState 同步收集整个 SSE 流后才重放。DeepSeek API 响应约 3 秒，加上同步收集时间，用户看到的延迟 = API 延迟 + 全部收集时间。
+
+**改进**：
+
+| 文件 | 改动 |
+|------|------|
+| `ModelCallState.java` | 从 CountDownLatch 同步等待 → 后台线程 + Sinks.Many 边收边发 |
+| `ToolDetectState.java` | 从等 collectorLatch → 三路径增量检测 + toolChoice 显式检测 |
+| `ToolExecuteState.java` | `setToolChoice("none")` + `__tool_choice_executed__` 标记 |
+| `ChatController.java` | buffer 策略（MAX_CHUNK_SIZE=5），关闭 Tomcat 8KB buffer |
+| `DeepSeekOpenAIAdapter.java` | `resolveToolChoice` 支持 "none"/"auto"/"required" 字符串透传 |
+
+**关键架构变化**：
+1. ModelCallState 不再阻塞状态机循环——后台线程独立消费 SSE 流
+2. Controller 收到 Flux 后立即 subscribe，边收边发到前端
+3. ToolDetectState 通过增量标志位（`__has_tool_call__`）实时检测工具调用，不等 collector 完整收完
+4. `__tool_choice_executed__` 标记 + `toolChoice="none"` 双层防护，彻底切断死循环
+5. `setBufferSize(0)` 防止 Tomcat 8KB 缓存导致所有 SSE 事件一次发出
+
+**验证结果**（curl 测试）：
+```
+event:tool_call
+data:{"type":"tool_call","name":"current_time","status":"executing"}
+
+event:tool_call
+data:{"type":"tool_call","name":"current_time","status":"done","result":"当前时间: 2026-05-01 22:25:06"}
+
+event:message
+data:现在是 **2026年5月1日（周五）22:25**，晚上 10 点 25 分 😊
+```
+
+**效果**：只调一次 current_time（无死循环），文本逐段输出，全程约 12 秒（首次启动+3 个工具调用轮次）。
+
+---
+
+## 第十部分 stream 包各文件目的说明
+
+> 以下描述 stream 包下每个文件的目的、被谁调用、解决什么问题。
+
+### 文件一览
+
+| 文件 | 包路径 | 分类 | 目的 |
+|------|--------|------|------|
+| `StreamToolCallState.java` | `pipeline/impl/stream` | 接口 | 状态接口，定义 handle(ChatContext) → StateResult |
+| `Signal.java` | `pipeline/impl/stream` | 枚举 | 状态处理完成后的信号，驱动状态机流转 |
+| `StateResult.java` | `pipeline/impl/stream` | 类 | 状态处理结果封装，包含 Signal + flux + toolCalls |
+| `StreamToolCallStateMachine.java` | `pipeline/impl/stream` | 引擎 | 持有 transitionTable，循环执行状态直到 NO_TOOL_CALLS |
+| `ModelCallState.java` | `pipeline/impl/stream` | 状态（流式） | 流式调用模型，启后台线程边收边发 |
+| `SyncModelCallState.java` | `pipeline/impl/stream` | 状态（同步） | 同步调用模型，返回完整结果 |
+| `ToolDetectState.java` | `pipeline/impl/stream` | 状态 | 检测工具调用（增量/同步/toolChoice/后备） |
+| `ToolExecuteState.java` | `pipeline/impl/stream` | 状态 | 执行工具，发事件，插 assistant/tool 消息 |
+| `ToolCallEventEmitter.java` | `pipeline/impl/stream` | 组件 | 构建 tool_call executing/done SSE 事件 Flux |
+| `SseToolCallParser.java` | `pipeline/impl/stream` | 接口 | SSE 解析接口（抽象不关心厂商格式） |
+| `DeepSeekSseToolCallParser.java` | `pipeline/impl/stream` | 实现 | DeepSeek SSE 格式的具体解析器 |
+
+### 各文件详解
+
+#### StreamToolCallState.java
+- **目的**：状态接口，定义 handle(ChatContext) → StateResult 契约
+- **被谁调用**：StreamToolCallStateMachine 在循环中反射实例化状态后调用 handle()
+- **谁实现它**：ModelCallState / SyncModelCallState / ToolDetectState / ToolExecuteState
+- **为什么需要接口**：状态机引擎不需要知道具体状态逻辑，只依赖接口多态
+
+#### Signal.java
+- **目的**：定义 6 个状态完成信号（STREAM_COMPLETED / SYNC_COMPLETED / TOOL_CALLS_FOUND / NO_TOOL_CALLS / TOOL_EXECUTED / ERROR）
+- **被谁调用**：StateResult.getSignal() → 状态机引擎根据 signal 查 transitionTable
+- **为什么需要**：状态不知道自己下一个是谁，状态机引擎通过 signal 决定流转
+
+#### StateResult.java
+- **目的**：封装状态处理结果，携带 signal、outputFlux、toolCalls
+- **被谁调用**：StreamToolCallStateMachine → 从 result 读 signal 查 transitionTable、读 outputFlux 合并到总 Flux
+- **为什么需要**：状态机引擎需要从状态返回值中提取三样东西
+
+#### StreamToolCallStateMachine.java
+- **目的**：状态机引擎，持有 transitionTable，执行循环直到 NO_TOOL_CALLS
+- **被谁调用**：ToolCallLoopStage 委托状态机运行
+- **核心逻辑**：
+  1. 查 transitionTable 实例化状态
+  2. 调用 state.handle(context) 获取 StateResult
+  3. 收集 outputFlux 到列表
+  4. 根据 signal 查下一状态，循环
+  5. MAX_ROUNDS=6 强制终止
+  6. Flux.concat 合并所有 flux 片段
+  7. 自动将 `__tool_event_flux__` 插入 Flux 链
+
+#### ModelCallState.java — 流式模型调用
+- **目的**：流式调用 adapter.chatStream()，边收边发，增量检测
+- **被谁调用**：状态机引擎
+- **内部逻辑**：
+  1. 创建 Sinks.Many 做实时数据源
+  2. 启后台线程消费 rawFlux
+  3. 后台线程每次收到 data：sink.tryEmitNext() + collector.append() + 增量检测
+  4. 在主线程中立即返回 StateResult.streamCompleted(sink.asFlux())
+  5. Controller 收到 Flux 后 subscribe，后台线程正在填充 Sinks，Controller 实时收到数据
+- **为什么是后台线程**：状态机是同步循环，不能阻塞等 API 响应。后台线程边收边发，Controller 直接消费
+
+#### SyncModelCallState.java — 同步模型调用
+- **目的**：同步模式调用 adapter.chatSync()
+- **被谁调用**：状态机引擎（当 __sync_response__ 存在时替代 ModelCallState）
+- **和 ModelCallState 的关系**：共用 ToolDetectState/ToolExecuteState，只替换模型调用这个变体
+
+#### ToolDetectState.java — 工具检测
+- **目的**：检测模型回复是否有工具调用
+- **被谁调用**：状态机引擎（ModelCallState 之后）
+- **检测顺序**：
+  1. 检查 __tool_choice_executed__ — 已执行过强制工具则跳过所有检测
+  2. 轮询等首包（5s 超时，每 50ms 检查 __has_tool_call__ / collector 长度 / latch 完成）
+  3. 增量检测标志：__has_tool_call__ → 直接取 __stream_tool_calls__ 返回
+  4. toolChoice 显式指定：解析 toolChoice 构造 fakeCall 返回
+  5. 后备：从完整 collector 字符串解析
+  6. 都没检测到 → NO_TOOL_CALLS
+
+#### ToolExecuteState.java — 工具执行
+- **目的**：逐一执行工具，发 SSE 事件，处理消息协议
+- **被谁调用**：状态机引擎（ToolDetectState 之后）
+- **关键操作**：
+  1. 遍历 toolCalls，调 toolRegistry.execute()
+  2. 通过 ToolCallEventEmitter 构建 executing → done 事件
+  3. 插入 role=assistant(含 tool_calls) + role=tool 消息到 messages
+  4. setToolChoice("none") + setAttribute("__tool_choice_executed__", true)
+
+#### ToolCallEventEmitter.java
+- **目的**：构建 `event:tool_call` SSE 事件的 Flux
+- **被谁调用**：ToolExecuteState
+- **输出格式**：`event:tool_call\ndata:{"type":"tool_call","name":"xxx","status":"executing"}` → `event:tool_call\ndata:{"type":"tool_call","name":"xxx","status":"done","result":"xxx"}`
+- **Flux 去向**：存到 __tool_event_flux__，最终被状态机引擎合并到总 Flux
+
+#### SseToolCallParser.java
+- **目的**：SSE 解析接口，抽象不关心厂商格式
+- **被谁调用**：ModelCallState（增量检测时）+ ToolDetectState（后备解析时）
+- **方法**：extractToolCalls() / extractPlainText() / extractTokenUsage()
+
+#### DeepSeekSseToolCallParser.java
+- **目的**：解析 DeepSeek（OpenAI 兼容）SSE 格式的工具调用
+- **复用性**：如果厂商换 MiniMax/Anthropic，新建对应的 SseToolCallParser 实现即可，ModelCallState/ToolDetectState 的代码零修改
+
+---
+
+### 一次完整流式对话（带工具调用）的过程
+
+假设用户发消息 "查看 lyjew 家目录的文件"，以下是完整的执行流程：
+
+#### 第 1 阶段：Pipeline 初始化
+
+```
+User Request → ChatController.streamChat() → DefaultEngine.process()
+  → ContextBuildStage：加载记忆 + 工具定义 + 会话，构建 ChatRequest.messages
+  → InterceptorStage：执行拦截器（0个）
+  → ToolCallLoopStage：委托 StreamToolCallStateMachine
+```
+
+#### 第 2 阶段：状态机第 1 轮 — ModelCallState
+
+```
+状态机引擎：transitionTable[STREAM_COMPLETED] = ModelCallState.class
+  → 反射实例化 ModelCallState
+  → 调用 handle(context)
+    1. 创建 Sinks.Many<String> sink （实时 Flux 数据源）
+    2. 创建 StringBuilder collector（数据收集器）
+    3. 创建 CountDownLatch collectorLatch
+    4. 启后台线程 "sse-collector-{sessionId}"
+       ├─ 后台线程：adapter.chatStream(req) → HTTP POST https://api.deepseek.com/chat/completions
+       ├─ 后台线程：subscribe rawFlux
+       │   data到达 → sink.tryEmitNext(data) → collector.append(data) → 增量检测
+       │   增量检测到 tool_call → setAttribute("__has_tool_call__", true) + "__stream_tool_calls__"
+       │   onComplete → 解析纯文本/token用量 → sink.tryEmitComplete() + collectorLatch.countDown()
+    5. 主线程：setAttribute("__stream_collector__", collector) + "__stream_collector_latch__", latch
+    6. 主线程：返回 StateResult.streamCompleted(sink.asFlux())
+    7. 状态机引擎：收集 outputFlux 到 fluxList，signal=STREAM_COMPLETED
+```
+
+#### 第 3 阶段：状态机第 2 轮 — ToolDetectState
+
+```
+状态机引擎：transitionTable[STREAM_COMPLETED] = ToolDetectState.class
+  → 反射实例化 ToolDetectState
+  → 调用 handle(context)
+    1. 检查 __tool_choice_executed__ → null（未执行过，继续）
+    2. 轮询等首包：
+       while (5000ms 内) {
+         检查 __has_tool_call__ → true? 是! → firstPacketArrived = true → break
+       }
+    3. 检查 __has_tool_call__ → true
+    4. 从 __stream_tool_calls__ 读取工具调用列表
+    5. 返回 StateResult.toolCallsFound(calls)
+    6. 状态机引擎：signal=TOOL_CALLS_FOUND
+```
+
+#### 第 4 阶段：状态机第 3 轮 — ToolExecuteState
+
+```
+状态机引擎：transitionTable[TOOL_CALLS_FOUND] = ToolExecuteState.class
+  → 反射实例化 ToolExecuteState
+  → 调用 handle(context)
+    1. 遍历 toolCalls（如 [{name="command", args="{}"} ...]）
+    2. 等 arguments 收集完成：检测 __stream_collector__ 中是否有完整 arguments
+    3. 调 toolRegistry.execute(toolName, args) → 执行 CommandTool
+       ├─ CommandTool：Runtime.exec("sh -c", "ls -la /home/lyjew")
+       ├─ 收集 stdout（30 秒超时，10000 字符截断）
+       └─ 返回 ToolResult(success=true, output="total 48\ndrwxr-xr-x...")
+    4. 通过 ToolCallEventEmitter 构建事件 Flux
+       └─ event:tool_call → {"type":"tool_call","name":"command","status":"executing"}
+       └─ event:tool_call → {"type":"tool_call","name":"command","status":"done","result":"total 48\n..."}
+    5. 检查 messages 最后一条是否含 tool_calls
+       └─ 没有 → 插入 role=assistant(content="", tool_calls=[{id, name, arguments}])
+    6. 追加 role=tool(content=工具输出, toolCallId=xxx)
+    7. setToolChoice("none") + setAttribute("__tool_choice_executed__", true)
+    8. 返回 StateResult(Signal.TOOL_EXECUTED, toolEventFlux, null)
+    9. 状态机引擎：合并 event Flux + signal=TOOL_EXECUTED
+```
+
+#### 第 5 阶段：状态机第 4 轮 — ModelCallState（第 2 次调用模型）
+
+```
+状态机引擎：transitionTable[TOOL_EXECUTED] = ModelCallState.class
+  → 再次调用 ModelCallState
+  → adapter.chatStream() 带上 messages（含 user + assistant/工具 + tool 消息）
+  → 后台线程再次启动，消费第二轮 SSE 流
+  → 返回实时 Flux
+  → 状态机引擎：收集 flux，signal=STREAM_COMPLETED
+```
+
+#### 第 6 阶段：状态机第 5 轮 — ToolDetectState（第 2 次检测）
+
+```
+状态机引擎：transitionTable[STREAM_COMPLETED] = ToolDetectState.class
+  → 调用 ToolDetectState.handle()
+    1. 检查 __tool_choice_executed__ → true!
+       → 已执行过强制工具，直接返回 NO_TOOL_CALLS
+       → 跳过所有工具检测（包括增量检测到的工具调用）
+    2. 状态机引擎：signal=NO_TOOL_CALLS, transitionTable 中无映射 → 终止循环
+```
+
+#### 第 7 阶段：状态机完成，合并 Flux
+
+```
+状态机引擎：Flux.concat(flux1, toolEventFlux, flux2)
+  → 总 Flux 内容：
+     [第1轮SSE行...] (如果模型第一阶段有文本回复)
+     event:tool_call\ndata:{"status":"executing",...}
+     event:tool_call\ndata:{"status":"done",...}
+     [第2轮SSE行...] (模型的文本回复) ← 不含工具调用
+  → 存到 context.setAttribute("__stream_flux__", mergedFlux)
+  → ToolCallLoopStage 完成
+```
+
+#### 第 8 阶段：MetricsStage + ResponseBuildStage
+
+```
+MetricsStage：
+  → 记录 token 用量、持续时间
+
+ResponseBuildStage：
+  → 注册 doOnComplete 回调到 mergedFlux
+  → 返回 mergedFlux 给 Controller
+```
+
+#### 第 9 阶段：Controller 消费 Flux（SSE 推送到前端）
+
+```
+ChatController.streamChat()：
+  → executor.submit {
+      flux.subscribe(
+        line → {
+          if (event:tool_call) → emitter.send(SseEmitter.event().name("tool_call").data(...))
+          else → emitter.send(SseEmitter.event().name("message").data(...))
+        },
+        error → emitter.completeWithError(error),
+        () → {
+          emitter.send(SseEmitter.event().name("message").data("[DONE]"))
+          emitter.complete()
+          // 后台线程 onComplete 时触发的 doOnComplete 回调
+          持久化记忆 + 保存会话
+        }
+      )
+    }
+  → 返回 SseEmitter 给前端
+```
+
+#### 第 10 阶段：前端渲染
+
+```
+ChatTest.vue：
+  → fetch(url, { method: 'POST', body: JSON.stringify({...}), headers:{...} })
+  → response.body.getReader() 读取 ReadableStream
+  → 逐行解析 SSE 行：
+     event:tool_call → JSON.parse(data) → 追加 tool_call 类型消息（executing旋转图标）
+     event:tool_call → 更新状态为 done（✅）
+     event:message → 追加到最后一条 assistant 消息的 content
+     event:message data:[DONE] → 关闭流，停止读取
+  → Vue 3 响应式驱动 DOM 更新：
+     v-for 遍历 messages → tool_call 行用黄色/绿色显示
+     assistant content 用 white-space: pre-wrap 显示完整文本
+```
+
+### 对比：无工具调用的情况
+
+```
+ModelCallState → ToolDetectState
+  → 首包到达，检查 __has_tool_call__ → false
+  → 后备解析 collector → 无工具调用
+  → NO_TOOL_CALLS → 状态机终止
+  → 只有 1 个 Flux 片段（模型文本回复）
+  → Controller 直接透传 SSE 行到前端
+  → 前端逐字显示模型回复
 ```
 

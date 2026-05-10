@@ -1,0 +1,125 @@
+package lyjew.com.lyclaw.orchestration.controller;
+
+import lyjew.com.lyclaw.context.ChatContext;
+import lyjew.com.lyclaw.dto.ChatResult;
+import lyjew.com.lyclaw.interceptor.InterceptorChain;
+import lyjew.com.lyclaw.memory.MemoryContent;
+import lyjew.com.lyclaw.model.Message;
+import lyjew.com.lyclaw.model.Session;
+import lyjew.com.lyclaw.orchestration.Orchestrator;
+import lyjew.com.lyclaw.orchestration.dto.ChatRequest;
+import lyjew.com.lyclaw.provider.ModelProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+@RestController
+@RequestMapping("/api")
+public class OrchestrationController {
+
+    @Autowired
+    private Orchestrator orchestrator;
+
+    @Autowired(required = false)
+    private InterceptorChain interceptorChain;
+
+    @Autowired(required = false)
+    private ModelProvider modelProvider;
+
+    private final Map<String, Session> sessionStore = new ConcurrentHashMap<>();
+
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> chatStream(@RequestBody ChatRequest request) {
+        Session session = resolveSession(request.getSessionId());
+        lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
+        ChatContext context = buildChatContext(modelRequest, session);
+        return orchestrator.execute(context);
+    }
+
+    @PostMapping("/chat")
+    public ChatResult chat(@RequestBody ChatRequest request) {
+        Session session = resolveSession(request.getSessionId());
+        lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
+        ChatContext context = buildChatContext(modelRequest, session);
+        Flux<String> flux = orchestrator.execute(context);
+        List<String> results = flux.collectList().block();
+        String content = results != null ? String.join("", results) : "";
+        return new ChatResult(content, "stop", null, null, 0L);
+    }
+
+    @PostMapping("/sessions")
+    public Session createSession(@RequestBody(required = false) ChatRequest request) {
+        String sessionId = UUID.randomUUID().toString();
+        Session session = Session.builder()
+                .sessionId(sessionId)
+                .name("New Session")
+                .build();
+        sessionStore.put(sessionId, session);
+        return session;
+    }
+
+    @GetMapping("/sessions/{sessionId}")
+    public Session getSession(@PathVariable String sessionId) {
+        Session session = sessionStore.get(sessionId);
+        if (session == null) {
+            throw new NoSuchElementException("Session not found: " + sessionId);
+        }
+        return session;
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    public Map<String, Object> deleteSession(@PathVariable String sessionId) {
+        Session removed = sessionStore.remove(sessionId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("deleted", removed != null);
+        result.put("sessionId", sessionId);
+        return result;
+    }
+
+    private Session resolveSession(String sessionId) {
+        if (sessionId != null && sessionStore.containsKey(sessionId)) {
+            return sessionStore.get(sessionId);
+        }
+        String newId = sessionId != null ? sessionId : UUID.randomUUID().toString();
+        Session session = Session.builder()
+                .sessionId(newId)
+                .name("Auto Session")
+                .build();
+        sessionStore.put(newId, session);
+        return session;
+    }
+
+    private lyjew.com.lyclaw.model.ChatRequest buildModelRequest(ChatRequest dto) {
+        List<Message> messages = new ArrayList<>();
+        if (dto.getMessages() != null) {
+            for (Map<String, String> entry : dto.getMessages()) {
+                Message msg = Message.builder()
+                        .role(entry.getOrDefault("role", "user"))
+                        .content(entry.getOrDefault("content", ""))
+                        .build();
+                messages.add(msg);
+            }
+        }
+        return lyjew.com.lyclaw.model.ChatRequest.builder()
+                .sessionId(dto.getSessionId() != null ? dto.getSessionId() : "")
+                .messages(messages)
+                .stream(dto.isStream())
+                .build();
+    }
+
+    private ChatContext buildChatContext(lyjew.com.lyclaw.model.ChatRequest modelRequest, Session session) {
+        MemoryContent memory = new MemoryContent("", "", true, Collections.emptyList(), 0.0);
+        return new ChatContext(
+                modelRequest,
+                session,
+                memory,
+                Collections.emptyList(),
+                interceptorChain,
+                modelProvider
+        );
+    }
+}

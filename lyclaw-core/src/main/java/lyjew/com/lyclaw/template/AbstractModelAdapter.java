@@ -100,7 +100,6 @@ public abstract class AbstractModelAdapter implements ModelAdapter {
             Object apiRequest = request.isStream()
                     ? buildStreamRequest(request)
                     : buildRequest(request);
-            logRequest(apiRequest);
 
             if (request.isStream()) {
                 // 流式路径：返回直接透传 SSE 流，不在 chat() 内拼装 ModelResponse
@@ -152,7 +151,6 @@ public abstract class AbstractModelAdapter implements ModelAdapter {
             beforeCall(request);
 
             Object apiRequest = buildStreamRequest(request);
-            logRequest(apiRequest);
 
             return sendStreamRequest(apiRequest)
                     .doOnError(error -> {
@@ -269,16 +267,6 @@ public abstract class AbstractModelAdapter implements ModelAdapter {
         if (!isConfigured()) {
             throw ErrorCode.ADAPTER_NOT_CONFIGURED.exception(
                     "适配器 [" + getProvider() + "] 尚未配置");
-        }
-    }
-
-    /** 记录请求信息（脱敏） */
-    private void logRequest(Object apiRequest) {
-        if (log.isDebugEnabled()) {
-            String requestBody = apiRequest != null ? apiRequest.toString() : "null";
-            // 脱敏：隐藏 API Key
-            requestBody = requestBody.replaceAll("Bearer [^\"]+", "Bearer ***");
-            log.debug("[{}] 请求体: {}", getProvider(), requestBody);
         }
     }
 }

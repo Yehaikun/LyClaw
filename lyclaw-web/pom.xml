@@ -19,12 +19,14 @@
     <description>Spring Boot 启动模块</description>
 
     <dependencies>
-        <!-- 依赖 adapter 模块（会传递依赖 storage 和 common） -->
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-adapter</artifactId>
+            <artifactId>lyclaw-common</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-core</artifactId>
+        </dependency>
         <dependency>
             <groupId>lyjew.com</groupId>
             <artifactId>lyclaw-engine</artifactId>

@@ -207,12 +207,27 @@ public class MinimaxAdapter extends AbstractModelAdapter {
     }
 
     private Object resolveToolChoice(ChatRequest request) {
-        if (request.getToolChoice() != null && !request.getToolChoice().isEmpty()) {
-            Map<String, Object> choice = new HashMap<>();
-            choice.put("type", "tool");
-            choice.put("name", request.getToolChoice());
-            return choice;
+        Object rawChoice = request.getToolChoice();
+
+        if (rawChoice instanceof String) {
+            String tc = (String) rawChoice;
+            // "auto"、"any"、"none" 是标准模式，直接返回 {type: "xxx"}
+            if ("auto".equals(tc) || "any".equals(tc) || "none".equals(tc)) {
+                return Map.of("type", tc);
+            }
+            // 其他字符串视为工具名，构造 {type:"tool", name:"xxx"}
+            if (!tc.isEmpty()) {
+                Map<String, Object> choice = new HashMap<>();
+                choice.put("type", "tool");
+                choice.put("name", tc);
+                return choice;
+            }
         }
+
+        if (rawChoice instanceof Map) {
+            return rawChoice;
+        }
+
         return Map.of("type", "auto");
     }
 
@@ -294,7 +309,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
 
         try {
             String body = objectMapper.writeValueAsString(apiRequest);
-            log.debug("[{}] 请求体: {}", getProvider(), body);
             return httpClient.post(url, headers, body);
         } catch (JsonProcessingException e) {
             throw ModelException.of(ErrorCode.MODEL_INVALID_REQUEST,
@@ -309,7 +323,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
 
         try {
             String body = objectMapper.writeValueAsString(apiRequest);
-            log.debug("[{}] 流式请求体: {}", getProvider(), body);
             return httpClient.postStream(url, headers, body);
         } catch (JsonProcessingException e) {
             return Flux.error(ModelException.of(ErrorCode.MODEL_INVALID_REQUEST,

@@ -18,7 +18,14 @@
     <description>AI 模型适配器</description>
 
     <dependencies>
-        <!-- 依赖 storage -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-common</artifactId>
+        </dependency>
         <dependency>
             <groupId>lyjew.com</groupId>
             <artifactId>lyclaw-storage</artifactId>

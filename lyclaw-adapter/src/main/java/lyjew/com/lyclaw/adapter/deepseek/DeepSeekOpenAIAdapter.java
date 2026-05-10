@@ -1,6 +1,7 @@
 package lyjew.com.lyclaw.adapter.deepseek;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.client.ModelApiClient;
@@ -199,7 +200,10 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
             oaiMsg.setContent(msg.getContent());
 
             // 工具返回消息——需要 tool_call_id 关联
-            if ("tool".equals(msg.getRole()) && msg.getToolCalls() != null
+            if ("tool".equals(msg.getRole()) && msg.getToolCallId() != null
+                    && !msg.getToolCallId().isEmpty()) {
+                oaiMsg.setToolCallId(msg.getToolCallId());
+            } else if ("tool".equals(msg.getRole()) && msg.getToolCalls() != null
                     && !msg.getToolCalls().isEmpty()) {
                 oaiMsg.setToolCallId(msg.getToolCalls().get(0).getToolCallId());
             }
@@ -255,15 +259,32 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
      * - 指定工具名: {"type": "function", "function": {"name": "xxx"}}
      */
     private Object resolveToolChoice(ChatRequest request) {
-        if (request.getToolChoice() != null && !request.getToolChoice().isEmpty()) {
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", request.getToolChoice());
+        Object rawChoice = request.getToolChoice();
 
-            Map<String, Object> choice = new HashMap<>();
-            choice.put("type", "function");
-            choice.put("function", function);
-            return choice;
+        // 处理字符串类型的 toolChoice
+        if (rawChoice instanceof String) {
+            String tc = (String) rawChoice;
+            // "auto"、"none"、"required" 直接透传给 API
+            if ("auto".equals(tc) || "none".equals(tc) || "required".equals(tc)) {
+                return tc;
+            }
+            // 其他字符串视为函数名，构造 {type:function, function:{name:xxx}}
+            if (!tc.isEmpty()) {
+                Map<String, Object> function = new HashMap<>();
+                function.put("name", tc);
+
+                Map<String, Object> choice = new HashMap<>();
+                choice.put("type", "function");
+                choice.put("function", function);
+                return choice;
+            }
         }
+
+        // 处理 Map 类型的 toolChoice（如 {type:function, function:{name:current_time}}）
+        if (rawChoice instanceof Map) {
+            return rawChoice;
+        }
+
         return "auto";
     }
 
@@ -327,7 +348,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
 
         try {
             String body = objectMapper.writeValueAsString(apiRequest);
-            log.debug("[{}] 请求体: {}", getProvider(), body);
             return httpClient.post(url, headers, body);
         } catch (JsonProcessingException e) {
             throw ModelException.of(ErrorCode.MODEL_INVALID_REQUEST,
@@ -342,7 +362,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
 
         try {
             String body = objectMapper.writeValueAsString(apiRequest);
-            log.debug("[{}] 流式请求体: {}", getProvider(), body);
             return httpClient.postStream(url, headers, body);
         } catch (JsonProcessingException e) {
             return Flux.error(ModelException.of(ErrorCode.MODEL_INVALID_REQUEST,
@@ -366,5 +385,115 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
 
     private double clampTemperature(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    // ========== SSE 数据解析 ==========
+
+    @Override
+    public List<ModelResponse.ToolCallRequest> extractSseToolCalls(String rawSSE) {
+        if (rawSSE == null || rawSSE.isEmpty()) return List.of();
+        List<ModelResponse.ToolCallRequest> result = new ArrayList<>();
+
+        for (String line : rawSSE.split("\n")) {
+            String json = stripSseDataPrefix(line);
+            if (json == null) continue;
+
+            try {
+                JsonNode root = objectMapper.readTree(json);
+                JsonNode delta = root.path("choices").get(0).path("delta");
+                JsonNode tcNode = delta.get("tool_calls");
+                if (tcNode == null || !tcNode.isArray()) continue;
+
+                for (JsonNode tc : tcNode) {
+                    int idx = tc.has("index") ? tc.get("index").asInt() : 0;
+                    String id = tc.has("id") ? tc.get("id").asText() : null;
+                    JsonNode func = tc.get("function");
+                    String name = (func != null && func.has("name")) ? func.get("name").asText() : null;
+                    String args = (func != null && func.has("arguments")) ? func.get("arguments").asText() : null;
+
+                    ModelResponse.ToolCallRequest existing = findOrCreate(result, idx, id, name);
+                    if (args != null && !args.isEmpty()) {
+                        existing.appendArguments(args);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public String extractSsePlainText(String rawSSE) {
+        if (rawSSE == null || rawSSE.isEmpty()) return "";
+        StringBuilder text = new StringBuilder();
+
+        for (String line : rawSSE.split("\n")) {
+            String json = stripSseDataPrefix(line);
+            if (json == null) continue;
+            try {
+                JsonNode delta = objectMapper.readTree(json)
+                        .path("choices").get(0).path("delta");
+                JsonNode content = delta.get("content");
+                if (content != null && !content.isNull()) {
+                    text.append(content.asText());
+                }
+            } catch (Exception ignored) {}
+        }
+        return text.toString();
+    }
+
+    @Override
+    public String extractSseTokenUsage(String rawSSE) {
+        String[] lines = rawSSE.split("\n");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String json = stripSseDataPrefix(lines[i]);
+            if (json == null) continue;
+            try {
+                JsonNode usage = objectMapper.readTree(json).get("usage");
+                if (usage != null) {
+                    long prompt = usage.has("prompt_tokens") ? usage.get("prompt_tokens").asLong() : 0;
+                    long completion = usage.has("completion_tokens") ? usage.get("completion_tokens").asLong() : 0;
+                    long total = usage.has("total_tokens") ? usage.get("total_tokens").asLong() : 0;
+                    return "prompt=" + prompt + " completion=" + completion + " total=" + total;
+                }
+            } catch (Exception ignored) {}
+        }
+        return "prompt=0 completion=0 total=0";
+    }
+
+    /**
+     * 从 SSE 行中提取 JSON 内容。去掉 "data:" 前缀和前后空白，跳过空行和 [DONE]。
+     * @return JSON 字符串，如果该行不是有效 data 行则返回 null
+     */
+    private String stripSseDataPrefix(String line) {
+        String trimmed = line.trim();
+        if (trimmed.isEmpty()) return null;
+        if (trimmed.startsWith("data:")) {
+            trimmed = trimmed.substring(5).trim(); // 去掉 "data:" 前缀
+        }
+        if (trimmed.isEmpty() || "[DONE]".equals(trimmed)) return null;
+        return trimmed;
+    }
+
+    /**
+     * 按 index 查找已有 ToolCallRequest，不存在则新建
+     */
+    private ModelResponse.ToolCallRequest findOrCreate(
+            List<ModelResponse.ToolCallRequest> list,
+            int index, String id, String name) {
+
+        for (ModelResponse.ToolCallRequest tcr : list) {
+            if (tcr.getIndex() == index) {
+                return tcr;
+            }
+        }
+        ModelResponse.ToolCallRequest tcr = ModelResponse.ToolCallRequest.builder()
+                .index(index)
+                .id(id != null ? id : "")
+                .name(name != null ? name : "")
+                .arguments("")
+                .build();
+        list.add(tcr);
+        return tcr;
     }
 }

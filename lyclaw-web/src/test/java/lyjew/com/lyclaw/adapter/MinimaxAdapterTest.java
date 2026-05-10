@@ -37,7 +37,7 @@ public class MinimaxAdapterTest {
     private ModelAdapter adapter;
 
     /** MiniMax API Key——测试用 */
-    private static final String API_KEY = "sk-cp-f77oYRQUTcc0axeEVGq2KymcFp6mHEHhJD_uO1yUWEotBGhI90-zDwnJBAQIvlaoRzhL_vcrlVS_D4VqX2yFBkMNrTOcamt5_YscyumkPxJckbw1erj9vyI";
+    private static final String API_KEY = System.getenv().getOrDefault("MINIMAX_API_KEY", "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
     /** MiniMax 模型 */
     private static final String MODEL = "MiniMax-M2.7";

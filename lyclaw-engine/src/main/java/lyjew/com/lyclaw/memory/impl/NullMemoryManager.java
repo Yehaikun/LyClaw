@@ -47,6 +47,9 @@ public class NullMemoryManager implements MemoryManager {
     }
 
     @Override
+    public void flush() { /* 空操作 */ }
+
+    @Override
     public MemoryStrategy getStrategy() {
         return null;
     }

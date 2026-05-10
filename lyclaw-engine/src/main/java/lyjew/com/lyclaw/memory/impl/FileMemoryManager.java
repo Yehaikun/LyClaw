@@ -10,6 +10,8 @@ import lyjew.com.lyclaw.model.Memory;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -30,6 +32,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@org.springframework.context.annotation.Primary
 public class FileMemoryManager implements MemoryManager {
 
     /** 全局记忆的固定 id */
@@ -71,9 +74,11 @@ public class FileMemoryManager implements MemoryManager {
     /**
      * 将内存中的 MemoryContent 写回文件存储。
      *
-     * <p>每次 append/rewrite 后调用，同步持久化。</p>
+     * <p>由持久化决策层通过 {@link PersistenceExecutor} 触发，
+     * 不再每次 append 后自动调用。</p>
      */
-    private void persist() {
+    @Override
+    public void flush() {
         Memory mem = Memory.builder()
                 .id(GLOBAL_MEMORY_ID)
                 .content(current.getContent())
@@ -81,6 +86,7 @@ public class FileMemoryManager implements MemoryManager {
                 .tags(current.getTags())
                 .build();
         storage.save(mem);
+        log.info("FileMemoryManager.flush: 已写盘 ({} 字节)", current.getContent().length());
     }
 
     @Override
@@ -89,21 +95,59 @@ public class FileMemoryManager implements MemoryManager {
         return current;
     }
 
+    /**
+     * 追加记忆内容。追加前自动提取纯文本（如果 content 包含 SSE JSON 格式则只取文本部分）。
+     *
+     * <p>不再自动调用 persist()，持久化时机由持久化决策层控制。
+     * 外部通过 {@link #flush()} 触发写盘。</p>
+     */
     @Override
     public void append(String content) {
-        String newContent = current.getContent() + "\n" + content;
+        String clean = extractPlainText(content);
+        log.info("FileMemoryManager.append: contentLen={} cleanLen={}", content.length(), clean.length());
+        String newContent = current.getContent() + "\n" + clean;
         current = new MemoryContent(
-                newContent, "file", false, current.getTags(), 0.0
+                newContent, "file", true, current.getTags(), 0.0
         );
-        persist();
+        // 不再自动 persist()，由持久化决策层控制刷盘时机
+    }
+
+    /**
+     * 从字符串中提取纯文本，过滤掉 SSE JSON 格式数据。
+     * 如果内容包含 "data:{" 格式（SSE JSON），提取所有 delta.content 的值。
+     * 否则原样返回。
+     */
+    private String extractPlainText(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        // 如果内容不含 SSE JSON 特征（"choices" 和 "delta" 同时出现），直接返回
+        if (!raw.contains("data:") && !raw.contains("choices")) {
+            return raw;
+        }
+        StringBuilder text = new StringBuilder();
+        // 提取 "content":"xxx" 中的 xxx，处理转义字符
+        Pattern p = Pattern.compile("\"content\":\"((?:[^\"\\\\]|\\\\.)*)\"");
+        Matcher m = p.matcher(raw);
+        boolean found = false;
+        while (m.find()) {
+            String val = m.group(1);
+            if (val != null && !val.isEmpty()) {
+                text.append(val);
+                found = true;
+            }
+        }
+        if (found) {
+            return text.toString();
+        }
+        // 没有找到 content 字段，返回原始内容（可能不是 SSE）
+        return raw;
     }
 
     @Override
     public void rewrite(String content) {
         current = new MemoryContent(
-                content, "file", false, Collections.emptyList(), 0.0
+                content, "file", true, Collections.emptyList(), 0.0
         );
-        persist();
+        flush();
     }
 
     @Override

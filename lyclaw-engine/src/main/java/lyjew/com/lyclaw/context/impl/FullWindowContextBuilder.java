@@ -105,11 +105,15 @@ public class FullWindowContextBuilder implements ContextBuilder {
      * 构建包含长期记忆的消息。
      * 使用 {@code <memory>} 标签包裹，让模型知道这是长期记忆而不是当前对话。
      *
+     * <p><b>角色选择说明</b>：记忆以 "user" 角色注入而非 "system"，因为
+     * DeepSeekOpenAIAdapter.buildMessages() 会过滤掉 role=system 的消息
+     * （用 ChatRequest.systemPrompt 替代），导致记忆无法传递给模型。</p>
+     *
      * @param memory 长期记忆内容
-     * @return System 类型的 Message（记忆以 system 角色注入）
+     * @return User 类型的 Message（记忆以 user 角色注入）
      */
     private Message buildMemoryMessage(MemoryContent memory) {
         String wrapped = "<memory>\n" + memory.getContent() + "\n</memory>";
-        return Message.builder().role("system").content(wrapped).build();
+        return Message.builder().role("user").content(wrapped).build();
     }
 }
