@@ -12,7 +12,14 @@ spring:
       client:
         config:
           default:
-            connectTimeout: 5000
-            readTimeout: 30000
+            connectTimeout: 10000
+            readTimeout: 300000
 server:
   port: 8081
+
+lyclaw:
+  llm:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      model: deepseek-v4-flash

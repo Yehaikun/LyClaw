@@ -1,152 +1,303 @@
+/* ===== LyClaw Design Tokens ===== */
+/* Claude warm-canvas editorial style */
+
 :root {
-  /* Primary palette */
-  --color-primary: #1677ff;
-  --color-primary-hover: #0958d9;
-  --color-primary-active: #d6e4ff;
-  --color-primary-bg: #e6f0ff;
-  --color-success: #52c41a;
-  --color-success-bg: #f6ffed;
-  --color-success-border: #b7eb8f;
-  --color-warning: #faad14;
-  --color-warning-bg: #fffbe6;
-  --color-warning-border: #ffe58f;
-  --color-error: #ff4d4f;
-  --color-error-bg: #fff1f0;
-  --color-error-border: #ffa39e;
+  /* ---- Colors ---- */
+  --color-canvas: #faf9f5;
+  --color-surface-soft: #f5f0e8;
+  --color-surface-card: #efe9de;
+  --color-surface-cream-strong: #e8e0d2;
+  --color-surface-dark: #181715;
+  --color-surface-dark-elevated: #252320;
+  --color-surface-dark-soft: #1f1e1b;
+  --color-primary: #cc785c;
+  --color-primary-active: #a9583e;
+  --color-primary-disabled: #e6dfd8;
+  --color-ink: #141413;
+  --color-body: #3d3d3a;
+  --color-body-strong: #252523;
+  --color-muted: #6c6a64;
+  --color-muted-soft: #8e8b82;
+  --color-hairline: #e6dfd8;
+  --color-hairline-soft: #ebe6df;
+  --color-on-primary: #ffffff;
+  --color-on-dark: #faf9f5;
+  --color-on-dark-soft: #a09d96;
+  --color-accent-teal: #5db8a6;
+  --color-accent-amber: #e8a55a;
+  --color-success: #5db872;
+  --color-warning: #d4a017;
+  --color-error: #c64545;
 
-  /* Background */
-  --color-bg: #f0f2f5;
-  --color-bg-card: #ffffff;
-  --color-bg-sidebar: #1a1a2e;
-  --color-bg-sidebar-hover: rgba(255, 255, 255, 0.08);
-  --color-bg-sidebar-active: rgba(255, 255, 255, 0.15);
-  --color-bg-input: #ffffff;
-  --color-bg-hover: #f5f5f5;
+  /* ---- Typography: Font Family ---- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
 
-  /* Text */
-  --color-text: #333333;
-  --color-text-primary: #1a1a1a;
-  --color-text-secondary: #999999;
-  --color-text-muted: #888888;
-  --color-text-inverse: #ffffff;
-  --color-text-sidebar: #c0c0d0;
-  --color-text-sidebar-active: #ffffff;
+  /* ---- Typography: Display XL ---- */
+  --display-xl-size: 3.5rem;
+  --display-xl-weight: 600;
+  --display-xl-line-height: 1.15;
+  --display-xl-letter-spacing: -0.02em;
 
-  /* Border */
-  --color-border: #e8e8e8;
-  --color-border-light: #f0f0f0;
-  --color-border-input: #d9d9d9;
+  /* ---- Typography: Display LG ---- */
+  --display-lg-size: 2.75rem;
+  --display-lg-weight: 600;
+  --display-lg-line-height: 1.2;
+  --display-lg-letter-spacing: -0.015em;
 
-  /* Code */
-  --color-code-bg: #1e1e1e;
-  --color-code-text: #d4d4d4;
+  /* ---- Typography: Display MD ---- */
+  --display-md-size: 2rem;
+  --display-md-weight: 600;
+  --display-md-line-height: 1.25;
+  --display-md-letter-spacing: -0.01em;
 
-  /* Scrollbar */
-  --color-scrollbar-thumb: #c0c0c0;
-  --color-scrollbar-track: transparent;
+  /* ---- Typography: Display SM ---- */
+  --display-sm-size: 1.5rem;
+  --display-sm-weight: 600;
+  --display-sm-line-height: 1.3;
+  --display-sm-letter-spacing: -0.005em;
 
-  /* Spacing */
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 12px;
-  --spacing-lg: 16px;
-  --spacing-xl: 20px;
-  --spacing-2xl: 24px;
-  --spacing-3xl: 32px;
+  /* ---- Typography: Title LG ---- */
+  --title-lg-size: 1.25rem;
+  --title-lg-weight: 600;
+  --title-lg-line-height: 1.35;
+  --title-lg-letter-spacing: -0.005em;
 
-  /* Typography */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
-  --font-family-mono: 'SF Mono', SFMono-Regular, ui-monospace, 'DejaVu Sans Mono', Menlo, Consolas, monospace;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-base: 14px;
-  --font-size-lg: 16px;
-  --font-size-xl: 18px;
-  --font-size-2xl: 24px;
-  --font-size-3xl: 32px;
-  --line-height-base: 1.6;
-  --line-height-heading: 1.3;
+  /* ---- Typography: Title MD ---- */
+  --title-md-size: 1.0625rem;
+  --title-md-weight: 600;
+  --title-md-line-height: 1.4;
+  --title-md-letter-spacing: 0;
 
-  /* Radii */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-full: 50%;
-  --radius-round: 9999px;
+  /* ---- Typography: Title SM ---- */
+  --title-sm-size: 0.9375rem;
+  --title-sm-weight: 550;
+  --title-sm-line-height: 1.4;
+  --title-sm-letter-spacing: 0;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-dropdown: 0 6px 16px rgba(0, 0, 0, 0.08);
+  /* ---- Typography: Body MD ---- */
+  --body-md-size: 0.9375rem;
+  --body-md-weight: 400;
+  --body-md-line-height: 1.6;
+  --body-md-letter-spacing: 0;
 
-  /* Layout */
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 64px;
+  /* ---- Typography: Body SM ---- */
+  --body-sm-size: 0.8125rem;
+  --body-sm-weight: 400;
+  --body-sm-line-height: 1.55;
+  --body-sm-letter-spacing: 0.005em;
+
+  /* ---- Typography: Caption ---- */
+  --caption-size: 0.75rem;
+  --caption-weight: 400;
+  --caption-line-height: 1.4;
+  --caption-letter-spacing: 0.01em;
+
+  /* ---- Typography: Code ---- */
+  --code-size: 0.8125rem;
+  --code-weight: 400;
+  --code-line-height: 1.55;
+  --code-letter-spacing: 0;
+
+  /* ---- Typography: Button ---- */
+  --button-size: 0.875rem;
+  --button-weight: 550;
+  --button-line-height: 1.2;
+  --button-letter-spacing: 0.005em;
+
+  /* ---- Typography: Nav Link ---- */
+  --nav-link-size: 0.875rem;
+  --nav-link-weight: 500;
+  --nav-link-line-height: 1.3;
+  --nav-link-letter-spacing: 0.005em;
+
+  /* ---- Spacing ---- */
+  --spacing-xxs: 0.25rem;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-xxl: 3rem;
+  --spacing-section: 4rem;
+
+  /* ---- Rounded ---- */
+  --rounded-xs: 0.25rem;
+  --rounded-sm: 0.375rem;
+  --rounded-md: 0.5rem;
+  --rounded-lg: 0.75rem;
+  --rounded-xl: 1rem;
+  --rounded-pill: 9999px;
+
+  /* ---- Shadows ---- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.06), 0 4px 6px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.08), 0 8px 10px rgba(0, 0, 0, 0.04);
+  --shadow-dark-lg: 0 10px 25px rgba(0, 0, 0, 0.25);
+
+  /* ---- Transitions ---- */
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 350ms ease;
+  --transition-ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+
+  /* ---- Component Tokens: Button Primary ---- */
+  --btn-primary-bg: var(--color-primary);
+  --btn-primary-bg-hover: var(--color-primary-active);
+  --btn-primary-bg-disabled: var(--color-primary-disabled);
+  --btn-primary-fg: var(--color-on-primary);
+  --btn-primary-radius: var(--rounded-md);
+  --btn-primary-padding-x: var(--spacing-lg);
+  --btn-primary-padding-y: var(--spacing-sm);
+  --btn-primary-font-size: var(--button-size);
+  --btn-primary-font-weight: var(--button-weight);
+  --btn-primary-line-height: var(--button-line-height);
+  --btn-primary-shadow: var(--shadow-sm);
+  --btn-primary-shadow-hover: var(--shadow-md);
+  --btn-primary-transition: var(--transition-base);
+
+  /* ---- Component Tokens: Button Secondary ---- */
+  --btn-secondary-bg: transparent;
+  --btn-secondary-bg-hover: var(--color-surface-card);
+  --btn-secondary-fg: var(--color-body-strong);
+  --btn-secondary-border: var(--color-hairline);
+  --btn-secondary-radius: var(--rounded-md);
+  --btn-secondary-padding-x: var(--spacing-lg);
+  --btn-secondary-padding-y: var(--spacing-sm);
+  --btn-secondary-font-size: var(--button-size);
+  --btn-secondary-font-weight: var(--button-weight);
+  --btn-secondary-transition: var(--transition-base);
+
+  /* ---- Component Tokens: Button Ghost ---- */
+  --btn-ghost-bg: transparent;
+  --btn-ghost-bg-hover: var(--color-surface-soft);
+  --btn-ghost-fg: var(--color-body);
+  --btn-ghost-radius: var(--rounded-sm);
+  --btn-ghost-padding-x: var(--spacing-sm);
+  --btn-ghost-padding-y: var(--spacing-xs);
+  --btn-ghost-font-size: var(--button-size);
+  --btn-ghost-font-weight: var(--button-weight);
+  --btn-ghost-transition: var(--transition-fast);
+
+  /* ---- Component Tokens: Text Input ---- */
+  --input-bg: var(--color-canvas);
+  --input-bg-focus: var(--color-canvas);
+  --input-bg-disabled: var(--color-surface-soft);
+  --input-fg: var(--color-ink);
+  --input-fg-placeholder: var(--color-muted-soft);
+  --input-border: var(--color-hairline);
+  --input-border-focus: var(--color-primary);
+  --input-border-error: var(--color-error);
+  --input-radius: var(--rounded-md);
+  --input-padding-x: var(--spacing-md);
+  --input-padding-y: var(--spacing-sm);
+  --input-font-size: var(--body-md-size);
+  --input-font-weight: var(--body-md-weight);
+  --input-line-height: var(--body-md-line-height);
+  --input-shadow-focus: 0 0 0 3px rgba(204, 120, 92, 0.15);
+  --input-transition: var(--transition-base);
+
+  /* ---- Component Tokens: Feature Card ---- */
+  --card-bg: var(--color-surface-card);
+  --card-bg-hover: var(--color-surface-cream-strong);
+  --card-border: var(--color-hairline-soft);
+  --card-radius: var(--rounded-lg);
+  --card-padding: var(--spacing-lg);
+  --card-shadow: var(--shadow-sm);
+  --card-shadow-hover: var(--shadow-md);
+  --card-transition: var(--transition-base);
+
+  /* ---- Component Tokens: Surface Card (elevated) ---- */
+  --surface-card-bg: var(--color-canvas);
+  --surface-card-border: var(--color-hairline);
+  --surface-card-radius: var(--rounded-lg);
+  --surface-card-padding: var(--spacing-lg);
+  --surface-card-shadow: var(--shadow-xs);
+
+  /* ---- Component Tokens: Chat Bubble (assistant) ---- */
+  --chat-bubble-assistant-bg: var(--color-surface-soft);
+  --chat-bubble-assistant-fg: var(--color-body);
+  --chat-bubble-assistant-radius: var(--rounded-lg);
+
+  /* ---- Component Tokens: Chat Bubble (user) ---- */
+  --chat-bubble-user-bg: var(--color-primary);
+  --chat-bubble-user-fg: var(--color-on-primary);
+  --chat-bubble-user-radius: var(--rounded-lg);
+
+  /* ---- Component Tokens: Sidebar ---- */
+  --sidebar-bg: var(--color-surface-soft);
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 0px;
+
+  /* ---- Component Tokens: Header ---- */
   --header-height: 56px;
-  --input-area-height: 72px;
+  --header-bg: var(--color-canvas);
+  --header-border: var(--color-hairline-soft);
 
-  /* Transitions */
-  --transition-fast: 0.15s ease;
-  --transition-normal: 0.25s ease;
-  --transition-slow: 0.35s ease;
+  /* ---- Component Tokens: Divider/Hairline ---- */
+  --divider-color: var(--color-hairline);
+  --divider-color-soft: var(--color-hairline-soft);
 
-  /* Z-index */
+  /* ---- Component Tokens: Code Block ---- */
+  --code-block-bg: var(--color-surface-dark);
+  --code-block-fg: var(--color-on-dark);
+  --code-block-radius: var(--rounded-md);
+  --code-block-padding-x: var(--spacing-md);
+  --code-block-padding-y: var(--spacing-md);
+
+  /* ---- Component Tokens: Inline Code ---- */
+  --inline-code-bg: var(--color-surface-soft);
+  --inline-code-fg: var(--color-primary-active);
+  --inline-code-radius: var(--rounded-xs);
+  --inline-code-padding-x: 0.3em;
+  --inline-code-padding-y: 0.1em;
+
+  /* ---- Component Tokens: Status Badge ---- */
+  --badge-success-bg: rgba(93, 184, 114, 0.12);
+  --badge-success-fg: #3a8b4f;
+  --badge-warning-bg: rgba(212, 160, 23, 0.12);
+  --badge-warning-fg: #a07d12;
+  --badge-error-bg: rgba(198, 69, 69, 0.12);
+  --badge-error-fg: #a83838;
+  --badge-info-bg: rgba(93, 184, 166, 0.12);
+  --badge-info-fg: #3d8a7a;
+
+  /* ---- Component Tokens: Tooltip ---- */
+  --tooltip-bg: var(--color-surface-dark);
+  --tooltip-fg: var(--color-on-dark);
+  --tooltip-radius: var(--rounded-sm);
+  --tooltip-padding-x: var(--spacing-sm);
+  --tooltip-padding-y: var(--spacing-xs);
+  --tooltip-font-size: var(--body-sm-size);
+
+  /* ---- Component Tokens: Toast/Notification ---- */
+  --toast-bg: var(--color-canvas);
+  --toast-border: var(--color-hairline);
+  --toast-radius: var(--rounded-md);
+  --toast-shadow: var(--shadow-lg);
+  --toast-padding: var(--spacing-md);
+
+  /* ---- Component Tokens: Empty State ---- */
+  --empty-state-fg: var(--color-muted-soft);
+  --empty-state-icon-size: 3rem;
+
+  /* ---- Component Tokens: Scrollbar ---- */
+  --scrollbar-width: 6px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: var(--color-hairline);
+  --scrollbar-thumb-hover: var(--color-muted-soft);
+
+  /* ---- Component Tokens: Selection ---- */
+  --selection-bg: rgba(204, 120, 92, 0.18);
+  --selection-fg: var(--color-ink);
+
+  /* ---- Z-index Layers ---- */
   --z-sidebar: 100;
   --z-header: 200;
   --z-overlay: 300;
   --z-modal: 400;
   --z-toast: 500;
+  --z-tooltip: 600;
 }
-
-[data-theme='dark'] {
-  --color-primary: #1677ff;
-  --color-primary-hover: #4096ff;
-  --color-primary-active: #111d2c;
-  --color-primary-bg: #111d2c;
-  --color-success: #49aa19;
-  --color-success-bg: #162312;
-  --color-success-border: #274916;
-  --color-warning: #d89614;
-  --color-warning-bg: #2b2111;
-  --color-warning-border: #594214;
-  --color-error: #dc4446;
-  --color-error-bg: #2c1618;
-  --color-error-border: #58181c;
-
-  --color-bg: #141414;
-  --color-bg-card: #1f1f1f;
-  --color-bg-sidebar: #0d0d12;
-  --color-bg-sidebar-hover: rgba(255, 255, 255, 0.06);
-  --color-bg-sidebar-active: rgba(255, 255, 255, 0.1);
-  --color-bg-input: #2a2a2a;
-  --color-bg-hover: #2a2a2a;
-
-  --color-text: #e0e0e0;
-  --color-text-primary: #f0f0f0;
-  --color-text-secondary: #888888;
-  --color-text-muted: #666666;
-  --color-text-inverse: #000000;
-  --color-text-sidebar: #8888a0;
-  --color-text-sidebar-active: #ffffff;
-
-  --color-border: #333333;
-  --color-border-light: #2a2a2a;
-  --color-border-input: #444444;
-
-  --color-code-bg: #0d0d0d;
-  --color-code-text: #c0c0c0;
-
-  --color-scrollbar-thumb: #444444;
-  --color-scrollbar-track: transparent;
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
-  --shadow-dropdown: 0 6px 16px rgba(0, 0, 0, 0.3);
-}
-
-/* Responsive breakpoints are handled in media queries in components */

@@ -56,7 +56,8 @@ public class ToolSandboxImpl implements ToolSandbox {
         long startTime = System.currentTimeMillis();
         try {
             ToolCall toolCall = buildToolCall(tool.getName(), args);
-            return switch (level) {
+            SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.NONE;
+            return switch (effectiveLevel) {
                 case NONE -> executeNone(tool, toolCall, startTime);
                 case READ_ONLY -> executeReadOnly(tool, toolCall, startTime);
                 case RESTRICTED -> executeRestricted(tool, toolCall, startTime);

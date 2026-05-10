@@ -1,385 +1,374 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import type { ProviderInfo, ModelOption } from '@/types'
+import { ref, computed } from 'vue'
+import { Plus, Settings, Check } from 'lucide-vue-next'
+import { useChatStore } from '@/stores/chat'
 
-const providers = ref<ProviderInfo[]>([])
-const isLoading = ref(false)
-const error = ref<string | null>(null)
-const expandedProvider = ref<string | null>(null)
-
-const mockModels: Record<string, ModelOption[]> = {
-  openai: [
-    { label: 'GPT-4o', value: 'gpt-4o', provider: 'openai' },
-    { label: 'GPT-4 Turbo', value: 'gpt-4-turbo', provider: 'openai' },
-    { label: 'GPT-3.5 Turbo', value: 'gpt-3.5-turbo', provider: 'openai' },
-  ],
-  anthropic: [
-    { label: 'Claude 3 Opus', value: 'claude-3-opus', provider: 'anthropic' },
-    { label: 'Claude 3 Sonnet', value: 'claude-3-sonnet', provider: 'anthropic' },
-    { label: 'Claude 3 Haiku', value: 'claude-3-haiku', provider: 'anthropic' },
-  ],
-  local: [
-    { label: 'DeepSeek V3', value: 'deepseek-v3', provider: 'local' },
-    { label: 'Qwen 2.5', value: 'qwen-2.5', provider: 'local' },
-  ],
+interface ProviderModel {
+  name: string
+  models: string[]
+  enabled: boolean
+  isDefault: boolean
+  baseUrl?: string
 }
 
-async function fetchProviders(): Promise<void> {
-  isLoading.value = true
-  error.value = null
+const chatStore = useChatStore()
 
-  try {
-    const response = await fetch('/api/providers')
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    providers.value = await response.json()
-  } catch {
-    // If API unavailable, use mock data
-    error.value = null // Don't show error, use fallback
-    providers.value = [
-      { name: 'OpenAI', type: 'remote', enabled: true },
-      { name: 'Anthropic', type: 'remote', enabled: true },
-      { name: 'Local LLM', type: 'local', enabled: false },
-    ]
-  } finally {
-    isLoading.value = false
-  }
+const providers = ref<ProviderModel[]>([
+  {
+    name: 'DeepSeek',
+    models: ['deepseek-4-pro', 'deepseek-v3'],
+    enabled: true,
+    isDefault: true,
+  },
+  {
+    name: 'Anthropic',
+    models: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
+    enabled: false,
+    isDefault: false,
+  },
+  {
+    name: 'OpenAI',
+    models: ['gpt-4o', 'gpt-4o-mini'],
+    enabled: false,
+    isDefault: false,
+  },
+  {
+    name: 'Local',
+    models: ['llama3', 'qwen2.5'],
+    enabled: false,
+    isDefault: false,
+  },
+])
+
+const selectedModel = ref('deepseek-4-pro')
+
+function maskApiKey(key: string): string {
+  if (!key) return ''
+  const prefix = key.slice(0, 3)
+  const suffix = key.slice(-4)
+  return `${prefix}-****${suffix}`
 }
 
-function toggleProvider(name: string): void {
-  expandedProvider.value = expandedProvider.value === name ? null : name
+function selectModel(modelId: string) {
+  selectedModel.value = modelId
+  chatStore.setModel(modelId)
 }
 
-function getProviderModels(providerName: string): ModelOption[] {
-  const key = providerName.toLowerCase().replace(/\s+/g, '')
-  return mockModels[key] ?? []
-}
-
-onMounted(() => {
-  fetchProviders()
-})
+const defaultProvider = computed(() => providers.value.find((p) => p.isDefault))
 </script>
 
 <template>
-  <div class="models-view">
-    <div class="models-header">
-      <h2 class="models-title">模型管理</h2>
-      <span class="models-count">{{ providers.length }} 个提供商</span>
-    </div>
+  <div class="models-page">
+    <header class="page-header">
+      <h1 class="page-title">模型管理</h1>
+      <button class="add-provider-btn">
+        <Plus :size="18" />
+        <span>添加提供商</span>
+      </button>
+    </header>
 
-    <!-- Loading state -->
-    <div v-if="isLoading" class="models-loading">
-      <div class="loading-spinner" />
-      <p>加载模型列表...</p>
-    </div>
-
-    <!-- Error state -->
-    <div v-else-if="error" class="models-error">
-      <p class="error-message">{{ error }}</p>
-      <button class="retry-btn" @click="fetchProviders">重试</button>
-    </div>
-
-    <!-- Empty state -->
-    <div v-else-if="providers.length === 0" class="models-empty">
-      <div class="empty-icon">🧩</div>
-      <h3 class="empty-title">没有配置模型提供商</h3>
-      <p class="empty-desc">请先在设置中配置至少一个模型提供商</p>
-    </div>
-
-    <!-- Provider list -->
-    <div v-else class="models-list">
-      <div
+    <div class="providers-grid">
+      <article
         v-for="provider in providers"
         :key="provider.name"
-        class="provider-card"
+        :class="['provider-card', { disabled: !provider.enabled }]"
       >
-        <div
-          class="provider-header"
-          :class="{ expanded: expandedProvider === provider.name }"
-          @click="toggleProvider(provider.name)"
-        >
-          <div class="provider-info">
-            <div class="provider-name-row">
-              <h3 class="provider-name">{{ provider.name }}</h3>
-              <span
-                class="provider-badge"
-                :class="provider.enabled ? 'badge-on' : 'badge-off'"
-              >
-                {{ provider.enabled ? '启用' : '禁用' }}
-              </span>
-            </div>
-            <span class="provider-type">{{ provider.type }}</span>
+        <div class="card-header">
+          <div class="provider-name-row">
+            <h3 class="provider-name">{{ provider.name }}</h3>
+            <span v-if="provider.isDefault" class="default-badge">默认</span>
           </div>
-          <svg
-            class="expand-icon"
-            :class="{ rotated: expandedProvider === provider.name }"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <div class="header-right">
+            <span :class="['status-toggle', provider.enabled ? 'enabled' : 'disabled']">
+              {{ provider.enabled ? '已启用' : '已禁用' }}
+            </span>
+            <button class="edit-btn">
+              <Settings :size="16" />
+            </button>
+          </div>
         </div>
 
-        <transition name="slide-up">
-          <div v-if="expandedProvider === provider.name" class="provider-models">
-            <div
-              v-for="model in getProviderModels(provider.name)"
-              :key="model.value"
-              class="model-item"
+        <div class="status-indicator">
+          <span :class="['dot', provider.enabled ? 'dot-on' : 'dot-off']" />
+        </div>
+
+        <div class="model-list">
+          <span class="model-label">模型</span>
+          <div class="model-badges">
+            <button
+              v-for="model in provider.models"
+              :key="model"
+              :class="[
+                'model-badge',
+                { active: selectedModel === model },
+              ]"
+              :disabled="!provider.enabled"
+              @click="selectModel(model)"
             >
-              <span class="model-name">{{ model.label }}</span>
-              <code class="model-id">{{ model.value }}</code>
-            </div>
-            <div
-              v-if="getProviderModels(provider.name).length === 0"
-              class="no-models"
-            >
-              暂无可用模型
-            </div>
+              <Check v-if="selectedModel === model" :size="12" class="check-icon" />
+              {{ model }}
+            </button>
           </div>
-        </transition>
-      </div>
+        </div>
+
+        <!-- Masked API key -->
+        <div class="api-key-row" v-if="provider.enabled">
+          <span class="key-label">API Key</span>
+          <code class="key-value">
+            {{ provider.name === 'DeepSeek' ? 'sk-****xyz1' : '--' }}
+          </code>
+        </div>
+
+        <!-- Base URL -->
+        <div class="api-key-row" v-if="provider.baseUrl">
+          <span class="key-label">Base URL</span>
+          <code class="key-value">{{ provider.baseUrl }}</code>
+        </div>
+      </article>
     </div>
   </div>
 </template>
 
 <style scoped>
-.models-view {
-  max-width: 860px;
+.models-page {
+  max-width: 1200px;
   margin: 0 auto;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.models-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
   padding: var(--spacing-xl);
-  border-bottom: 1px solid var(--color-border-light);
-  flex-shrink: 0;
 }
 
-.models-title {
-  font-size: var(--font-size-xl);
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.models-count {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-
-.models-loading,
-.models-error,
-.models-empty {
-  flex: 1;
+.page-header {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-3xl);
-}
-
-.loading-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-primary);
-  border-radius: var(--radius-full);
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.models-loading p {
-  color: var(--color-text-secondary);
-}
-
-.error-message {
-  color: var(--color-error);
-  font-size: var(--font-size-base);
-}
-
-.retry-btn {
-  padding: var(--spacing-sm) var(--spacing-xl);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-base);
-  cursor: pointer;
-}
-
-.retry-btn:hover {
-  background: var(--color-primary-hover);
-}
-
-.empty-icon {
-  font-size: 48px;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
-}
-
-.empty-desc {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-
-.models-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing-md) var(--spacing-xl);
-}
-
-.provider-card {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--spacing-md);
-  overflow: hidden;
-  transition: box-shadow var(--transition-fast);
-}
-
-.provider-card:hover {
-  box-shadow: var(--shadow-sm);
-}
-
-.provider-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-lg);
+  align-items: center;
+  margin-bottom: var(--spacing-xl);
+}
+
+.page-title {
+  font-family: var(--font-sans);
+  font-size: var(--display-md-size);
+  font-weight: var(--display-md-weight);
+  line-height: var(--display-md-line-height);
+  letter-spacing: var(--display-md-letter-spacing);
+  color: var(--color-ink);
+  margin: 0;
+}
+
+.add-provider-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--btn-primary-padding-y) var(--btn-primary-padding-x);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border: none;
+  border-radius: var(--btn-primary-radius);
+  font-family: var(--font-sans);
+  font-size: var(--btn-primary-font-size);
+  font-weight: var(--btn-primary-font-weight);
+  line-height: var(--btn-primary-line-height);
+  box-shadow: var(--btn-primary-shadow);
   cursor: pointer;
-  transition: background-color var(--transition-fast);
+  transition: background var(--btn-primary-transition), box-shadow var(--btn-primary-transition);
 }
 
-.provider-header:hover {
-  background-color: var(--color-bg-hover);
+.add-provider-btn:hover {
+  background: var(--btn-primary-bg-hover);
+  box-shadow: var(--btn-primary-shadow-hover);
 }
 
-.provider-header.expanded {
-  background-color: var(--color-bg-hover);
+/* ---- Providers Grid ---- */
+.providers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-lg);
 }
 
-.provider-info {
+/* ---- Provider Card (Dark) ---- */
+.provider-card {
+  background: var(--color-surface-dark);
+  border-radius: var(--card-radius);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow-dark-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-md);
+  position: relative;
+  transition: box-shadow var(--transition-base), opacity var(--transition-base);
+}
+
+.provider-card.disabled {
+  opacity: 0.55;
+}
+
+.provider-card:hover:not(.disabled) {
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
 }
 
 .provider-name-row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
 }
 
 .provider-name {
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--title-md-size);
+  font-weight: var(--title-md-weight);
+  line-height: var(--title-md-line-height);
+  color: var(--color-on-dark);
+  margin: 0;
 }
 
-.provider-badge {
-  font-size: 10px;
-  padding: 1px 8px;
-  border-radius: var(--radius-round);
+.default-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-radius: var(--rounded-pill);
+  font-family: var(--font-sans);
+  font-size: 12px;
   font-weight: 500;
 }
 
-.badge-on {
-  background: var(--color-success-bg);
-  color: var(--color-success);
-  border: 1px solid var(--color-success-border);
-}
-
-.badge-off {
-  background: var(--color-bg-hover);
-  color: var(--color-text-muted);
-  border: 1px solid var(--color-border);
-}
-
-.provider-type {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-}
-
-.expand-icon {
-  flex-shrink: 0;
-  color: var(--color-text-muted);
-  transition: transform var(--transition-normal);
-}
-
-.expand-icon.rotated {
-  transform: rotate(180deg);
-}
-
-.provider-models {
-  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
-  border-top: 1px solid var(--color-border-light);
-}
-
-.model-item {
+.header-right {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  transition: background-color var(--transition-fast);
+  gap: var(--spacing-xs);
 }
 
-.model-item:hover {
-  background-color: var(--color-bg-hover);
-}
-
-.model-name {
-  font-size: var(--font-size-sm);
-  color: var(--color-text);
+.status-toggle {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--rounded-pill);
+  font-family: var(--font-sans);
+  font-size: 12px;
   font-weight: 500;
 }
 
-.model-id {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-  font-family: var(--font-family-mono);
-  background: var(--color-bg);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
+.status-toggle.enabled {
+  background: rgba(93, 184, 114, 0.15);
+  color: var(--color-success);
 }
 
-.no-models {
-  text-align: center;
-  padding: var(--spacing-md);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+.status-toggle.disabled {
+  background: rgba(108, 106, 100, 0.15);
+  color: var(--color-muted-soft);
 }
 
-@media (max-width: 767px) {
-  .models-header {
-    padding: var(--spacing-md) var(--spacing-lg);
-  }
+.edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--rounded-pill);
+  border: none;
+  background: transparent;
+  color: var(--color-on-dark-soft);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
 
-  .models-list {
-    padding: var(--spacing-sm) var(--spacing-md);
-  }
+.edit-btn:hover {
+  background: rgba(250, 249, 245, 0.08);
+  color: var(--color-on-dark);
+}
 
-  .provider-header {
-    padding: var(--spacing-md);
-  }
+.status-indicator {
+  position: absolute;
+  top: var(--spacing-xl);
+  right: var(--spacing-xl);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--rounded-pill);
+  display: none; /* Hidden — status shown via toggle badge instead */
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.model-label {
+  font-family: var(--font-sans);
+  font-size: var(--caption-size);
+  color: var(--color-on-dark-soft);
+}
+
+.model-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: rgba(250, 249, 245, 0.06);
+  color: var(--color-on-dark-soft);
+  border: 1px solid rgba(250, 249, 245, 0.08);
+  border-radius: var(--rounded-pill);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.model-badge:hover:not(:disabled) {
+  background: rgba(250, 249, 245, 0.12);
+  border-color: rgba(250, 249, 245, 0.16);
+  color: var(--color-on-dark);
+}
+
+.model-badge:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.model-badge.active {
+  background: rgba(204, 120, 92, 0.2);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.check-icon {
+  flex-shrink: 0;
+}
+
+.api-key-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.key-label {
+  font-family: var(--font-sans);
+  font-size: var(--caption-size);
+  color: var(--color-on-dark-soft);
+}
+
+.key-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-on-dark-soft);
+  background: rgba(250, 249, 245, 0.06);
+  padding: 4px 8px;
+  border-radius: var(--rounded-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

@@ -1,0 +1,91 @@
+graph TD
+    subgraph Frontend["前端层 (L8)"]
+        UI[lyclaw-ui<br/>Vue 3 + Vite<br/>TypeScript + Pinia]
+    end
+
+    subgraph Gateway["网关层 (L7)"]
+        GW[lyclaw-gateway :8080<br/>Spring Cloud Gateway<br/>WebFlux + CORS]
+    end
+
+    subgraph FacadeLayer["门面层 (L6)"]
+        FC[lyclaw-facade<br/>LyClawFacade<br/>统一聚合入口]
+    end
+
+    subgraph Orchestration["编排层 (L5)"]
+        ORCH[lyclaw-orchestration :8081<br/>Orchestrator<br/>InterceptorChain<br/>全部 5 个 FeignClient 集成]
+    end
+
+    subgraph Quaternion["四元核心层 (L4)"]
+        PLAN[lyclaw-plan :8083<br/>TaskPlanner<br/>DAG/CoT/ReAct/Hierarchical]
+        ACTION[lyclaw-action :8084<br/>ActionExecutor<br/>ToolRegistry + SkillRegistry]
+        REFLECT[lyclaw-reflect :8085<br/>ReflectionEngine<br/>QualityEvaluator + ErrorDetector]
+        MEMORY[lyclaw-memory :8082<br/>TieredMemorySystem<br/>HybridMemoryRetriever]
+    end
+
+    subgraph ProtocolLayer["协议层 (L3)"]
+        PROT[lyclaw-protocol :8086<br/>MCP Server/Client<br/>A2A Gateway]
+    end
+
+    subgraph AdapterLayer["适配器层 (L2)"]
+        ADP[lyclaw-adapter<br/>DeepSeek/MiniMax/OpenAI<br/>ModelAdapter + ResponseParser]
+    end
+
+    subgraph CoreLayer["核心接口层 (L1)"]
+        CORE[lyclaw-core<br/>Feign 接口 · Pipeline<br/>TaskPlan · Memory 抽象<br/>Context · Interceptor]
+    end
+
+    subgraph CommonLayer["基础层 (L1)"]
+        COM[lyclaw-common<br/>ChatRequest · Session<br/>Message · ToolDefinition<br/>ErrorCode · BaseDTO]
+    end
+
+    subgraph InfraLayer["基础设施层 (L0)"]
+        INFRA[lyclaw-infra<br/>WebFlux 配置<br/>通用基础设施]
+    end
+
+    subgraph StorageLayer["存储层"]
+        STOR[lyclaw-storage<br/>SessionStorage · ConfigStorage<br/>FileRepository]
+    end
+
+    subgraph Registry["注册中心"]
+        NACOS[Nacos 2.5<br/>服务注册 · 配置中心<br/>namespace: lyclaw]
+    end
+
+    UI -->|HTTP/SSE| GW
+    GW -->|lb:// 负载均衡路由| ORCH
+    GW -->|lb:// 直通路由| MEMORY
+    GW -->|lb:// 直通路由| PLAN
+    GW -->|lb:// 直通路由| ACTION
+    GW -->|lb:// 直通路由| REFLECT
+    GW -->|lb:// 直通路由| PROT
+
+    ORCH -->|Feign RPC| PLAN
+    ORCH -->|Feign RPC| ACTION
+    ORCH -->|Feign RPC| REFLECT
+    ORCH -->|Feign RPC| MEMORY
+    ORCH -->|Feign RPC| PROT
+
+    FC --> ORCH
+
+    PLAN --> CORE
+    ACTION --> CORE
+    REFLECT --> CORE
+    MEMORY --> CORE
+    PROT --> CORE
+    ORCH --> CORE
+    GW --> CORE
+
+    CORE --> COM
+    ADP --> CORE
+    ADP --> COM
+    ADP --> STOR
+    INFRA --> CORE
+    STOR --> COM
+    STOR --> CORE
+
+    ORCH -.-> NACOS
+    MEMORY -.-> NACOS
+    PLAN -.-> NACOS
+    ACTION -.-> NACOS
+    REFLECT -.-> NACOS
+    PROT -.-> NACOS
+    GW -.-> NACOS

@@ -16,6 +16,7 @@ import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -135,8 +136,8 @@ public class ActionExecutorImpl implements ActionExecutor {
     }
 
     @Override
-    public CompletableFuture<SkillResult> executeSkill(String skillId, ChatContext context) {
-        log.info("执行技能: skillId={}", skillId);
+    public CompletableFuture<SkillResult> executeSkill(String skillId, @Nullable ChatContext context) {
+        log.info("执行技能: skillId={}, contextProvided={}", skillId, context != null);
 
         Skill skill = skillRegistry.get(skillId);
         if (skill == null) {
@@ -144,6 +145,10 @@ public class ActionExecutorImpl implements ActionExecutor {
             SkillResult errorResult = new SkillResult(skillId, false, "",
                     "技能未注册: " + skillId, 0, 0);
             return CompletableFuture.completedFuture(errorResult);
+        }
+
+        if (context == null) {
+            log.warn("executeSkill 在 skillId={} 时收到 null ChatContext, 传递 null 到 executor", skillId);
         }
 
         return skillExecutor.execute(skill, context);

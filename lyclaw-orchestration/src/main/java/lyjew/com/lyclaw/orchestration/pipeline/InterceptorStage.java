@@ -80,6 +80,10 @@ public class InterceptorStage implements PipelineStage {
                 }
             } catch (Exception e) {
                 log.error("[InterceptorStage] Content filter error: {}", e.getMessage(), e);
+                context.setAttribute("__chain_break_reason__",
+                        "Content filter exception: " + e.getMessage());
+                chain.breakChain(context);
+                return;
             }
         }
 

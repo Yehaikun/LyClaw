@@ -10,6 +10,7 @@ import lyjew.com.lyclaw.orchestration.Orchestrator;
 import lyjew.com.lyclaw.orchestration.dto.ChatRequest;
 import lyjew.com.lyclaw.provider.ModelProvider;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -36,7 +37,7 @@ public class OrchestrationController {
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatStream(@RequestBody ChatRequest request) {
+    public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request) {
         Session session = resolveSession(request.getSessionId());
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
         ChatContext context = buildChatContext(modelRequest, session);
@@ -48,10 +49,15 @@ public class OrchestrationController {
         Session session = resolveSession(request.getSessionId());
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
         ChatContext context = buildChatContext(modelRequest, session);
-        Flux<String> flux = orchestrator.execute(context);
+        Flux<ServerSentEvent<String>> flux = orchestrator.execute(context);
         return flux.collectList()
                 .map(results -> {
-                    String content = results != null ? String.join("", results) : "";
+                    String content = results != null
+                            ? results.stream()
+                                    .filter(e -> "message".equals(e.event()))
+                                    .map(e -> e.data() != null ? e.data() : "")
+                                    .reduce("", String::concat)
+                            : "";
                     return new ChatResult(content, "stop", null, null, 0L);
                 })
                 .subscribeOn(Schedulers.boundedElastic());

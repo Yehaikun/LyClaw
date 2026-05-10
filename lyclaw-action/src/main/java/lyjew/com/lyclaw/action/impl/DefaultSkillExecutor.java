@@ -49,7 +49,7 @@ public class DefaultSkillExecutor implements SkillExecutor {
                 updateProgress(skillId, 1.0, "技能执行完成: " + skill.getName());
 
                 SkillResult finalResult = result;
-                if (finalResult.getSkillId() == null) {
+                if (finalResult.getSkillId() == null || finalResult.getSkillId().isBlank()) {
                     finalResult = new SkillResult(skillId, result.isSuccess(),
                             result.getOutput(), result.getError(),
                             result.getTokenUsage(), elapsed);

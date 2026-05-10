@@ -12,23 +12,17 @@ public class DefaultModelProvider implements ModelProvider {
 
     @Override
     public ModelAdapter getAdapter(String provider) {
-        throw new UnsupportedOperationException(
-                "默认 ModelProvider 不提供具体适配器。请在 lyclaw-adapter 模块中"
-                        + "实现 ModelProvider 接口并注册为 @Component，"
-                        + "或在 application.yml 中配置 lyclaw.engine.default-provider。");
+        return null;
     }
 
     @Override
     public String getDefaultProvider() {
-        return "未配置";
+        return "none";
     }
 
     @Override
     public ModelAdapter getConfiguredAdapter() {
-        throw new UnsupportedOperationException(
-                "默认 ModelProvider 不提供具体适配器。请在 lyclaw-adapter 模块中"
-                        + "实现 ModelProvider 接口并注册为 @Component，"
-                        + "或在 application.yml 中配置 lyclaw.engine.default-provider。");
+        return null;
     }
 
     @Override

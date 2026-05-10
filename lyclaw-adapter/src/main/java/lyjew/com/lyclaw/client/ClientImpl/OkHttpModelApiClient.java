@@ -50,48 +50,71 @@ public class OkHttpModelApiClient implements ModelApiClient {
         Request request = buildRequest(url, headers, body);
         log.debug("发送流式请求: POST {}", url);
 
-        return Flux.<String>create(sink -> {
-                    try (Response response = httpClient.newCall(request).execute()) {
+        return Flux.<String, StreamContext>generate(
+                () -> {
+                    try {
+                        Response response = httpClient.newCall(request).execute();
 
                         if (!response.isSuccessful()) {
                             String errorBody = response.body() != null
                                     ? response.body().string() : "";
-                            sink.error(parseHttpError(response.code(), errorBody, url));
-                            return;
+                            response.close();
+                            throw parseHttpError(response.code(), errorBody, url);
                         }
 
                         ResponseBody responseBody = response.body();
                         if (responseBody == null) {
-                            sink.error(ModelException.of(ErrorCode.MODEL_RESPONSE_PARSE_ERROR,
-                                    "响应体为空"));
-                            return;
+                            response.close();
+                            throw ModelException.of(ErrorCode.MODEL_RESPONSE_PARSE_ERROR,
+                                    "响应体为空");
                         }
 
-                        try (BufferedReader reader = new BufferedReader(
-                                new InputStreamReader(responseBody.byteStream()))) {
-                            String line;
-                            while ((line = reader.readLine()) != null) {
-                                if (line.isEmpty()) {
-                                    continue;
-                                }
+                        BufferedReader reader = new BufferedReader(
+                                new InputStreamReader(responseBody.byteStream()));
+                        return new StreamContext(response, responseBody, reader);
+                    } catch (IOException e) {
+                        throw ModelException.of(ErrorCode.MODEL_API_ERROR,
+                                "流式请求失败: " + e.getMessage());
+                    }
+                },
+                (ctx, sink) -> {
+                    try {
+                        String line;
+                        while ((line = ctx.reader.readLine()) != null) {
+                            if (!line.isEmpty()) {
                                 sink.next(line);
-
-                                if (sink.isCancelled()) {
-                                    log.debug("流式请求被取消: url={}", url);
-                                    break;
-                                }
+                                return ctx;
                             }
                         }
-
+                        ctx.close();
                         sink.complete();
-
                     } catch (IOException e) {
-                        log.error("流式请求失败: url={}", url, e);
+                        ctx.close();
                         sink.error(ModelException.of(ErrorCode.MODEL_API_ERROR,
-                                "流式请求失败: " + e.getMessage()));
+                                "流式读取失败: " + e.getMessage()));
                     }
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+                    return ctx;
+                },
+                StreamContext::close
+        ).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private static class StreamContext {
+        final Response response;
+        final ResponseBody body;
+        final BufferedReader reader;
+
+        StreamContext(Response response, ResponseBody body, BufferedReader reader) {
+            this.response = response;
+            this.body = body;
+            this.reader = reader;
+        }
+
+        void close() {
+            try { reader.close(); } catch (IOException ignored) {}
+            try { body.close(); } catch (Exception ignored) {}
+            try { response.close(); } catch (Exception ignored) {}
+        }
     }
 
     @Override

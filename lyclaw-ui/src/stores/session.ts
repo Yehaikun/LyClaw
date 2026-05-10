@@ -1,130 +1,97 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Session } from '@/types'
-import { sessionDisplay } from '@/types/session'
+import {
+  createSession as apiCreateSession,
+  getSession,
+  deleteSession as apiDeleteSession,
+} from '@/api/chat'
 
 export const useSessionStore = defineStore('session', () => {
-  // State
+  // ---- State ----
   const sessions = ref<Session[]>([])
-  const currentSessionId = ref<string>('')
-  const isLoading = ref(false)
-  const error = ref<string | null>(null)
-  const searchQuery = ref('')
+  const currentSessionId = ref<string | null>(null)
+  const isLoading = ref<boolean>(false)
+  const searchQuery = ref<string>('')
 
-  // Computed
-  const filteredSessions = computed(() => {
-    if (!searchQuery.value.trim()) return sessions.value
+  // ---- Getters ----
+
+  const filteredSessions = computed<Session[]>(() => {
+    if (!searchQuery.value.trim()) {
+      return sessions.value
+    }
     const q = searchQuery.value.toLowerCase()
-    return sessions.value.filter((s) => {
-      const d = sessionDisplay(s)
-      return (
-        d.title.toLowerCase().includes(q) ||
-        d.lastMessage.toLowerCase().includes(q)
-      )
-    })
+    return sessions.value.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.sessionId.toLowerCase().includes(q),
+    )
   })
 
-  const currentSession = computed(() =>
-    sessions.value.find((s) => s.id === currentSessionId.value) ?? null,
-  )
+  const currentSession = computed<Session | null>(() => {
+    if (!currentSessionId.value) return null
+    return (
+      sessions.value.find((s) => s.sessionId === currentSessionId.value) ?? null
+    )
+  })
 
-  const sessionCount = computed(() => sessions.value.length)
+  // ---- Actions ----
 
-  // Actions
-  function initSession(): string {
-    const id = crypto.randomUUID()
-    currentSessionId.value = id
-    return id
+  /** Create a new session via the API and add it to the local list. */
+  async function createSession(): Promise<Session> {
+    const session = await apiCreateSession()
+    sessions.value.push(session)
+    currentSessionId.value = session.sessionId
+    return session
   }
 
+  /** Fetch all sessions from the API. Falls back to in-memory sessions if endpoint unavailable. */
   async function fetchSessions(): Promise<void> {
     isLoading.value = true
-    error.value = null
-
     try {
       const response = await fetch('/api/sessions')
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+      if (response.ok) {
+        const data: Session[] = await response.json()
+        sessions.value = data
       }
-      const data: Session[] = await response.json()
-      sessions.value = data.sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      )
+      // 405 or other non-ok: keep existing in-memory sessions
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      error.value = msg
+      // Network error or endpoint not available — keep existing sessions
+      console.warn('GET /api/sessions unavailable, using in-memory sessions')
     } finally {
       isLoading.value = false
     }
   }
 
-  async function createSession(): Promise<string> {
-    const id = crypto.randomUUID()
-    const newSession: Session = {
-      id,
-      sessionId: id,
-      name: '新对话',
-      messages: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    sessions.value.unshift(newSession)
-    currentSessionId.value = id
-
-    try {
-      const response = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-    } catch {
-      // Session exists locally even if server fails
-    }
-
-    return id
-  }
-
+  /** Delete a session by ID. */
   async function deleteSession(id: string): Promise<void> {
-    const idx = sessions.value.findIndex((s) => s.id === id)
-    if (idx === -1) return
-
-    sessions.value.splice(idx, 1)
-
+    await apiDeleteSession(id)
+    sessions.value = sessions.value.filter((s) => s.sessionId !== id)
     if (currentSessionId.value === id) {
-      currentSessionId.value = sessions.value[0]?.id ?? ''
-    }
-
-    try {
-      const response = await fetch(`/api/sessions/${id}`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-    } catch {
-      // Best effort delete
+      currentSessionId.value = null
     }
   }
 
+  /** Select a session as active. */
   function selectSession(id: string): void {
     currentSessionId.value = id
   }
 
-  function updateSessionTitle(id: string, title: string): void {
-    const session = sessions.value.find((s) => s.id === id)
+  /** Rename a session and persist the change. */
+  async function renameSession(id: string, name: string): Promise<void> {
+    const session = sessions.value.find((s) => s.sessionId === id)
     if (session) {
-      session.name = title
-      session.updatedAt = new Date().toISOString()
+      session.name = name
     }
-  }
-
-  function setSearchQuery(query: string): void {
-    searchQuery.value = query
+    try {
+      await fetch(`/api/sessions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+    } catch (err) {
+      console.error('Failed to rename session:', err)
+    }
   }
 
   return {
@@ -132,21 +99,15 @@ export const useSessionStore = defineStore('session', () => {
     sessions,
     currentSessionId,
     isLoading,
-    error,
     searchQuery,
-
-    // Computed
+    // Getters
     filteredSessions,
     currentSession,
-    sessionCount,
-
     // Actions
-    initSession,
-    fetchSessions,
     createSession,
+    fetchSessions,
     deleteSession,
     selectSession,
-    updateSessionTitle,
-    setSearchQuery,
+    renameSession,
   }
 })

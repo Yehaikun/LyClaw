@@ -15,4 +15,7 @@ public interface ProtocolFeignClient {
 
     @PostMapping("/model/chat")
     Map<String, Object> chat(@RequestBody Map<String, Object> request);
+
+    @GetMapping("/a2a/card")
+    Map<String, Object> getAgentCard();
 }

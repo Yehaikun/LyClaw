@@ -127,6 +127,10 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
             builder.reasoningEffort(
                     request.getThinkingBudget() != null && request.getThinkingBudget() > 8000
                             ? "high" : "medium");
+        } else {
+            builder.thinking(OpenAIRequest.Thinking.builder()
+                    .type("disabled")
+                    .build());
         }
 
         return builder.build();
@@ -362,6 +366,11 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
                 JsonNode content = delta.get("content");
                 if (content != null && !content.isNull()) {
                     text.append(content.asText());
+                } else {
+                    JsonNode reasoning = delta.get("reasoning_content");
+                    if (reasoning != null && !reasoning.isNull()) {
+                        text.append(reasoning.asText());
+                    }
                 }
             } catch (Exception ignored) {}
         }

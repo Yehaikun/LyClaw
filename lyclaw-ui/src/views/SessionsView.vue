@@ -1,411 +1,437 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { History, Trash2, Search } from 'lucide-vue-next'
 import { useSessionStore } from '@/stores/session'
-import { sessionDisplay } from '@/types/session'
+import type { Session } from '@/types'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
-const deleteConfirmId = ref<string | null>(null)
+
+const searchQuery = ref('')
+const deletingId = ref<string | null>(null)
+const confirmDeleteId = ref<string | null>(null)
+
+const sessions = computed(() => sessionStore.sessions)
+const loading = computed(() => sessionStore.isLoading)
+
+const filteredSessions = computed(() => {
+  if (!searchQuery.value.trim()) return sessions.value
+  const q = searchQuery.value.toLowerCase()
+  return sessions.value.filter(
+    (s) =>
+      s.name.toLowerCase().includes(q) ||
+      s.model?.toLowerCase().includes(q)
+  )
+})
+
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now()
+  const date = new Date(dateStr).getTime()
+  const diff = now - date
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days < 30) return `${days}天前`
+  return new Date(dateStr).toLocaleDateString('zh-CN')
+}
+
+function getPreview(session: Session): string {
+  const firstUserMsg = session.messages?.find((m) => m.role === 'user')
+  if (firstUserMsg) return firstUserMsg.content
+  const firstMsg = session.messages?.[0]
+  if (firstMsg) return firstMsg.content
+  return ''
+}
+
+function openSession(sessionId: string) {
+  router.push({ path: '/chat', query: { session: sessionId } })
+}
+
+function requestDelete(sessionId: string) {
+  confirmDeleteId.value = sessionId
+}
+
+function cancelDelete() {
+  confirmDeleteId.value = null
+}
+
+async function confirmDelete(sessionId: string) {
+  deletingId.value = sessionId
+  try {
+    await sessionStore.deleteSession(sessionId)
+  } finally {
+    deletingId.value = null
+    confirmDeleteId.value = null
+  }
+}
 
 onMounted(() => {
   sessionStore.fetchSessions()
 })
-
-function openSession(id: string): void {
-  sessionStore.selectSession(id)
-  router.push('/chat')
-}
-
-function confirmDelete(id: string): void {
-  deleteConfirmId.value = id
-}
-
-function cancelDelete(): void {
-  deleteConfirmId.value = null
-}
-
-async function executeDelete(id: string): Promise<void> {
-  await sessionStore.deleteSession(id)
-  deleteConfirmId.value = null
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-    if (days === 0) {
-      return date.toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    } else if (days === 1) {
-      return '昨天'
-    } else if (days < 7) {
-      return `${days} 天前`
-    } else {
-      return date.toLocaleDateString('zh-CN', {
-        month: 'short',
-        day: 'numeric',
-      })
-    }
-  } catch {
-    return dateStr
-  }
-}
 </script>
 
 <template>
-  <div class="sessions-view">
-    <div class="sessions-header">
-      <h2 class="sessions-title">会话记录</h2>
-      <div class="sessions-actions">
-        <div class="search-box">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            v-model="sessionStore.searchQuery"
-            type="text"
-            class="search-input"
-            placeholder="搜索会话..."
-          />
-        </div>
+  <div class="sessions-page">
+    <header class="page-header">
+      <h1 class="page-title">会话历史</h1>
+      <div class="search-bar">
+        <Search :size="18" class="search-icon" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="搜索会话名称或模型..."
+          class="search-input"
+        />
       </div>
-    </div>
+    </header>
 
-    <!-- Loading state -->
-    <div v-if="sessionStore.isLoading" class="sessions-loading">
+    <!-- Loading State -->
+    <div v-if="loading" class="loading-state">
       <div class="loading-spinner" />
-      <p>加载中...</p>
+      <p class="loading-text">加载会话记录...</p>
     </div>
 
-    <!-- Error state -->
-    <div v-else-if="sessionStore.error" class="sessions-error">
-      <p class="error-message">{{ sessionStore.error }}</p>
-      <button class="retry-btn" @click="sessionStore.fetchSessions()">
-        重试
-      </button>
-    </div>
-
-    <!-- Empty state -->
-    <div v-else-if="sessionStore.filteredSessions.length === 0" class="sessions-empty">
-      <div class="empty-icon">📋</div>
-      <h3 class="empty-title">
-        {{ sessionStore.searchQuery ? '没有找到匹配的会话' : '暂无会话记录' }}
-      </h3>
+    <!-- Empty State -->
+    <div v-else-if="filteredSessions.length === 0" class="empty-state">
+      <History :size="48" class="empty-icon" />
+      <p class="empty-title">暂无会话记录</p>
       <p class="empty-desc">
-        {{ sessionStore.searchQuery ? '尝试其他关键词' : '开始对话后，会话记录将显示在这里' }}
+        {{ searchQuery ? '没有匹配的会话，尝试其他关键词' : '开始一段对话，你的会话将显示在这里' }}
       </p>
-      <button
-        v-if="!sessionStore.searchQuery"
-        class="start-chat-btn"
-        @click="router.push('/chat')"
-      >
-        开始对话
-      </button>
     </div>
 
-    <!-- Session list -->
-    <div v-else class="sessions-list">
-      <div
-        v-for="session in sessionStore.filteredSessions"
-        :key="session.id"
+    <!-- Sessions Grid -->
+    <div v-else class="sessions-grid">
+      <article
+        v-for="session in filteredSessions"
+        :key="session.sessionId"
         class="session-card"
-        @click="openSession(session.id)"
+        @click="openSession(session.sessionId)"
       >
-        <div class="session-info">
-          <h3 class="session-title">{{ sessionDisplay(session).title || '未命名对话' }}</h3>
-          <p class="session-preview text-ellipsis">{{ sessionDisplay(session).lastMessage || '暂无消息' }}</p>
-          <div class="session-meta">
-            <span class="session-date">{{ formatDate(session.updatedAt) }}</span>
-            <span class="session-count">{{ sessionDisplay(session).messageCount }} 条消息</span>
+        <div class="card-header">
+          <h3 class="session-name">{{ session.name }}</h3>
+          <div class="card-actions">
+            <!-- Confirm delete -->
+            <template v-if="confirmDeleteId === session.sessionId">
+              <span class="confirm-text">确认删除？</span>
+              <button
+                class="icon-btn confirm-yes"
+                :disabled="deletingId === session.sessionId"
+                @click.stop="confirmDelete(session.sessionId)"
+              >
+                是
+              </button>
+              <button
+                class="icon-btn confirm-no"
+                @click.stop="cancelDelete"
+              >
+                否
+              </button>
+            </template>
+            <!-- Delete button -->
+            <button
+              v-else
+              class="icon-btn delete-btn"
+              :disabled="deletingId === session.sessionId"
+              @click.stop="requestDelete(session.sessionId)"
+            >
+              <Trash2 :size="16" />
+            </button>
           </div>
         </div>
 
-        <div class="session-delete" @click.stop>
-          <button
-            v-if="deleteConfirmId !== session.id"
-            class="delete-btn"
-            @click="confirmDelete(session.id)"
-            aria-label="删除会话"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-            </svg>
-          </button>
-          <div v-else class="delete-confirm">
-            <span class="confirm-text">确认删除?</span>
-            <button class="confirm-yes" @click="executeDelete(session.id)">删除</button>
-            <button class="confirm-no" @click="cancelDelete">取消</button>
-          </div>
+        <div class="card-meta">
+          <span v-if="session.model" class="model-badge">{{ session.model }}</span>
+          <span class="message-count">
+            {{ session.messages?.length ?? 0 }} 条消息
+          </span>
         </div>
-      </div>
+
+        <p class="session-preview" v-if="getPreview(session)">
+          {{ getPreview(session) }}
+        </p>
+
+        <time class="session-time">{{ formatRelativeTime(session.updatedAt) }}</time>
+      </article>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sessions-view {
-  max-width: 860px;
+.sessions-page {
+  max-width: 1200px;
   margin: 0 auto;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  padding: var(--spacing-xl);
 }
 
-.sessions-header {
+.page-header {
+  margin-bottom: var(--spacing-xl);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-xl);
-  border-bottom: 1px solid var(--color-border-light);
-  flex-shrink: 0;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--spacing-md);
 }
 
-.sessions-title {
-  font-size: var(--font-size-xl);
-  font-weight: 600;
-  color: var(--color-text-primary);
+.page-title {
+  font-family: var(--font-sans);
+  font-size: var(--display-md-size);
+  font-weight: var(--display-md-weight);
+  line-height: var(--display-md-line-height);
+  letter-spacing: var(--display-md-letter-spacing);
+  color: var(--color-ink);
+  margin: 0;
 }
 
-.sessions-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.search-box {
+/* ---- Search Bar ---- */
+.search-bar {
   position: relative;
-  display: flex;
-  align-items: center;
+  max-width: 420px;
 }
 
 .search-icon {
   position: absolute;
-  left: var(--spacing-sm);
-  color: var(--color-text-muted);
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-muted);
   pointer-events: none;
 }
 
 .search-input {
-  padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-xs) var(--spacing-2xl);
-  border: 1px solid var(--color-border-input);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  background-color: var(--color-bg-input);
-  color: var(--color-text);
-  width: 200px;
-  transition: border-color var(--transition-fast), width var(--transition-fast);
-}
-
-.search-input:focus {
-  border-color: var(--color-primary);
-  width: 240px;
+  width: 100%;
+  padding: var(--input-padding-y) var(--input-padding-x) var(--input-padding-y) 40px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  font-family: var(--font-sans);
+  font-size: var(--input-font-size);
+  line-height: var(--input-line-height);
+  color: var(--input-fg);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+  outline: none;
 }
 
 .search-input::placeholder {
-  color: var(--color-text-muted);
+  color: var(--input-fg-placeholder);
 }
 
-.sessions-loading,
-.sessions-error,
-.sessions-empty {
-  flex: 1;
+.search-input:focus {
+  border-color: var(--input-border-focus);
+  box-shadow: var(--input-shadow-focus);
+}
+
+/* ---- Loading State ---- */
+.loading-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: var(--spacing-section) 0;
   gap: var(--spacing-md);
-  padding: var(--spacing-3xl);
 }
 
 .loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid var(--color-border);
+  border: 3px solid var(--color-hairline);
   border-top-color: var(--color-primary);
-  border-radius: var(--radius-full);
-  animation: spin 0.7s linear infinite;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-.sessions-loading p {
-  color: var(--color-text-secondary);
+.loading-text {
+  font-family: var(--font-sans);
+  font-size: var(--body-md-size);
+  color: var(--color-muted);
+  margin: 0;
 }
 
-.error-message {
-  color: var(--color-error);
-  font-size: var(--font-size-base);
-}
-
-.retry-btn {
-  padding: var(--spacing-sm) var(--spacing-xl);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-base);
-  cursor: pointer;
-}
-
-.retry-btn:hover {
-  background: var(--color-primary-hover);
+/* ---- Empty State ---- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-section) 0;
+  text-align: center;
 }
 
 .empty-icon {
-  font-size: 48px;
-  opacity: 0.6;
+  color: var(--color-muted-soft);
+  margin-bottom: var(--spacing-md);
 }
 
 .empty-title {
-  font-size: var(--font-size-lg);
-  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--title-lg-size);
+  font-weight: var(--title-lg-weight);
+  color: var(--color-muted);
+  margin: 0 0 var(--spacing-xs);
 }
 
 .empty-desc {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--body-md-size);
+  color: var(--color-muted-soft);
+  margin: 0;
+  max-width: 360px;
 }
 
-.start-chat-btn {
-  padding: var(--spacing-sm) var(--spacing-xl);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-base);
-  cursor: pointer;
-  margin-top: var(--spacing-md);
+/* ---- Sessions Grid ---- */
+.sessions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--spacing-lg);
 }
 
-.start-chat-btn:hover {
-  background: var(--color-primary-hover);
-}
-
-.sessions-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--spacing-md) var(--spacing-xl);
-}
-
+/* ---- Session Card ---- */
 .session-card {
-  display: flex;
-  align-items: center;
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius-md);
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+  padding: var(--spacing-xl);
+  box-shadow: var(--card-shadow);
   cursor: pointer;
-  transition: background-color var(--transition-fast);
-  margin-bottom: var(--spacing-xs);
+  transition: box-shadow var(--card-transition), background var(--card-transition);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  position: relative;
 }
 
 .session-card:hover {
-  background-color: var(--color-bg-hover);
+  background: var(--card-bg-hover);
+  box-shadow: var(--card-shadow-hover);
 }
 
-.session-info {
-  flex: 1;
-  min-width: 0;
+.session-card:hover .delete-btn {
+  opacity: 1;
 }
 
-.session-title {
-  font-size: var(--font-size-base);
-  font-weight: 500;
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-xs);
-}
-
-.session-preview {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-xs);
-}
-
-.session-meta {
+.card-header {
   display: flex;
-  gap: var(--spacing-lg);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-}
-
-.session-delete {
-  flex-shrink: 0;
-  margin-left: var(--spacing-md);
-}
-
-.delete-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-  transition: all var(--transition-fast);
-  cursor: pointer;
-}
-
-.delete-btn:hover {
-  color: var(--color-error);
-  background: var(--color-error-bg);
-}
-
-.delete-confirm {
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--spacing-xs);
-  font-size: var(--font-size-xs);
+}
+
+.session-name {
+  font-family: var(--font-sans);
+  font-size: var(--title-md-size);
+  font-weight: var(--title-md-weight);
+  line-height: var(--title-md-line-height);
+  color: var(--color-ink);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .confirm-text {
-  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--caption-size);
+  color: var(--color-error);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--rounded-pill);
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.delete-btn {
+  opacity: 0;
+}
+
+.delete-btn:hover {
+  background: rgba(198, 69, 69, 0.12);
+  color: var(--color-error);
 }
 
 .confirm-yes {
-  padding: 2px 8px;
-  background: var(--color-error);
-  color: var(--color-text-inverse);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  cursor: pointer;
+  color: var(--color-error);
+  font-size: var(--caption-size);
+  font-weight: 500;
+}
+
+.confirm-yes:hover {
+  background: rgba(198, 69, 69, 0.12);
 }
 
 .confirm-no {
-  padding: 2px 8px;
-  background: var(--color-bg-hover);
-  color: var(--color-text);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  cursor: pointer;
+  color: var(--color-muted);
+  font-size: var(--caption-size);
+  font-weight: 500;
 }
 
-@media (max-width: 767px) {
-  .sessions-header {
-    padding: var(--spacing-md) var(--spacing-lg);
-    flex-direction: column;
-    align-items: flex-start;
-  }
+.confirm-no:hover {
+  background: var(--color-surface-soft);
+}
 
-  .search-input {
-    width: 100%;
-  }
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
 
-  .search-input:focus {
-    width: 100%;
-  }
+.model-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  background: var(--color-surface-card);
+  color: var(--color-muted);
+  border-radius: var(--rounded-pill);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+}
 
-  .sessions-list {
-    padding: var(--spacing-sm) var(--spacing-md);
-  }
+.message-count {
+  font-family: var(--font-sans);
+  font-size: var(--caption-size);
+  color: var(--color-muted-soft);
+}
+
+.session-preview {
+  font-family: var(--font-sans);
+  font-size: var(--body-sm-size);
+  line-height: var(--body-sm-line-height);
+  color: var(--color-muted);
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(var(--body-sm-size) * var(--body-sm-line-height) * 2);
+}
+
+.session-time {
+  font-family: var(--font-sans);
+  font-size: var(--caption-size);
+  color: var(--color-muted-soft);
+  margin-top: auto;
 }
 </style>

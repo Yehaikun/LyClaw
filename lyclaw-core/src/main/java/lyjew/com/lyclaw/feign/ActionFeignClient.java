@@ -9,6 +9,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @FeignClient(name = "lyclaw-action-service", path = "/api/action")
 public interface ActionFeignClient {
@@ -21,4 +22,13 @@ public interface ActionFeignClient {
 
     @GetMapping("/tools")
     List<ToolDefinition> listTools();
+
+    @GetMapping("/skills")
+    List<Map<String, Object>> listSkills();
+
+    @GetMapping("/sandbox/health")
+    Map<String, Boolean> getSandboxHealth();
+
+    @GetMapping("/tools/stats")
+    Map<String, Object> getToolStats();
 }

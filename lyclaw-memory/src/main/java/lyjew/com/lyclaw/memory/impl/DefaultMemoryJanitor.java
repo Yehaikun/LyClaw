@@ -61,6 +61,7 @@ public class DefaultMemoryJanitor implements MemoryJanitor {
                     int worseIdx = (betterIdx == j) ? i : j;
 
                     removed[worseIdx] = true;
+                    toRemove.add(longTermEntries.get(worseIdx).getEntryId());
                     duplicatesRemoved++;
                     spaceFreed += longTermEntries.get(worseIdx).getContent() != null
                             ? longTermEntries.get(worseIdx).getContent().length() : 0;
@@ -82,6 +83,7 @@ public class DefaultMemoryJanitor implements MemoryJanitor {
 
                     int worseIdx = (timeA >= timeB) ? j : i;
                     removed[worseIdx] = true;
+                    toRemove.add(longTermEntries.get(worseIdx).getEntryId());
                     conflictsResolved++;
                     spaceFreed += longTermEntries.get(worseIdx).getContent() != null
                             ? longTermEntries.get(worseIdx).getContent().length() : 0;
@@ -95,6 +97,14 @@ public class DefaultMemoryJanitor implements MemoryJanitor {
                 expiredEntriesRemoved++;
                 spaceFreed += entry.getContent() != null ? entry.getContent().length() : 0;
             }
+        }
+
+        // Actually remove detected duplicates and conflicts
+        if (!toRemove.isEmpty() && memorySystem instanceof TieredMemorySystem tiered) {
+            for (String entryId : toRemove) {
+                tiered.removeLongTermEntry(entryId);
+            }
+            log.info("Janitor removed {} long-term entries: {}", toRemove.size(), toRemove);
         }
 
         memorySystem.evictExpiredPerceptions();

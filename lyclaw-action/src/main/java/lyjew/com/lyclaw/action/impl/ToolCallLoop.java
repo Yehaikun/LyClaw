@@ -37,6 +37,10 @@ public class ToolCallLoop {
         beforeLoop(context);
 
         ModelAdapter adapter = modelProvider.getConfiguredAdapter();
+        if (adapter == null) {
+            log.warn("No configured adapter available for tool call loop");
+            return new ChatResult("Tool execution unavailable - no LLM configured", "stop", null, null, 0L);
+        }
         List<Message> messages = context.getRequest().getMessages();
 
         int round = 0;

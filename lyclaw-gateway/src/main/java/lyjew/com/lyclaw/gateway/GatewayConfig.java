@@ -31,13 +31,13 @@ public class GatewayConfig {
                         .path("/api/plan/**")
                         .uri("lb://lyclaw-plan-service"))
                 .route("action-api", r -> r
-                        .path("/api/action/**", "/api/tools/**", "/api/skills/**")
+                        .path("/api/action/**")
                         .uri("lb://lyclaw-action-service"))
                 .route("reflect-api", r -> r
                         .path("/api/reflect/**")
                         .uri("lb://lyclaw-reflect-service"))
                 .route("protocol-api", r -> r
-                        .path("/api/protocol/**", "/api/models/**")
+                        .path("/api/protocol/**")
                         .uri("lb://lyclaw-protocol-service"))
                 .build();
     }

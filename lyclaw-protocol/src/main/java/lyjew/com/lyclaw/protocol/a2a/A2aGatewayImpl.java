@@ -68,13 +68,15 @@ public class A2aGatewayImpl implements A2aGateway {
             log.info("[A2aGateway] POST {}/a2a/task -- taskId={}, description={}",
                     agentUrl, taskId, task.getDescription());
 
-            taskStatuses.put(taskId, "COMPLETED");
+            if (!"CANCELLED".equals(taskStatuses.get(taskId))) {
+                taskStatuses.put(taskId, "COMPLETED");
+            }
 
             long simulatedDuration = 100 + (long) (Math.random() * 200);
 
             return new AgentResult(
                     agentUrl,
-                    "COMPLETED",
+                    taskStatuses.getOrDefault(taskId, "COMPLETED"),
                     "Task completed: " + task.getDescription(),
                     "Task [" + taskId + "] executed successfully on agent " + agentUrl
                             + " with parameters: " + task.getParameters(),
