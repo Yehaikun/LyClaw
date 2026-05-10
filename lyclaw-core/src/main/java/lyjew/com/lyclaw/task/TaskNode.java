@@ -1,30 +1,33 @@
 package lyjew.com.lyclaw.task;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.NoArgsConstructor;
+
 import java.util.List;
 
-/**
- * 任务节点值对象 —— 描述一个可执行的子任务。
- *
- * @since 1.0
- * @author LyClaw Team
- */
+@NoArgsConstructor
 public class TaskNode {
 
-    private final String nodeId;
-    private final String type;
-    private final String description;
-    private final List<String> requiredTools;
-    private final List<String> dependencies;
-    private final long timeoutMs;
+    private String nodeId;
+    private String type;
+    private String description;
+    private List<String> requiredTools = List.of();
+    private List<String> dependencies = List.of();
+    private long timeoutMs;
 
-    public TaskNode(String nodeId, String type, String description,
-                    List<String> requiredTools, List<String> dependencies,
-                    long timeoutMs) {
+    @JsonCreator
+    public TaskNode(@JsonProperty("nodeId") String nodeId,
+                    @JsonProperty("type") String type,
+                    @JsonProperty("description") String description,
+                    @JsonProperty("requiredTools") List<String> requiredTools,
+                    @JsonProperty("dependencies") List<String> dependencies,
+                    @JsonProperty("timeoutMs") long timeoutMs) {
         this.nodeId = nodeId;
         this.type = type;
         this.description = description;
-        this.requiredTools = requiredTools;
-        this.dependencies = dependencies;
+        this.requiredTools = requiredTools != null ? requiredTools : List.of();
+        this.dependencies = dependencies != null ? dependencies : List.of();
         this.timeoutMs = timeoutMs;
     }
 

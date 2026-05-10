@@ -7,9 +7,6 @@ import lyjew.com.lyclaw.base.BaseDTO;
 
 import java.util.List;
 
-/**
- * 消息
- */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @SuperBuilder
@@ -17,17 +14,26 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Message extends BaseDTO {
 
-    private String role;        // system / user / assistant / tool
+    private String role;
+    private String content;
+    private String model;
+    private Usage usage;
+    private List<ToolCall> toolCalls;
+    private String toolCallId;
 
-    private String content;     // 消息内容
+    public static Message user(String content) {
+        return Message.builder().role("user").content(content).build();
+    }
 
-    // assistant消息特有
-    private String model;       // 使用的模型
+    public static Message assistant(String content) {
+        return Message.builder().role("assistant").content(content).build();
+    }
 
-    private Usage usage;        // token用量
+    public static Message system(String content) {
+        return Message.builder().role("system").content(content).build();
+    }
 
-    private List<ToolCall> toolCalls;  // 工具调用
-
-    /** tool 角色消息特有关联 ID */
-    private String toolCallId;      // 工具调用ID（role=tool时设置，关联tool_calls.id）
+    public static Message tool(String toolCallId, String content) {
+        return Message.builder().role("tool").toolCallId(toolCallId).content(content).build();
+    }
 }

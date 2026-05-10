@@ -1,25 +1,21 @@
 package lyjew.com.lyclaw.memory.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.memory.MemoryEntry;
 import lyjew.com.lyclaw.memory.MemoryQuery;
-import lyjew.com.lyclaw.memory.MemoryQueryResult;
-import lyjew.com.lyclaw.memory.vector.VectorSearchResult;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lyjew.com.lyclaw.memory.retriever.MemoryRetriever;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Component
-public class HybridMemoryRetriever {
+public class HybridMemoryRetriever implements MemoryRetriever {
 
-    private static final Logger log = LoggerFactory.getLogger(HybridMemoryRetriever.class);
+    private static final String RETRIEVAL_METHOD = "hybrid_vector_bm25_temporal";
+    private static final double BM25_K1 = 1.5;
+    private static final double BM25_B = 0.75;
 
     private final InMemoryVectorStore vectorStore;
 
@@ -27,111 +23,117 @@ public class HybridMemoryRetriever {
         this.vectorStore = vectorStore;
     }
 
-    public MemoryQueryResult retrieve(MemoryQuery query, List<MemoryEntry> candidates) {
-        long start = System.currentTimeMillis();
-
-        // 1. 向量相似度得分
-        Map<String, Double> vectorScores = new HashMap<>();
-        if (query.getQueryEmbedding() != null && query.getQueryEmbedding().length > 0) {
-            List<VectorSearchResult> vsResults = vectorStore.search(query.getQueryEmbedding(),
-                    Math.max(candidates.size(), query.getTopK()));
-            for (VectorSearchResult vsr : vsResults) {
-                vectorScores.put(vsr.getId(), vsr.getScore());
-            }
+    @Override
+    public List<MemoryEntry> retrieve(MemoryQuery query, List<MemoryEntry> candidatePool) {
+        if (candidatePool == null || candidatePool.isEmpty()) {
+            log.debug("Empty candidate pool, returning empty results");
+            return Collections.emptyList();
         }
 
-        // 2. BM25 关键词得分
-        Map<String, Double> bm25Scores = computeBM25(query.getQueryText(), candidates);
+        long start = System.currentTimeMillis();
+        int topK = Math.min(query.getTopK(), candidatePool.size());
 
-        // 3. 混合排序
-        List<ScoredEntry> scored = new ArrayList<>();
-        for (MemoryEntry entry : candidates) {
+        Map<String, Double> vectorScores = computeVectorScores(query, candidatePool);
+        Map<String, Double> bm25Scores = computeBM25(query.getQueryText(), candidatePool);
+
+        double alpha = query.getAlpha();
+        double beta = query.getBeta();
+        double gamma = query.getGamma();
+        double delta = query.getDelta();
+
+        PriorityQueue<ScoredEntry> minHeap = new PriorityQueue<>(
+                Comparator.comparingDouble(ScoredEntry::score));
+
+        for (MemoryEntry entry : candidatePool) {
             double vectorScore = vectorScores.getOrDefault(entry.getEntryId(), 0.0);
             double bm25Score = bm25Scores.getOrDefault(entry.getEntryId(), 0.0);
             double temporalScore = entry.getTemporal() != null ? entry.getTemporal().computeDecay() : 1.0;
             double importanceScore = entry.getImportance();
 
-            double combined = query.getAlpha() * vectorScore
-                    + query.getBeta() * bm25Score
-                    + query.getGamma() * temporalScore
-                    + query.getDelta() * importanceScore;
+            double combined = alpha * vectorScore + beta * bm25Score
+                    + gamma * temporalScore + delta * importanceScore;
 
-            scored.add(new ScoredEntry(entry, combined));
+            if (combined <= 0.0 && minHeap.size() >= topK) continue;
+
+            ScoredEntry se = new ScoredEntry(entry, combined);
+
+            if (minHeap.size() < topK) {
+                minHeap.offer(se);
+            } else if (combined > minHeap.peek().score()) {
+                minHeap.poll();
+                minHeap.offer(se);
+            }
         }
 
-        scored.sort(Comparator.comparingDouble(ScoredEntry::score).reversed());
+        List<MemoryEntry> result = new ArrayList<>();
+        List<ScoredEntry> sorted = new ArrayList<>(minHeap);
+        sorted.sort(Comparator.comparingDouble(ScoredEntry::score).reversed());
 
-        int topK = Math.min(query.getTopK(), scored.size());
-        List<MemoryEntry> result = new ArrayList<>(topK);
-        for (int i = 0; i < topK; i++) {
-            MemoryEntry e = scored.get(i).entry();
+        for (ScoredEntry se : sorted) {
+            MemoryEntry e = se.entry();
             e.incrementAccess();
             result.add(e);
         }
 
         long elapsed = System.currentTimeMillis() - start;
-        log.debug("Hybrid retrieve: {} candidates, {} results in {}ms", candidates.size(), result.size(), elapsed);
+        log.debug("Hybrid retrieve: {} candidates, {} results in {}ms", candidatePool.size(), result.size(), elapsed);
 
-        return MemoryQueryResult.builder()
-                .entries(result)
-                .totalHits(candidates.size())
-                .queryTimeMs(elapsed)
-                .retrievalMethod("hybrid_vector_bm25_temporal")
-                .build();
+        return result;
+    }
+
+    @Override
+    public String getRetrievalMethod() { return RETRIEVAL_METHOD; }
+
+    private Map<String, Double> computeVectorScores(MemoryQuery query, List<MemoryEntry> candidates) {
+        Map<String, Double> scores = new HashMap<>();
+        if (query.getQueryEmbedding() == null || query.getQueryEmbedding().length == 0) return scores;
+
+        float[] queryVec = query.getQueryEmbedding();
+        for (MemoryEntry entry : candidates) {
+            float[] entryVec = entry.getEmbedding();
+            if (entryVec == null) entryVec = vectorStore.getEmbedding(entry.getEntryId());
+            if (entryVec != null) scores.put(entry.getEntryId(), vectorStore.cosineSimilarity(queryVec, entryVec));
+        }
+        return scores;
     }
 
     private Map<String, Double> computeBM25(String queryText, List<MemoryEntry> candidates) {
-        if (queryText == null || queryText.isBlank()) {
-            return Collections.emptyMap();
-        }
+        if (queryText == null || queryText.isBlank()) return Collections.emptyMap();
 
         String[] queryTerms = queryText.toLowerCase().split("\\s+");
-        if (queryTerms.length == 0) {
-            return Collections.emptyMap();
-        }
+        if (queryTerms.length == 0) return Collections.emptyMap();
 
-        // 计算平均文档长度
-        double totalLength = 0;
-        for (MemoryEntry e : candidates) {
-            if (e.getContent() != null) {
-                totalLength += e.getContent().length();
-            }
-        }
-        double avgdl = candidates.isEmpty() ? 100.0 : totalLength / candidates.size();
+        double totalLength = candidates.stream()
+                .mapToDouble(e -> e.getContent() != null ? e.getContent().length() : 0).sum();
+        double avgdl = totalLength / Math.max(1, candidates.size());
 
-        // 计算 DF (document frequency) for each term
         Map<String, Integer> df = new HashMap<>();
         for (String term : queryTerms) {
             int count = 0;
             for (MemoryEntry e : candidates) {
-                if (e.getContent() != null && e.getContent().toLowerCase().contains(term)) {
-                    count++;
-                }
+                if (e.getContent() != null && e.getContent().toLowerCase().contains(term)) count++;
             }
             df.put(term, count);
         }
 
         int N = candidates.size();
-        double k1 = 1.5;
-        double b = 0.75;
-
         Map<String, Double> scores = new HashMap<>();
+
         for (MemoryEntry entry : candidates) {
             String content = entry.getContent();
-            if (content == null) continue;
-            content = content.toLowerCase();
-            int dl = content.length();
+            if (content == null || content.isEmpty()) continue;
+            String lowerContent = content.toLowerCase();
+            int dl = lowerContent.length();
 
             double score = 0.0;
             for (String term : queryTerms) {
-                int tf = countOccurrences(content, term);
+                int tf = countOccurrences(lowerContent, term);
                 if (tf == 0) continue;
 
                 int docFreq = df.getOrDefault(term, 0);
                 double idf = Math.log(1.0 + (N - docFreq + 0.5) / (docFreq + 0.5));
-
-                double numerator = tf * (k1 + 1.0);
-                double denominator = tf + k1 * (1.0 - b + b * dl / Math.max(avgdl, 1.0));
+                double numerator = tf * (BM25_K1 + 1.0);
+                double denominator = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * dl / Math.max(avgdl, 1.0));
                 score += idf * numerator / denominator;
             }
             scores.put(entry.getEntryId(), score);
@@ -143,9 +145,10 @@ public class HybridMemoryRetriever {
     private int countOccurrences(String text, String term) {
         int count = 0;
         int idx = 0;
+        int termLen = term.length();
         while ((idx = text.indexOf(term, idx)) != -1) {
             count++;
-            idx += term.length();
+            idx += termLen;
         }
         return count;
     }

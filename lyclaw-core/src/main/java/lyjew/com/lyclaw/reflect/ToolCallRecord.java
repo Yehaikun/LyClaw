@@ -1,17 +1,18 @@
 package lyjew.com.lyclaw.reflect;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import java.util.Map;
+import lombok.NoArgsConstructor;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class ToolCallRecord {
-
     private String toolName;
-    private Map<String, Object> args;
-    private String output;
     private boolean success;
     private long durationMs;
-    private long timestamp;
+    private String output;
+    private String errorMessage;
 }

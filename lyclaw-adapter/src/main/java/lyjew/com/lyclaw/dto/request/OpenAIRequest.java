@@ -31,7 +31,6 @@ public class OpenAIRequest {
     @JsonProperty("stop")
     private List<String> stop;
 
-    /** 工具列表——直接用 Map，由 Adapter 从 ToolDefinition 构建 */
     private List<Map<String, Object>> tools;
 
     @JsonProperty("tool_choice")
@@ -39,8 +38,6 @@ public class OpenAIRequest {
     private Thinking thinking;
     @JsonProperty("reasoning_effort")
     private String reasoningEffort;
-
-    // ===== 内部类：只保留 Message 和 Thinking =====
 
     @Data
     @Builder

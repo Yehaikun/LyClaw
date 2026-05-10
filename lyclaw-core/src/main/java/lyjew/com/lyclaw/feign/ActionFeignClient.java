@@ -4,7 +4,7 @@ import lyjew.com.lyclaw.action.SkillExecuteRequest;
 import lyjew.com.lyclaw.action.ToolExecuteRequest;
 import lyjew.com.lyclaw.action.tool.ToolResult;
 import lyjew.com.lyclaw.dto.SkillResult;
-import lyjew.com.lyclaw.tool.ToolDefinition;
+import lyjew.com.lyclaw.model.ToolDefinition;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 

@@ -4,14 +4,6 @@ import lyjew.com.lyclaw.tool.ToolResult;
 
 import java.util.List;
 
-/**
- * 模型对话结果 —— Engine.execute() 的统一返回值 DTO。
- *
- * <p>Fields are non-final so interceptors can modify content in postHandle().</p>
- *
- * @since 1.0
- * @author LyClaw Team
- */
 public class ChatResult {
 
     private String content;

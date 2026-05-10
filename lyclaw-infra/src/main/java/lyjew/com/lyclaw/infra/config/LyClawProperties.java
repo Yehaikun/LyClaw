@@ -4,13 +4,6 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-/**
- * LyClaw 分层配置属性 —— 系统级 → 引擎级 → 会话级 → 请求级。
- *
- * <p>绑定 application.yml 中的 lyclaw.* 配置树。</p>
- *
- * @since 2.0
- */
 @Data
 @Component
 @ConfigurationProperties(prefix = "lyclaw")

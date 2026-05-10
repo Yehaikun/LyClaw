@@ -31,8 +31,7 @@ public class ProtocolController {
         return Map.of(
                 "status", "ok",
                 "message", "chat endpoint stub",
-                "input", request
-        );
+                "input", request);
     }
 
     @GetMapping("/a2a/card")
@@ -42,7 +41,6 @@ public class ProtocolController {
                 "name", "LyClaw Protocol Agent",
                 "description", "Protocol service agent for MCP and A2A",
                 "version", "0.0.1",
-                "url", "http://localhost:8086"
-        );
+                "url", "http://localhost:8086");
     }
 }

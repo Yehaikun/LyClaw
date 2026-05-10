@@ -17,30 +17,13 @@ import reactor.core.publisher.Flux;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * MiniMax 模型适配器
- *
- * 负责将统一请求转换为 MiniMax Anthropic 兼容格式的请求，
- * 并将 MiniMax 响应转换为统一的 ModelResponse。
- *
- * MiniMax API 特点：
- * - Anthropic 兼容格式，端点 /anthropic/v1/messages
- * - system 提示放在顶层 system 字段，不在 messages 数组中
- * - content 是对象数组 [{type:"thinking", thinking:"..."}, {type:"text", text:"..."}]
- * - Token 字段：input_tokens / output_tokens，没有 total_tokens
- * - 业务状态码在 base_resp.status_code 中，0 表示成功
- */
 @Slf4j
 @Component
 public class MinimaxAdapter extends AbstractModelAdapter {
 
-    // ========== 常量 ==========
-
     private static final String ENDPOINT = "/anthropic/v1/messages";
     private static final String DEFAULT_BASE_URL = "https://api.minimaxi.com";
     private static final String DEFAULT_MODEL = "MiniMax-M2.7";
-
-    // ========== 依赖 ==========
 
     private final ModelApiClient httpClient;
     private final AnthropicResponseParser responseParser;
@@ -53,8 +36,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
         this.responseParser = responseParser;
         this.objectMapper = objectMapper;
     }
-
-    // ========== 元信息 ==========
 
     @Override
     public String getProvider() {
@@ -71,8 +52,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
         return DEFAULT_MODEL;
     }
 
-    // ========== Token 估算 ==========
-
     @Override
     public int countTokens(String text) {
         if (text == null || text.isEmpty()) {
@@ -80,8 +59,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
         }
         return (int) Math.ceil(text.length() / 2.5);
     }
-
-    // ========== 连接验证 ==========
 
     @Override
     public boolean validate() {
@@ -98,8 +75,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
                     .build();
 
             ModelResponse response = chat(testRequest);
-            // 只要拿到响应且没有错误，就认为 Key 有效
-            // maxTokens=1 时 stop_reason 可能是 "max_tokens"，也是正常的
             return response != null && response.getUsage() != null
                     && response.getUsage().getCompletionTokens() >= 0;
         } catch (Exception e) {
@@ -107,8 +82,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
             return false;
         }
     }
-
-    // ========== 请求构建 ==========
 
     @Override
     protected Object buildRequest(ChatRequest request) {
@@ -129,36 +102,23 @@ public class MinimaxAdapter extends AbstractModelAdapter {
                 .stream(stream)
                 .maxTokens(request.getMaxTokens() != null ? request.getMaxTokens() : 2048);
 
-        // system 提示——Anthropic 格式放在顶层
         if (request.hasSystemPrompt()) {
             builder.system(request.getSystemPrompt());
         }
-
-        // 温度
         if (request.getTemperature() != null) {
             builder.temperature(clampTemperature(request.getTemperature(), 0.01, 1.0));
         }
-
-        // Top-P
         if (request.getTopP() != null) {
             builder.topP(request.getTopP());
         }
-
-        // 停止序列
         if (request.getStopSequences() != null && !request.getStopSequences().isEmpty()) {
             builder.stopSequences(request.getStopSequences());
         }
-
-        // 消息列表
         builder.messages(buildMessages(request));
-
-        // 工具列表
         if (request.hasTools()) {
             builder.tools(buildTools(request.getTools()));
             builder.toolChoice(resolveToolChoice(request));
         }
-
-        // 思考模式
         if (request.isThinkingEnabled()) {
             builder.thinking(AnthropicRequest.Thinking.builder()
                     .type("enabled")
@@ -169,9 +129,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
         return builder.build();
     }
 
-    /**
-     * 构建消息列表——Anthropic 格式 content 是数组
-     */
     private List<AnthropicRequest.Message> buildMessages(ChatRequest request) {
         return request.getMessages().stream()
                 .filter(msg -> !"system".equals(msg.getRole()))
@@ -190,10 +147,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 统一工具定义 → Anthropic 格式
-     * {name, description, input_schema}
-     */
     private List<Map<String, Object>> buildTools(List<ToolDefinition> toolDefs) {
         return toolDefs.stream()
                 .map(td -> {
@@ -211,11 +164,9 @@ public class MinimaxAdapter extends AbstractModelAdapter {
 
         if (rawChoice instanceof String) {
             String tc = (String) rawChoice;
-            // "auto"、"any"、"none" 是标准模式，直接返回 {type: "xxx"}
             if ("auto".equals(tc) || "any".equals(tc) || "none".equals(tc)) {
                 return Map.of("type", tc);
             }
-            // 其他字符串视为工具名，构造 {type:"tool", name:"xxx"}
             if (!tc.isEmpty()) {
                 Map<String, Object> choice = new HashMap<>();
                 choice.put("type", "tool");
@@ -231,8 +182,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
         return Map.of("type", "auto");
     }
 
-    // ========== 响应解析 ==========
-
     @Override
     protected Object parseResponse(String rawResponse) {
         if (rawResponse == null || rawResponse.isBlank()) {
@@ -245,7 +194,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
     protected ModelResponse toUnifiedResponse(Object apiResponse) {
         AnthropicResponse resp = (AnthropicResponse) apiResponse;
 
-        // 提取文本——过滤 thinking 块，只取 text 块
         String textContent = "";
         String thinking = "";
 
@@ -259,15 +207,12 @@ public class MinimaxAdapter extends AbstractModelAdapter {
             }
         }
 
-        // 当 content 为空但 thinking 非空时，用 thinking 兜底
-        // MiniMax 对部分 prompt（尤其是英文）可能只返回 thinking 块，没有 text 块
         if (textContent.isEmpty() && !thinking.isEmpty()) {
             log.debug("[{}] 响应中没有 text 块，使用 thinking 内容兜底，thinking长度={}",
                     getProvider(), thinking.length());
             textContent = thinking;
         }
 
-        // ★ 当 content 为空时打印警告
         if (textContent.isEmpty() && thinking.isEmpty()) {
             log.warn("[{}] 响应中没有 text 和 thinking 内容块，stop_reason={}, content块数={}",
                     getProvider(),
@@ -282,14 +227,12 @@ public class MinimaxAdapter extends AbstractModelAdapter {
                 .model(resp.getModel())
                 .finishReason(resp.getStopReason());
 
-        // Token 用量——MiniMax 无 total_tokens
         if (resp.getUsage() != null) {
             builder.usage(Usage.of(
                     resp.getUsage().getInputTokens(),
                     resp.getUsage().getOutputTokens()));
         }
 
-        // 检查 MiniMax 业务状态码
         if (resp.getBaseResp() != null && !resp.getBaseResp().isSuccess()) {
             log.warn("[{}] 业务状态码异常: code={}, msg={}",
                     getProvider(),
@@ -299,8 +242,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
 
         return builder.build();
     }
-
-    // ========== HTTP 发送 ==========
 
     @Override
     protected String sendRequest(Object apiRequest) {
@@ -329,8 +270,6 @@ public class MinimaxAdapter extends AbstractModelAdapter {
                     "请求序列化失败: " + e.getMessage()));
         }
     }
-
-    // ========== 私有辅助 ==========
 
     private Map<String, String> buildHeaders() {
         Map<String, String> headers = new HashMap<>();

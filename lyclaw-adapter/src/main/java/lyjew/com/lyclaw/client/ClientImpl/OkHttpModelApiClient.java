@@ -15,26 +15,12 @@ import java.io.InputStreamReader;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-/**
- * 基于 OkHttp 的模型 API 客户端实现
- *
- * 使用 OkHttp 作为 HTTP 引擎，提供同步和流式两种调用方式。
- * 流式调用通过 Reactor 的 Flux 封装，让上层可以响应式消费 SSE 事件。
- *
- * 职责边界：
- * - 负责 HTTP 通信（连接、超时、重试不需要，由上层 Adapter 处理）
- * - 负责将 HTTP 状态码映射为 ModelException
- * - 流式请求只推送原始行，SSE 解析由上层 Adapter 负责
- * - 不负责线程调度（subscribeOn 除外，那是保证阻塞 I/O 不阻塞调用线程）
- */
 @Slf4j
 @Component
 public class OkHttpModelApiClient implements ModelApiClient {
 
-    /** 请求超时时间（秒） */
     private static final long TIMEOUT_SECONDS = 300;
 
-    /** OkHttp 客户端实例——线程安全，全局复用 */
     private final OkHttpClient httpClient;
 
     public OkHttpModelApiClient() {
@@ -44,8 +30,6 @@ public class OkHttpModelApiClient implements ModelApiClient {
                 .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .build();
     }
-
-    // ==================== 同步请求 ====================
 
     @Override
     public String post(String url, Map<String, String> headers, String body) {
@@ -61,15 +45,12 @@ public class OkHttpModelApiClient implements ModelApiClient {
         }
     }
 
-    // ==================== 流式请求 ====================
-
     @Override
     public Flux<String> postStream(String url, Map<String, String> headers, String body) {
         Request request = buildRequest(url, headers, body);
         log.debug("发送流式请求: POST {}", url);
 
         return Flux.<String>create(sink -> {
-                    // 注意：这里用 try-with-resources 确保 Response 在任何情况下都能关闭
                     try (Response response = httpClient.newCall(request).execute()) {
 
                         if (!response.isSuccessful()) {
@@ -91,7 +72,7 @@ public class OkHttpModelApiClient implements ModelApiClient {
                             String line;
                             while ((line = reader.readLine()) != null) {
                                 if (line.isEmpty()) {
-                                    continue; // SSE 事件之间的空行
+                                    continue;
                                 }
                                 sink.next(line);
 
@@ -110,10 +91,8 @@ public class OkHttpModelApiClient implements ModelApiClient {
                                 "流式请求失败: " + e.getMessage()));
                     }
                 })
-                .subscribeOn(Schedulers.boundedElastic()); // 阻塞 I/O 在弹性线程池执行
+                .subscribeOn(Schedulers.boundedElastic());
     }
-
-    // ==================== 健康检查 ====================
 
     @Override
     public boolean healthCheck(String url) {
@@ -130,11 +109,6 @@ public class OkHttpModelApiClient implements ModelApiClient {
         }
     }
 
-    // ==================== 私有辅助方法 ====================
-
-    /**
-     * 构建 OkHttp Request 对象
-     */
     private Request buildRequest(String url, Map<String, String> headers, String body) {
         if (url == null || url.isBlank()) {
             throw ModelException.of(ErrorCode.MODEL_INVALID_REQUEST, "URL 不能为空");
@@ -142,12 +116,10 @@ public class OkHttpModelApiClient implements ModelApiClient {
 
         Request.Builder builder = new Request.Builder().url(url);
 
-        // 设置请求头
         if (headers != null) {
             headers.forEach(builder::addHeader);
         }
 
-        // 设置请求体
         RequestBody requestBody = body != null
                 ? RequestBody.create(body, MediaType.parse("application/json"))
                 : RequestBody.create("", MediaType.parse("application/json"));
@@ -155,9 +127,6 @@ public class OkHttpModelApiClient implements ModelApiClient {
         return builder.post(requestBody).build();
     }
 
-    /**
-     * 处理 HTTP 响应，成功时返回响应体，失败时抛异常
-     */
     private String handleResponse(Response response, String url) throws IOException {
         int httpStatus = response.code();
         ResponseBody body = response.body();
@@ -167,13 +136,9 @@ public class OkHttpModelApiClient implements ModelApiClient {
             return bodyString;
         }
 
-        // 失败——根据状态码抛不同的异常
         throw parseHttpError(httpStatus, bodyString, url);
     }
 
-    /**
-     * 根据 HTTP 状态码构造对应的 ModelException
-     */
     private ModelException parseHttpError(int httpStatus, String bodyString, String url) {
         log.error("API调用失败: url={}, status={}, body={}",
                 url, httpStatus, bodyString);

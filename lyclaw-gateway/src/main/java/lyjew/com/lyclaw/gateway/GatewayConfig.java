@@ -18,8 +18,8 @@ public class GatewayConfig {
     @Bean
     public RouteLocator customRoutes(RouteLocatorBuilder builder) {
         return builder.routes()
-                .route("chat-stream", r -> r
-                        .path("/api/chat/stream")
+                .route("chat-api", r -> r
+                        .path("/api/chat", "/api/chat/stream")
                         .uri("lb://lyclaw-orchestration-service"))
                 .route("sessions-api", r -> r
                         .path("/api/sessions/**")

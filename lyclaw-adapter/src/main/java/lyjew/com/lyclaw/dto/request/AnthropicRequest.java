@@ -32,14 +32,11 @@ public class AnthropicRequest {
     @JsonProperty("stop_sequences")
     private List<String> stopSequences;
 
-    /** 工具列表——直接用 Map 表示，由 Adapter 从 ToolDefinition 构建 */
     private List<Map<String, Object>> tools;
 
     @JsonProperty("tool_choice")
     private Object toolChoice;
     private Thinking thinking;
-
-    // ===== 内部类：只保留 Message 和 Thinking =====
 
     @Data
     @Builder

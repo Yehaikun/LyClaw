@@ -2,19 +2,6 @@ package lyjew.com.lyclaw.persistence;
 
 import java.util.Objects;
 
-/**
- * 持久化决策结果。
- *
- * <p>纯值对象，不可变。通过工厂方法创建，屏蔽内部构造函数细节。</p>
- *
- * <p>设计模式：值对象模式<br>
- * 用途：连接策略层和执行层的纯数据载体。策略接口返回 PersistenceDecision，
- * 执行器接收 PersistenceDecision 决定是否刷盘。双方互不感知对方的存在。</p>
- *
- * @since 1.0
- * @author LyClaw Team
- * @see PersistenceSignal
- */
 public final class PersistenceDecision {
 
     private final PersistenceSignal signal;
@@ -25,44 +12,23 @@ public final class PersistenceDecision {
         this.reason = reason;
     }
 
-    // ========== 工厂方法 ==========
-
-    /** 立即落盘 */
     public static PersistenceDecision write(String reason) {
         return new PersistenceDecision(PersistenceSignal.WRITE, reason);
     }
 
-    /** 暂缓，积累更多后再落盘 */
     public static PersistenceDecision defer(String reason) {
         return new PersistenceDecision(PersistenceSignal.DEFER, reason);
     }
 
-    /** 不需要落盘 */
     public static PersistenceDecision skip(String reason) {
         return new PersistenceDecision(PersistenceSignal.SKIP, reason);
     }
 
-    // ========== 快捷方法 ==========
+    public boolean shouldWrite() { return signal == PersistenceSignal.WRITE; }
 
-    /** 当前决策是否需要执行写入 */
-    public boolean shouldWrite() {
-        return signal == PersistenceSignal.WRITE;
-    }
+    public PersistenceSignal signal() { return signal; }
 
-    // ========== getters ==========
-
-    public PersistenceSignal signal() {
-        return signal;
-    }
-
-    public String reason() {
-        return reason;
-    }
-
-    @Override
-    public String toString() {
-        return "PersistenceDecision{" + signal + (reason != null && !reason.isEmpty() ? ", reason='" + reason + '\'' : "") + '}';
-    }
+    public String reason() { return reason; }
 
     @Override
     public boolean equals(Object o) {
@@ -72,7 +38,10 @@ public final class PersistenceDecision {
     }
 
     @Override
-    public int hashCode() {
-        return Objects.hash(signal, reason);
+    public int hashCode() { return Objects.hash(signal, reason); }
+
+    @Override
+    public String toString() {
+        return "PersistenceDecision{" + signal + (reason != null && !reason.isEmpty() ? ", reason='" + reason + '\'' : "") + '}';
     }
 }

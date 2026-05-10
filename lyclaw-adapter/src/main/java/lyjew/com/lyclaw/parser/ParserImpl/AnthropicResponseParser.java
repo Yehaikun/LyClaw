@@ -8,13 +8,6 @@ import lyjew.com.lyclaw.exception.ModelException;
 import lyjew.com.lyclaw.parser.ResponseParser;
 import org.springframework.stereotype.Component;
 
-/**
- * Anthropic 格式响应解析器
- *
- * 负责识别并解析 Anthropic 格式的响应（MiniMax 和 DeepSeek Anthropic 格式）。
- *
- * 判断依据：响应 JSON 中包含 "type": "message" 字段（Anthropic 格式的特征）。
- */
 @Component
 public class AnthropicResponseParser implements ResponseParser {
 
@@ -32,7 +25,6 @@ public class AnthropicResponseParser implements ResponseParser {
         }
         try {
             JsonNode root = objectMapper.readTree(rawJson);
-            // Anthropic 格式的特征：顶层有 type 字段且值为 "message"
             JsonNode typeNode = root.get("type");
             return typeNode != null && "message".equals(typeNode.asText());
         } catch (Exception e) {
@@ -55,11 +47,6 @@ public class AnthropicResponseParser implements ResponseParser {
         return FORMAT;
     }
 
-    // ==================== 便捷方法 ====================
-
-    /**
-     * 直接解析为 AnthropicResponse（无需传 Class）
-     */
     public AnthropicResponse parse(String rawJson) {
         return parse(rawJson, AnthropicResponse.class);
     }

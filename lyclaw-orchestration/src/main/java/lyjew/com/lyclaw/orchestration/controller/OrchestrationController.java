@@ -9,10 +9,11 @@ import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.orchestration.Orchestrator;
 import lyjew.com.lyclaw.orchestration.dto.ChatRequest;
 import lyjew.com.lyclaw.provider.ModelProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,16 +22,18 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequestMapping("/api")
 public class OrchestrationController {
 
-    @Autowired
-    private Orchestrator orchestrator;
-
-    @Autowired(required = false)
-    private InterceptorChain interceptorChain;
-
-    @Autowired(required = false)
-    private ModelProvider modelProvider;
-
+    private final Orchestrator orchestrator;
+    private final InterceptorChain interceptorChain;
+    private final ModelProvider modelProvider;
     private final Map<String, Session> sessionStore = new ConcurrentHashMap<>();
+
+    public OrchestrationController(Orchestrator orchestrator,
+                                   InterceptorChain interceptorChain,
+                                   ModelProvider modelProvider) {
+        this.orchestrator = orchestrator;
+        this.interceptorChain = interceptorChain;
+        this.modelProvider = modelProvider;
+    }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatStream(@RequestBody ChatRequest request) {
@@ -41,14 +44,17 @@ public class OrchestrationController {
     }
 
     @PostMapping("/chat")
-    public ChatResult chat(@RequestBody ChatRequest request) {
+    public Mono<ChatResult> chat(@RequestBody ChatRequest request) {
         Session session = resolveSession(request.getSessionId());
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
         ChatContext context = buildChatContext(modelRequest, session);
         Flux<String> flux = orchestrator.execute(context);
-        List<String> results = flux.collectList().block();
-        String content = results != null ? String.join("", results) : "";
-        return new ChatResult(content, "stop", null, null, 0L);
+        return flux.collectList()
+                .map(results -> {
+                    String content = results != null ? String.join("", results) : "";
+                    return new ChatResult(content, "stop", null, null, 0L);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @PostMapping("/sessions")

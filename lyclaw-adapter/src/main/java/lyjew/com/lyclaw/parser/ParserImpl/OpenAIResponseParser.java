@@ -8,13 +8,6 @@ import lyjew.com.lyclaw.exception.ModelException;
 import lyjew.com.lyclaw.parser.ResponseParser;
 import org.springframework.stereotype.Component;
 
-/**
- * OpenAI 格式响应解析器
- *
- * 负责识别并解析 OpenAI 兼容格式的响应（DeepSeek OpenAI 格式）。
- *
- * 判断依据：响应 JSON 中包含 "object": "chat.completion" 字段（OpenAI 格式的特征）。
- */
 @Component
 public class OpenAIResponseParser implements ResponseParser {
 
@@ -32,10 +25,8 @@ public class OpenAIResponseParser implements ResponseParser {
         }
         try {
             JsonNode root = objectMapper.readTree(rawJson);
-            // OpenAI 格式的特征：顶层有 object 字段且值为 "chat.completion"
             JsonNode objectNode = root.get("object");
-            return objectNode != null
-                    && "chat.completion".equals(objectNode.asText());
+            return objectNode != null && "chat.completion".equals(objectNode.asText());
         } catch (Exception e) {
             return false;
         }
@@ -56,11 +47,6 @@ public class OpenAIResponseParser implements ResponseParser {
         return FORMAT;
     }
 
-    // ==================== 便捷方法 ====================
-
-    /**
-     * 直接解析为 OpenAIResponse（无需传 Class）
-     */
     public OpenAIResponse parse(String rawJson) {
         return parse(rawJson, OpenAIResponse.class);
     }

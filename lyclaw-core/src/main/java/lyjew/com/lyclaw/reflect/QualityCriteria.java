@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class QualityCriteria {
-
     private String taskDescription;
     private String expectedOutput;
     private boolean checkAccuracy;

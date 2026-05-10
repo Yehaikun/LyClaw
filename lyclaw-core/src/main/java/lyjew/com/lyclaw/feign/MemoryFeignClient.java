@@ -16,10 +16,12 @@ public interface MemoryFeignClient {
     MemoryQueryResult retrieve(@RequestBody MemoryQuery query);
 
     @PostMapping("/ingest")
-    Map<String, Object> ingest(@RequestBody PerceptionData data);
+    Map<String, Object> ingest(@RequestBody PerceptionData data,
+                               @RequestParam("sessionId") String sessionId,
+                               @RequestParam(value = "userId", required = false, defaultValue = "default") String userId);
 
     @PostMapping("/consolidate")
-    Map<String, Object> consolidate(@RequestParam String userId, @RequestParam String sessionId);
+    Map<String, Object> consolidate(@RequestParam("userId") String userId, @RequestParam("sessionId") String sessionId);
 
     @GetMapping("/stats")
     MemoryStats getStats();

@@ -6,6 +6,4 @@ public abstract class BaseEngine {
     public BaseEngine(String dataDir) {
         this.dataDir = dataDir;
     }
-
-
 }

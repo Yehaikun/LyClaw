@@ -2,12 +2,6 @@ package lyjew.com.lyclaw.task;
 
 import java.time.Instant;
 
-/**
- * 任务记录值对象 —— 记录单个任务的每次执行记录。
- *
- * @since 1.0
- * @author LyClaw Team
- */
 public class TaskRecord {
 
     private final String taskId;

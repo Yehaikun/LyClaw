@@ -9,8 +9,11 @@ public class AlertRule {
 
     public enum AlertType {
         TOKEN_OVER_LIMIT,
+        TOKEN_OVERUSE,
         FAILURE_RATE_HIGH,
         LATENCY_SPIKE,
+        ABNORMAL_BEHAVIOR,
+        ERROR_BURST,
         ANOMALOUS_BEHAVIOR,
         MEMORY_NEAR_CAPACITY
     }

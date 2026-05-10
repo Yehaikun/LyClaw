@@ -45,11 +45,8 @@
         <!-- 存储实现 -->
         <module>lyclaw-storage</module>
 
-        <!-- 旧引擎 (逐步废弃) -->
-        <module>lyclaw-engine</module>
-
-        <!-- L7 接口层 -->
-        <module>lyclaw-web</module>
+        <!-- lyclaw-engine 功能已全部分发至各微服务，模块删除 -->
+        <!-- lyclaw-web 已被 lyclaw-gateway 替代，模块删除 -->
 
         <!-- L8 网关层 (Spring Cloud Gateway) -->
         <module>lyclaw-gateway</module>
@@ -71,8 +68,8 @@
         <lombok.version>1.18.36</lombok.version>
 
         <!-- Spring Cloud & Alibaba 微服务版本 -->
-        <spring-cloud.version>2024.0.1</spring-cloud.version>
-        <spring-cloud-alibaba.version>2023.0.3.2</spring-cloud-alibaba.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
     </properties>
 
     <!-- ========== dependencyManagement 统一管理依赖 ========== -->
@@ -127,12 +124,6 @@
             <dependency>
                 <groupId>lyjew.com</groupId>
                 <artifactId>lyclaw-core</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-engine</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -225,7 +216,8 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <!-- 测试（所有模块都需要） -->
@@ -246,6 +238,7 @@
                 <configuration>
                     <source>17</source>
                     <target>17</target>
+                    <parameters>true</parameters>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>

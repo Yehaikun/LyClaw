@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class AgentPoolSnapshot {
-
     private int totalAgents;
     private int idleAgents;
     private int runningAgents;

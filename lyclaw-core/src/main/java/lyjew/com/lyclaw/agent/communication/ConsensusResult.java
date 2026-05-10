@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class ConsensusResult {
-
     private boolean consensusReached;
     private String decision;
     private double agreementRate;

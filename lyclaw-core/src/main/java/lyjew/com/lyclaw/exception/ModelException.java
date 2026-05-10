@@ -3,12 +3,8 @@ package lyjew.com.lyclaw.exception;
 import lyjew.com.lyclaw.base.exception.LyClawException;
 import lyjew.com.lyclaw.enums.ErrorCode;
 
-/**
- * 模型调用异常
- */
 public class ModelException extends LyClawException {
 
-    /** 厂商返回的原始错误信息（可用于调试） */
     private final String rawResponse;
 
     public ModelException(String code, int httpStatus, String message) {
@@ -26,11 +22,8 @@ public class ModelException extends LyClawException {
         this.rawResponse = null;
     }
 
-    public String getRawResponse() {
-        return rawResponse;
-    }
+    public String getRawResponse() { return rawResponse; }
 
-    /** 用错误码枚举创建 */
     public static ModelException of(ErrorCode errorCode) {
         return new ModelException(errorCode.code(), errorCode.httpStatus(), errorCode.defaultMessage());
     }
@@ -45,7 +38,6 @@ public class ModelException extends LyClawException {
                 errorCode.defaultMessage(), cause);
     }
 
-    /** 带厂商原始响应的创建 */
     public static ModelException withRawResponse(int httpStatus, String message, String rawResponse) {
         return new ModelException("MODEL_API_ERROR", httpStatus, message, rawResponse);
     }

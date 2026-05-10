@@ -8,9 +8,6 @@ import lyjew.com.lyclaw.base.BaseDTO;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 会话
- */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @SuperBuilder

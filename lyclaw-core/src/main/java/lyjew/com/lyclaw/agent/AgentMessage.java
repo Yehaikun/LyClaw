@@ -2,12 +2,6 @@ package lyjew.com.lyclaw.agent;
 
 import java.time.Instant;
 
-/**
- * Agent 通信消息体 —— 包含发送方、接收方、消息类型、内容和时间戳。
- *
- * @since 1.0
- * @author LyClaw Team
- */
 public class AgentMessage {
 
     private final String from;

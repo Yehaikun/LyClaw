@@ -2,18 +2,13 @@ package lyjew.com.lyclaw.memory;
 
 import lombok.Builder;
 import lombok.Data;
+
 import java.util.List;
 import java.util.Map;
 
-/**
- * 实体记忆 —— 知识图谱中的节点, 表示人/项目/公司等实体及其关系。
- *
- * @since 2.0
- */
 @Data
 @Builder
 public class EntityMemory {
-
     private String entityType;
     private String entityId;
     private String name;

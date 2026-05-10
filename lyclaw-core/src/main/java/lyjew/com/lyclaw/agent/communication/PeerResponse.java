@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class PeerResponse {
-
     private String agentId;
     private String content;
     private double confidence;

@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class AgentEndpoint {
-
     private String url;
     private String transportType;
     private boolean primary;

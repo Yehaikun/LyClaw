@@ -6,7 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class JanitorReport {
-
     private int duplicatesRemoved;
     private int expiredEntriesRemoved;
     private int conflictsResolved;

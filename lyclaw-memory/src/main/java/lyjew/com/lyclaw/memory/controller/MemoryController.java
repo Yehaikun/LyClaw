@@ -1,32 +1,26 @@
 package lyjew.com.lyclaw.memory.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.memory.MemoryConsolidationPolicy;
 import lyjew.com.lyclaw.memory.MemoryQuery;
 import lyjew.com.lyclaw.memory.MemoryQueryResult;
 import lyjew.com.lyclaw.memory.MemoryStats;
 import lyjew.com.lyclaw.memory.MemorySystem;
 import lyjew.com.lyclaw.memory.PerceptionData;
-
-import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/memory")
-@RequiredArgsConstructor
 public class MemoryController {
 
-    private static final Logger log = LoggerFactory.getLogger(MemoryController.class);
-
     private final MemorySystem memorySystem;
+
+    public MemoryController(MemorySystem memorySystem) {
+        this.memorySystem = memorySystem;
+    }
 
     @PostMapping("/retrieve")
     public MemoryQueryResult retrieve(@RequestBody MemoryQuery query) {
@@ -45,8 +39,7 @@ public class MemoryController {
         return Map.of(
                 "entryId", entry.getEntryId(),
                 "layer", entry.getLayer().name(),
-                "status", "ingested"
-        );
+                "status", "ingested");
     }
 
     @PostMapping("/consolidate")
@@ -57,11 +50,7 @@ public class MemoryController {
         MemoryConsolidationPolicy policy = MemoryConsolidationPolicy.builder().build();
         memorySystem.consolidate(userId, policy);
         memorySystem.evictExpiredPerceptions();
-        return Map.of(
-                "userId", userId,
-                "sessionId", sessionId,
-                "status", "consolidated"
-        );
+        return Map.of("userId", userId, "sessionId", sessionId, "status", "consolidated");
     }
 
     @GetMapping("/stats")

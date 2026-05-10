@@ -18,30 +18,13 @@ import reactor.core.publisher.Flux;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * DeepSeek OpenAI 格式适配器
- *
- * 负责将统一请求转换为 OpenAI 兼容格式的请求，
- * 并将 OpenAI 格式响应转换为统一的 ModelResponse。
- *
- * DeepSeek OpenAI 格式特点：
- * - 端点 /chat/completions
- * - system 提示放在 messages 数组的第一条（role="system"）
- * - content 是纯字符串，不是数组——和 Anthropic 格式的最大区别
- * - Token 字段：prompt_tokens / completion_tokens / total_tokens
- * - 支持 thinking 配置和 reasoning_effort（low/medium/high）
- */
 @Slf4j
 @Component
 public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
 
-    // ========== 常量 ==========
-
     private static final String ENDPOINT = "/chat/completions";
     private static final String DEFAULT_BASE_URL = "https://api.deepseek.com";
     private static final String DEFAULT_MODEL = "deepseek-v4-flash";
-
-    // ========== 依赖 ==========
 
     private final ModelApiClient httpClient;
     private final OpenAIResponseParser responseParser;
@@ -54,8 +37,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         this.responseParser = responseParser;
         this.objectMapper = objectMapper;
     }
-
-    // ========== 元信息 ==========
 
     @Override
     public String getProvider() {
@@ -72,8 +53,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         return DEFAULT_MODEL;
     }
 
-    // ========== Token 估算 ==========
-
     @Override
     public int countTokens(String text) {
         if (text == null || text.isEmpty()) {
@@ -81,8 +60,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         }
         return (int) Math.ceil(text.length() / 2.5);
     }
-
-    // ========== 连接验证 ==========
 
     @Override
     public boolean validate() {
@@ -99,16 +76,14 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
                     .build();
 
             ModelResponse response = chat(testRequest);
-            // DeepSeek 设 maxTokens=1 时 finish_reason 可能是 "length"，仍是正常响应
             return response != null
                     && response.getUsage() != null
-                    && response.getUsage().getTotalTokens() > 0;        } catch (Exception e) {
+                    && response.getUsage().getTotalTokens() > 0;
+        } catch (Exception e) {
             log.warn("[{}] 连接验证失败: {}", getProvider(), e.getMessage());
             return false;
         }
     }
-
-    // ========== 请求构建 ==========
 
     @Override
     protected Object buildRequest(ChatRequest request) {
@@ -120,10 +95,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         return buildOpenAIRequest(request, true);
     }
 
-    /**
-     * 构建 OpenAI 格式请求体
-     * 普通请求和流式请求只有 stream 字段不同
-     */
     private OpenAIRequest buildOpenAIRequest(ChatRequest request, boolean stream) {
         String modelName = (request.getModel() != null && !request.getModel().isEmpty())
                 ? request.getModel() : this.model;
@@ -132,36 +103,23 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
                 .model(modelName)
                 .stream(stream);
 
-        // 最大 Token 数
         if (request.getMaxTokens() != null && request.getMaxTokens() > 0) {
             builder.maxTokens(request.getMaxTokens());
         }
-
-        // 温度
         if (request.getTemperature() != null) {
             builder.temperature(clampTemperature(request.getTemperature(), 0.0, 2.0));
         }
-
-        // Top-P
         if (request.getTopP() != null) {
             builder.topP(request.getTopP());
         }
-
-        // 停止序列
         if (request.getStopSequences() != null && !request.getStopSequences().isEmpty()) {
             builder.stop(request.getStopSequences());
         }
-
-        // 消息列表
         builder.messages(buildMessages(request));
-
-        // 工具列表
         if (request.hasTools()) {
             builder.tools(buildTools(request.getTools()));
             builder.toolChoice(resolveToolChoice(request));
         }
-
-        // 思考模式
         if (request.isThinkingEnabled()) {
             builder.thinking(OpenAIRequest.Thinking.builder()
                     .type("enabled")
@@ -174,14 +132,9 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         return builder.build();
     }
 
-    /**
-     * 构建消息列表
-     * OpenAI 格式：system 是 messages[0]，content 是字符串
-     */
     private List<OpenAIRequest.Message> buildMessages(ChatRequest request) {
         List<OpenAIRequest.Message> messages = new ArrayList<>();
 
-        // system 提示——放在 messages 数组第一条
         if (request.hasSystemPrompt()) {
             OpenAIRequest.Message systemMsg = new OpenAIRequest.Message();
             systemMsg.setRole("system");
@@ -189,17 +142,15 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
             messages.add(systemMsg);
         }
 
-        // 其他消息
         for (Message msg : request.getMessages()) {
             if ("system".equals(msg.getRole())) {
-                continue; // 跳过，用 ChatRequest.systemPrompt 替代
+                continue;
             }
 
             OpenAIRequest.Message oaiMsg = new OpenAIRequest.Message();
             oaiMsg.setRole(msg.getRole());
             oaiMsg.setContent(msg.getContent());
 
-            // 工具返回消息——需要 tool_call_id 关联
             if ("tool".equals(msg.getRole()) && msg.getToolCallId() != null
                     && !msg.getToolCallId().isEmpty()) {
                 oaiMsg.setToolCallId(msg.getToolCallId());
@@ -208,7 +159,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
                 oaiMsg.setToolCallId(msg.getToolCalls().get(0).getToolCallId());
             }
 
-            // AI 消息包含工具调用——需要 tool_calls 数组
             if ("assistant".equals(msg.getRole()) && msg.getToolCalls() != null
                     && !msg.getToolCalls().isEmpty()) {
                 List<OpenAIRequest.ToolCall> toolCalls = msg.getToolCalls().stream()
@@ -233,10 +183,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         return messages;
     }
 
-    /**
-     * 将统一工具定义转为 OpenAI 格式工具列表
-     * OpenAI 格式: {type: "function", function: {name, description, parameters}}
-     */
     private List<Map<String, Object>> buildTools(List<ToolDefinition> toolDefs) {
         return toolDefs.stream()
                 .map(td -> {
@@ -253,22 +199,14 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 解析工具选择策略
-     * - null / 空: "auto"
-     * - 指定工具名: {"type": "function", "function": {"name": "xxx"}}
-     */
     private Object resolveToolChoice(ChatRequest request) {
         Object rawChoice = request.getToolChoice();
 
-        // 处理字符串类型的 toolChoice
         if (rawChoice instanceof String) {
             String tc = (String) rawChoice;
-            // "auto"、"none"、"required" 直接透传给 API
             if ("auto".equals(tc) || "none".equals(tc) || "required".equals(tc)) {
                 return tc;
             }
-            // 其他字符串视为函数名，构造 {type:function, function:{name:xxx}}
             if (!tc.isEmpty()) {
                 Map<String, Object> function = new HashMap<>();
                 function.put("name", tc);
@@ -280,15 +218,12 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
             }
         }
 
-        // 处理 Map 类型的 toolChoice（如 {type:function, function:{name:current_time}}）
         if (rawChoice instanceof Map) {
             return rawChoice;
         }
 
         return "auto";
     }
-
-    // ========== 响应解析 ==========
 
     @Override
     protected Object parseResponse(String rawResponse) {
@@ -310,21 +245,18 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
 
         OpenAIResponse.ResponseMessage message = firstChoice.getMessage();
 
-        // 构建统一响应
         ModelResponse.ModelResponseBuilder builder = ModelResponse.builder()
                 .id(resp.getId())
                 .content(message.getContent())
                 .model(resp.getModel())
                 .finishReason(firstChoice.getFinishReason());
 
-        // Token 用量
         if (resp.getUsage() != null) {
             builder.usage(Usage.of(
                     resp.getUsage().getPromptTokens(),
                     resp.getUsage().getCompletionTokens()));
         }
 
-        // 工具调用转换
         if (message.getToolCalls() != null && !message.getToolCalls().isEmpty()) {
             List<ModelResponse.ToolCallRequest> toolCalls = message.getToolCalls().stream()
                     .map(tc -> ModelResponse.ToolCallRequest.builder()
@@ -338,8 +270,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
 
         return builder.build();
     }
-
-    // ========== HTTP 发送 ==========
 
     @Override
     protected String sendRequest(Object apiRequest) {
@@ -369,8 +299,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         }
     }
 
-    // ========== 私有辅助 ==========
-
     private Map<String, String> buildHeaders() {
         Map<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer " + apiKey);
@@ -386,8 +314,6 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
     private double clampTemperature(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
-
-    // ========== SSE 数据解析 ==========
 
     @Override
     public List<ModelResponse.ToolCallRequest> extractSseToolCalls(String rawSSE) {
@@ -461,23 +387,16 @@ public class DeepSeekOpenAIAdapter extends AbstractModelAdapter {
         return "prompt=0 completion=0 total=0";
     }
 
-    /**
-     * 从 SSE 行中提取 JSON 内容。去掉 "data:" 前缀和前后空白，跳过空行和 [DONE]。
-     * @return JSON 字符串，如果该行不是有效 data 行则返回 null
-     */
     private String stripSseDataPrefix(String line) {
         String trimmed = line.trim();
         if (trimmed.isEmpty()) return null;
         if (trimmed.startsWith("data:")) {
-            trimmed = trimmed.substring(5).trim(); // 去掉 "data:" 前缀
+            trimmed = trimmed.substring(5).trim();
         }
         if (trimmed.isEmpty() || "[DONE]".equals(trimmed)) return null;
         return trimmed;
     }
 
-    /**
-     * 按 index 查找已有 ToolCallRequest，不存在则新建
-     */
     private ModelResponse.ToolCallRequest findOrCreate(
             List<ModelResponse.ToolCallRequest> list,
             int index, String id, String name) {

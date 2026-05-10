@@ -11,7 +11,7 @@ import java.util.Map;
 public interface ProtocolFeignClient {
 
     @PostMapping("/mcp/discover")
-    List<McpToolDescriptor> discoverTools(@RequestParam String serverCommand);
+    List<McpToolDescriptor> discoverTools(@RequestParam("serverCommand") String serverCommand);
 
     @PostMapping("/model/chat")
     Map<String, Object> chat(@RequestBody Map<String, Object> request);

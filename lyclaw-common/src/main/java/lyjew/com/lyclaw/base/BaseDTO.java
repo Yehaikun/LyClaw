@@ -12,11 +12,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class BaseDTO {
-
     private String id;
-
     private LocalDateTime createdAt;
-
     private LocalDateTime updatedAt;
-
 }
