@@ -1,6 +1,7 @@
 package lyjew.com.lyclaw.autoconfigure.processor;
 
 import lyjew.com.lyclaw.pipeline.PipelineStage;
+import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,7 @@ public class PipelineStageProcessor implements BeanPostProcessor {
     private static final Logger log = LoggerFactory.getLogger(PipelineStageProcessor.class);
 
     private final List<PipelineStage> discoveredStages = new ArrayList<>();
+    private final List<ReactivePipelineStage> discoveredReactiveStages = new ArrayList<>();
     private final Map<String, Class<?>[]> afterConstraints = new LinkedHashMap<>();
     private final Map<String, Class<?>[]> beforeConstraints = new LinkedHashMap<>();
 
@@ -43,6 +45,25 @@ public class PipelineStageProcessor implements BeanPostProcessor {
                     }
                 }
                 log.debug("Discovered pipeline stage: {} (order={})", stage.getStageName(), stage.getOrder());
+            } else if (bean instanceof ReactivePipelineStage reactiveStage) {
+                discoveredReactiveStages.add(reactiveStage);
+                Class<?> clazz = bean.getClass();
+
+                Object stageAnn = findAnnotation(clazz, "PipelineStage");
+                if (stageAnn != null) {
+                    String name = getAttr(stageAnn, "name", "");
+                    Class<?>[] after = getAttr(stageAnn, "after", new Class<?>[0]);
+                    Class<?>[] before = getAttr(stageAnn, "before", new Class<?>[0]);
+                    String key = (name != null && !name.isEmpty()) ? name : clazz.getSimpleName();
+                    if (after != null && after.length > 0) {
+                        afterConstraints.put(key, after);
+                    }
+                    if (before != null && before.length > 0) {
+                        beforeConstraints.put(key, before);
+                    }
+                }
+                log.debug("Discovered reactive pipeline stage: {} (order={})",
+                        reactiveStage.getStageName(), reactiveStage.getOrder());
             }
         } catch (Exception e) {
             log.error("Failed to process @PipelineStage bean '{}': {}", beanName, e.getMessage());
@@ -73,6 +94,18 @@ public class PipelineStageProcessor implements BeanPostProcessor {
 
     public int getStageCount() {
         return discoveredStages.size();
+    }
+
+    public List<ReactivePipelineStage> getDiscoveredReactiveStages() {
+        return Collections.unmodifiableList(discoveredReactiveStages);
+    }
+
+    public int getReactiveStageCount() {
+        return discoveredReactiveStages.size();
+    }
+
+    public int getTotalStageCount() {
+        return discoveredStages.size() + discoveredReactiveStages.size();
     }
 
     // --- reflection helpers ----------------------------------------------------

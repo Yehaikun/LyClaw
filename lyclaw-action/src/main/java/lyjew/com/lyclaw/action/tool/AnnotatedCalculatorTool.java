@@ -2,13 +2,11 @@ package lyjew.com.lyclaw.action.tool;
 
 import lyjew.com.lyclaw.framework.annotation.Tool;
 import lyjew.com.lyclaw.framework.annotation.Param;
-import org.springframework.stereotype.Component;
 
 @Tool(name = "calculator",
       description = "执行数学表达式计算，支持四则运算(+,-,*,/)、幂(^)、括号和基本函数",
       readonly = true,
       group = "builtin")
-@Component
 public class AnnotatedCalculatorTool {
 
     public String calculate(

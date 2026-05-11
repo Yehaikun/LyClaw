@@ -11,13 +11,13 @@ import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.task.PlanRequest;
 import lyjew.com.lyclaw.task.TaskNode;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Component;
+import lyjew.com.lyclaw.framework.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 import java.util.*;
 
 @Slf4j
-@Component
+@PipelineStage(name = "PlanExecution", after = SecurityCheckStage.class, group = "CORE")
 public class PlanExecutionStage extends PipelineStageBase {
 
     private final PlanFeignClient planFeignClient;

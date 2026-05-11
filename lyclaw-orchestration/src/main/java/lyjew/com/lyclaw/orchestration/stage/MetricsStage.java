@@ -8,14 +8,14 @@ import lyjew.com.lyclaw.memory.PerceptionData;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Component;
+import lyjew.com.lyclaw.framework.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
-@Component
+@PipelineStage(name = "Metrics", after = RespondStage.class, group = "POSTPROCESSING")
 public class MetricsStage extends PipelineStageBase {
 
     private final MemoryFeignClient memoryFeignClient;

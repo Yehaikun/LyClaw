@@ -8,11 +8,11 @@ import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.security.SecurityManager;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Component;
+import lyjew.com.lyclaw.framework.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 @Slf4j
-@Component
+@PipelineStage(name = "SecurityCheck", after = ContextBuildStage.class, group = "PREPROCESSING")
 public class SecurityCheckStage extends PipelineStageBase {
 
     private final SecurityManager securityManager;

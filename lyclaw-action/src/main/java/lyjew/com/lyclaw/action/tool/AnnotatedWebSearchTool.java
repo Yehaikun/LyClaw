@@ -3,7 +3,6 @@ package lyjew.com.lyclaw.action.tool;
 import lyjew.com.lyclaw.framework.annotation.Tool;
 import lyjew.com.lyclaw.framework.annotation.Param;
 import lyjew.com.lyclaw.framework.annotation.ToolCondition;
-import org.springframework.stereotype.Component;
 
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -17,7 +16,6 @@ import java.time.Duration;
       readonly = true,
       group = "builtin")
 @ToolCondition(requiresConfig = "lyclaw.tools.brave.api-key")
-@Component
 public class AnnotatedWebSearchTool {
 
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(15);

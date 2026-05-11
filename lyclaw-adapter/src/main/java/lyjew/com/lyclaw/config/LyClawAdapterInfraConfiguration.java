@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Configuration;
         "lyjew.com.lyclaw.client",
         "lyjew.com.lyclaw.parser"
 })
-public class AdapterAutoConfiguration {
+public class LyClawAdapterInfraConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(ObjectMapper.class)

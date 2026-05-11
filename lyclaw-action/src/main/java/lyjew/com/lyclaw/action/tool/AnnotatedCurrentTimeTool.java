@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.action.tool;
 
 import lyjew.com.lyclaw.framework.annotation.Tool;
 import lyjew.com.lyclaw.framework.annotation.Param;
-import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
 import java.time.ZoneId;
@@ -12,7 +11,6 @@ import java.time.format.DateTimeFormatter;
       description = "获取当前日期和时间，支持指定时区和格式",
       readonly = true,
       group = "builtin")
-@Component
 public class AnnotatedCurrentTimeTool {
 
     private static final DateTimeFormatter FORMATTER =

@@ -8,11 +8,11 @@ import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.reflect.ReflectRequest;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Component;
+import lyjew.com.lyclaw.framework.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 @Slf4j
-@Component
+@PipelineStage(name = "Reflection", after = PlanExecutionStage.class, group = "CORE")
 public class ReflectionStage extends PipelineStageBase {
 
     private final ReflectFeignClient reflectFeignClient;

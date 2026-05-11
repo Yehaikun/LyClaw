@@ -7,13 +7,13 @@ import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.provider.ModelProvider;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Component;
+import lyjew.com.lyclaw.framework.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
 
 @Slf4j
-@Component
+@PipelineStage(name = "Respond", after = ReflectionStage.class, group = "POSTPROCESSING")
 public class RespondStage extends PipelineStageBase {
 
     private final ModelProvider modelProvider;

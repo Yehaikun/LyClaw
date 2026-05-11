@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.action.tool;
 
 import lyjew.com.lyclaw.framework.annotation.Tool;
 import lyjew.com.lyclaw.framework.annotation.Param;
-import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -13,7 +12,6 @@ import java.util.concurrent.TimeUnit;
       description = "在沙箱环境中执行系统命令",
       readonly = false,
       group = "builtin")
-@Component
 public class AnnotatedCommandTool {
 
     private static final int TIMEOUT_SECONDS = 30;

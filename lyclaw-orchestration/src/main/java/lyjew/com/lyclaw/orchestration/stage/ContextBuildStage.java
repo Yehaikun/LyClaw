@@ -8,11 +8,11 @@ import lyjew.com.lyclaw.memory.MemoryQuery;
 import lyjew.com.lyclaw.memory.MemoryQueryResult;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.stereotype.Component;
+import lyjew.com.lyclaw.framework.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 @Slf4j
-@Component
+@PipelineStage(name = "ContextBuild", group = "PREPROCESSING")
 public class ContextBuildStage extends PipelineStageBase {
 
     private final MemoryFeignClient memoryFeignClient;
