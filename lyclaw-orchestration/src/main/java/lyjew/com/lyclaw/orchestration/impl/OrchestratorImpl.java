@@ -28,6 +28,7 @@ import lyjew.com.lyclaw.security.SecurityManager;
 import lyjew.com.lyclaw.task.PlanRequest;
 import lyjew.com.lyclaw.task.TaskNode;
 import java.util.ArrayList;
+import org.slf4j.MDC;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -87,6 +88,7 @@ public class OrchestratorImpl implements Orchestrator {
             String sessionId = request.getSessionId();
             String userMessage = request.getLastUserMessage();
             String traceId = context.getTracing().getTraceId();
+            MDC.put("traceId", traceId);
 
             // Shared mutable state — written by pipeline, read by respond
             final List<String> toolResults = new ArrayList<>();
@@ -441,7 +443,8 @@ public class OrchestratorImpl implements Orchestrator {
             });
 
             return pipelineFlux.concatWith(respondFlux);
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).doFinally(signalType -> MDC.remove("traceId"))
+          .subscribeOn(Schedulers.boundedElastic());
     }
 
     private Flux<ServerSentEvent<String>> buildTailFlux(ChatContext context, long orchestrationStart, long respondStartMs,
