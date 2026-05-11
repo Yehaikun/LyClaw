@@ -6,13 +6,12 @@ import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolResult;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
-@Component
+@Deprecated
 public class CalculatorTool implements Tool {
 
     private static final String TOOL_NAME = "calculator";

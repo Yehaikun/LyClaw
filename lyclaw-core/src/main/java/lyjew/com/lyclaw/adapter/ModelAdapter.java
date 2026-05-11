@@ -7,6 +7,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.List;
 
+@Deprecated
 public interface ModelAdapter {
 
     ModelResponse chat(ChatRequest request);

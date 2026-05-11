@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.tool;
 
+@Deprecated
 public class ToolResult {
 
     private final boolean success;

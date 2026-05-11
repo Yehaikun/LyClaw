@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -25,6 +26,7 @@ class ToolSandboxImplTest {
     @BeforeEach
     void setUp() {
         sandbox = new ToolSandboxImpl();
+        sandbox.setConfigReadOnlyTools(List.of("calculator", "current_time", "web_search"));
     }
 
     // 用完立即销毁，避免 daemon 线程残留影响后续测试

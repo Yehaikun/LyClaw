@@ -11,14 +11,17 @@ import lyjew.com.lyclaw.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import org.springframework.beans.factory.annotation.Value;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
+
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -38,9 +41,13 @@ public class ToolSandboxImpl implements ToolSandbox {
     private final AtomicBoolean healthy = new AtomicBoolean(true);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final Set<String> READ_ONLY_TOOLS = Set.of(
-            "calculator", "current_time", "web_search"
-    );
+    @Value("${lyclaw.sandbox.readonly-tools:calculator,current_time,web_search}")
+    private List<String> configReadOnlyTools;
+
+    // visible for testing
+    void setConfigReadOnlyTools(List<String> tools) {
+        this.configReadOnlyTools = tools;
+    }
 
     @Override
     public ToolResult execute(Tool tool, Map<String, Object> args, SandboxLevel level) {
@@ -103,7 +110,9 @@ public class ToolSandboxImpl implements ToolSandbox {
     }
 
     private ToolResult executeReadOnly(Tool tool, ToolCall toolCall, long startTime) {
-        if (!READ_ONLY_TOOLS.contains(tool.getName())) {
+        boolean isReadOnly = (tool.getDefinition() != null && tool.getDefinition().isReadOnly())
+                || (configReadOnlyTools != null && configReadOnlyTools.contains(tool.getName()));
+        if (!isReadOnly) {
             return ToolResult.builder()
                     .toolName(tool.getName())
                     .success(false)

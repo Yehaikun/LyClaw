@@ -6,7 +6,6 @@ import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolResult;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -16,7 +15,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-@Component
+@Deprecated
 public class CommandTool implements Tool {
 
     private static final String TOOL_NAME = "command";

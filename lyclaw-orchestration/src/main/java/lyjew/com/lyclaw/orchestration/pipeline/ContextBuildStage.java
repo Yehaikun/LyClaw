@@ -11,12 +11,9 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.Chain;
 import lyjew.com.lyclaw.pipeline.PipelineStage;
-import org.springframework.stereotype.Component;
-
 import java.util.List;
 
 @Slf4j
-@Component
 public class ContextBuildStage implements PipelineStage {
 
     private final ContextBuilder contextBuilder;

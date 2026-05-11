@@ -2,6 +2,7 @@ package lyjew.com.lyclaw.skill;
 
 import java.util.List;
 
+@Deprecated
 public interface SkillRegistry {
 
     void register(Skill skill);

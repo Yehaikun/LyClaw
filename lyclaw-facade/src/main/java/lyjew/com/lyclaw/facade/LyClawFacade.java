@@ -17,6 +17,7 @@ import lyjew.com.lyclaw.provider.ModelProvider;
 import lyjew.com.lyclaw.storage.ConfigStorage;
 import lyjew.com.lyclaw.storage.SessionStorage;
 import lyjew.com.lyclaw.tool.ToolRegistry;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -35,7 +36,7 @@ public class LyClawFacade {
     private final ConfigStorage configStorage;
     private final MemorySystem memorySystem;
 
-    public Flux<String> chat(ChatRequest request) {
+    public Flux<ServerSentEvent<String>> chat(ChatRequest request) {
         log.info("Processing chat: session={}", request.getSessionId());
         ChatContext context = buildContext(request);
         return orchestrator.execute(context);

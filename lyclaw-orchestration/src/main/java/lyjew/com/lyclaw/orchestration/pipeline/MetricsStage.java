@@ -9,10 +9,7 @@ import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.infra.metrics.MetricsSnapshot;
 import lyjew.com.lyclaw.pipeline.Chain;
 import lyjew.com.lyclaw.pipeline.PipelineStage;
-import org.springframework.stereotype.Component;
-
 @Slf4j
-@Component
 public class MetricsStage implements PipelineStage {
 
     private final EventBus eventBus;

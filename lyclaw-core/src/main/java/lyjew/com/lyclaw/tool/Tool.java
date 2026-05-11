@@ -4,6 +4,7 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 
+@Deprecated
 public interface Tool {
 
     String getName();

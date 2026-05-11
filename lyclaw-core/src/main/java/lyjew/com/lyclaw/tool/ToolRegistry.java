@@ -6,6 +6,7 @@ import lyjew.com.lyclaw.model.ToolDefinition;
 
 import java.util.List;
 
+@Deprecated
 public interface ToolRegistry {
 
     void register(Tool tool);

@@ -56,7 +56,7 @@ class PipelineBuilderTest {
         stages.add(new StubStage("StageA", 1));
         stages.add(new StubStage("StageB", 2));
 
-        PipelineBuilder builder = new PipelineBuilder(stages);
+        PipelineBuilder builder = new PipelineBuilder(stages, List.of());
 
         // then: stages should be sorted by order
         List<PipelineStage> sorted = builder.getStages();
@@ -70,7 +70,7 @@ class PipelineBuilderTest {
     void shouldBuildPipelineWithCorrectStageCount() {
         stages.add(new StubStage("A", 0));
         stages.add(new StubStage("B", 1));
-        PipelineBuilder builder = new PipelineBuilder(stages);
+        PipelineBuilder builder = new PipelineBuilder(stages, List.of());
 
         Pipeline pipeline = builder.build();
 
@@ -82,7 +82,7 @@ class PipelineBuilderTest {
     void shouldReturnStageCount() {
         stages.add(new StubStage("A", 0));
         stages.add(new StubStage("B", 1));
-        PipelineBuilder builder = new PipelineBuilder(stages);
+        PipelineBuilder builder = new PipelineBuilder(stages, List.of());
 
         assertThat(builder.getStageCount()).isEqualTo(2);
     }
@@ -91,7 +91,7 @@ class PipelineBuilderTest {
     void shouldRebuildPipelineWithFreshSortedStages() {
         stages.add(new StubStage("B", 2));
         stages.add(new StubStage("A", 1));
-        PipelineBuilder builder = new PipelineBuilder(stages);
+        PipelineBuilder builder = new PipelineBuilder(stages, List.of());
 
         Pipeline first = builder.build();
         Pipeline second = builder.rebuild();
@@ -103,7 +103,7 @@ class PipelineBuilderTest {
 
     @Test
     void shouldHandleEmptyStagesList() {
-        PipelineBuilder builder = new PipelineBuilder(new ArrayList<>());
+        PipelineBuilder builder = new PipelineBuilder(new ArrayList<>(), List.of());
 
         assertThat(builder.getStageCount()).isEqualTo(0);
         assertThat(builder.build().getStages()).isEmpty();
@@ -112,7 +112,7 @@ class PipelineBuilderTest {
     @Test
     void shouldReturnDefensiveCopyOfStages() {
         stages.add(new StubStage("A", 0));
-        PipelineBuilder builder = new PipelineBuilder(stages);
+        PipelineBuilder builder = new PipelineBuilder(stages, List.of());
 
         List<PipelineStage> returned = builder.getStages();
         returned.clear(); // should not affect internal list

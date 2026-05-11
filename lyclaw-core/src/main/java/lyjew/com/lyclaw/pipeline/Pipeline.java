@@ -4,6 +4,7 @@ import lyjew.com.lyclaw.context.ChatContext;
 
 import java.util.List;
 
+@Deprecated
 public interface Pipeline {
 
     void execute(ChatContext context);

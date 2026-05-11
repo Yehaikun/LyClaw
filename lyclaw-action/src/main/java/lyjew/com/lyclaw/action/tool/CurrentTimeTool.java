@@ -6,7 +6,6 @@ import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolResult;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
 import java.time.ZoneId;
@@ -14,7 +13,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @Slf4j
-@Component
+@Deprecated
 public class CurrentTimeTool implements Tool {
 
     private static final String TOOL_NAME = "current_time";

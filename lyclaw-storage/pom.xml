@@ -20,7 +20,7 @@
     <dependencies>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-common</artifactId>
+            <artifactId>lyclaw-framework</artifactId>
         </dependency>
         <dependency>
             <groupId>lyjew.com</groupId>

@@ -5,6 +5,7 @@ import lyjew.com.lyclaw.dto.SkillResult;
 
 import java.util.concurrent.CompletableFuture;
 
+@Deprecated
 public interface Skill {
 
     String getSkillId();
