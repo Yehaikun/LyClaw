@@ -1,12 +1,11 @@
 package lyjew.com.lyclaw.action.impl;
 
-import lyjew.com.lyclaw.adapter.ModelAdapter;
+import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.ChatResult;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
 import lyjew.com.lyclaw.model.ToolCall;
-import lyjew.com.lyclaw.provider.ModelProvider;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
 import lyjew.com.lyclaw.tool.ToolErrorAction;
 import lyjew.com.lyclaw.tool.ToolRegistry;
@@ -33,14 +32,14 @@ import java.util.List;
  * 提供了 {@link #beforeLoop} 和 {@link #afterLoop} 钩子供子类扩展。</p>
  *
  * @see ToolCallPolicy
- * @see ModelProvider
+ * @see ChatFacade
  */
 @Slf4j
 @Component
 public class ToolCallLoop {
 
-    /** 模型提供者，用于获取配置好的 LLM 适配器 */
-    private final ModelProvider modelProvider;
+    /** 聊天门面，统一入口用于调用 LLM */
+    private final ChatFacade chatFacade;
     /** 工具注册表，用于执行工具调用 */
     private final ToolRegistry toolRegistry;
     /** 工具调用控制策略 */
@@ -49,10 +48,10 @@ public class ToolCallLoop {
     /**
      * 构造函数，通过依赖注入初始化各组件。
      */
-    public ToolCallLoop(ModelProvider modelProvider,
+    public ToolCallLoop(ChatFacade chatFacade,
                         ToolRegistry toolRegistry,
                         ToolCallPolicy toolCallPolicy) {
-        this.modelProvider = modelProvider;
+        this.chatFacade = chatFacade;
         this.toolRegistry = toolRegistry;
         this.toolCallPolicy = toolCallPolicy;
     }
@@ -80,11 +79,6 @@ public class ToolCallLoop {
     public ChatResult execute(ChatContext context) {
         beforeLoop(context);
 
-        ModelAdapter adapter = modelProvider.getConfiguredAdapter();
-        if (adapter == null) {
-            log.warn("No configured adapter available for tool call loop");
-            return new ChatResult("Tool execution unavailable - no LLM configured", "stop", null, null, 0L);
-        }
         // 获取当前消息列表的引用，后续操作直接修改此列表
         List<Message> messages = context.getRequest().getMessages();
 
@@ -92,8 +86,14 @@ public class ToolCallLoop {
         int maxRounds = toolCallPolicy.getMaxRounds();
 
         while (round < maxRounds) {
-            // 1. 调用 LLM
-            ModelResponse response = adapter.chat(context.getRequest());
+            // 1. 调用 LLM（通过 ChatFacade，内部自动路由和选择模型）
+            ModelResponse response;
+            try {
+                response = chatFacade.chat(context.getRequest());
+            } catch (Exception e) {
+                log.warn("ChatFacade chat failed: {}", e.getMessage());
+                return new ChatResult("Tool execution unavailable - LLM call failed", "stop", null, null, 0L);
+            }
 
             // 2. 检查响应中是否包含工具调用请求
             if (!handleModelResponse(response)) {

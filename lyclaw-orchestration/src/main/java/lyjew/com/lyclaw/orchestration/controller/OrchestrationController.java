@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.orchestration.controller;
 
+import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.ChatResult;
 import lyjew.com.lyclaw.interceptor.InterceptorChain;
@@ -8,7 +9,6 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.orchestration.Orchestrator;
 import lyjew.com.lyclaw.orchestration.dto.ChatRequest;
-import lyjew.com.lyclaw.provider.ModelProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -33,16 +33,16 @@ public class OrchestrationController {
 
     private final Orchestrator orchestrator;
     private final InterceptorChain interceptorChain;
-    private final ModelProvider modelProvider;
+    private final ChatFacade chatFacade;
     /** 内存会话存储，键为 sessionId */
     private final Map<String, Session> sessionStore = new ConcurrentHashMap<>();
 
     public OrchestrationController(Orchestrator orchestrator,
                                    InterceptorChain interceptorChain,
-                                   ModelProvider modelProvider) {
+                                   ChatFacade chatFacade) {
         this.orchestrator = orchestrator;
         this.interceptorChain = interceptorChain;
-        this.modelProvider = modelProvider;
+        this.chatFacade = chatFacade;
     }
 
     /**
@@ -218,7 +218,7 @@ public class OrchestrationController {
                 memory,
                 Collections.emptyList(),  // 工具定义由后续管线阶段填充
                 interceptorChain,
-                modelProvider,
+                chatFacade,
                 traceId
         );
     }

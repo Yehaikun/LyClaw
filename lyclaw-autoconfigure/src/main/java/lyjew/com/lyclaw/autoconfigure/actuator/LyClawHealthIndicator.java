@@ -1,21 +1,22 @@
 package lyjew.com.lyclaw.autoconfigure.actuator;
 
-import lyjew.com.lyclaw.adapter.ModelAdapter;
-import lyjew.com.lyclaw.autoconfigure.processor.AdapterAnnotationProcessor;
+import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 /**
- * Reports LyClaw framework health: adapter reachable, tool registry non-empty.
+ * LyClaw 框架健康指示器，报告模型和工具注册表状态。
  */
 @Component
 public class LyClawHealthIndicator implements HealthIndicator {
 
     @Autowired(required = false)
-    private AdapterAnnotationProcessor adapterProcessor;
+    private ChatFacade chatFacade;
 
     @Autowired(required = false)
     private ToolRegistry toolRegistry;
@@ -24,15 +25,16 @@ public class LyClawHealthIndicator implements HealthIndicator {
     public Health health() {
         Health.Builder builder = Health.up();
 
-        // Adapter health
-        if (adapterProcessor != null) {
-            int adapterCount = adapterProcessor.getAllAdapters().size();
-            boolean anyConfigured = adapterProcessor.getAllAdapters().stream()
-                    .anyMatch(ModelAdapter::isConfigured);
-            builder.withDetail("adapters", adapterCount)
-                   .withDetail("adapterConfigured", anyConfigured);
-            if (!anyConfigured && adapterCount > 0) {
-                builder.withDetail("adapterWarning", "Adapters present but none configured");
+        // ChatFacade 健康检查
+        if (chatFacade != null) {
+            Map<String, Boolean> healthResults = chatFacade.healthCheck();
+            int modelCount = healthResults.size();
+            boolean anyAvailable = healthResults.values().stream().anyMatch(Boolean::booleanValue);
+            builder.withDetail("adapters", modelCount)
+                   .withDetail("adapterConfigured", anyAvailable)
+                   .withDetail("adapterHealth", healthResults);
+            if (!anyAvailable && modelCount > 0) {
+                builder.withDetail("adapterWarning", "Models registered but none healthy");
             }
         } else {
             builder.withDetail("adapters", "unavailable");

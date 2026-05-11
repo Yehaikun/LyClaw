@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.context;
 
+import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.dto.ChatResult;
 import lyjew.com.lyclaw.interceptor.InterceptorChain;
 import lyjew.com.lyclaw.memory.MemoryContent;
@@ -39,7 +40,10 @@ public class ChatContext {
     /** 拦截器链，用于在请求处理前后执行横切逻辑 */
     private final InterceptorChain interceptorChain;
     /** 模型提供者，封装了具体 AI 模型的调用接口 */
+    @Deprecated
     private final ModelProvider modelProvider;
+    /** 新框架聊天门面，替代 ModelProvider */
+    private final ChatFacade chatFacade;
     /** 对话处理结果，在流程末尾设置 */
     private ChatResult result;
     /** 追踪上下文，用于调用链路的追踪和日志关联 */
@@ -48,15 +52,60 @@ public class ChatContext {
     private final Map<String, Object> attributes = new HashMap<>();
 
     /**
-     * 构造聊天上下文（自动生成追踪 ID）。
+     * 构造聊天上下文（自动生成追踪 ID）——使用新框架 ChatFacade。
      *
      * @param request          聊天请求
      * @param session          当前会话
      * @param memory           记忆内容
      * @param toolDefinitions  可用工具列表
      * @param interceptorChain 拦截器链
-     * @param modelProvider    模型提供者
+     * @param chatFacade       聊天门面
      */
+    public ChatContext(ChatRequest request, Session session,
+                       MemoryContent memory, List<ToolDefinition> toolDefinitions,
+                       InterceptorChain interceptorChain,
+                       ChatFacade chatFacade) {
+        this.request = request;
+        this.session = session;
+        this.memory = memory;
+        this.messages = new ArrayList<>(session.getMessages());
+        this.toolDefinitions = toolDefinitions;
+        this.interceptorChain = interceptorChain;
+        this.modelProvider = null;
+        this.chatFacade = chatFacade;
+        this.tracing = new TraceContext();
+    }
+
+    /**
+     * 构造聊天上下文（使用指定的追踪 ID）——使用新框架 ChatFacade。
+     *
+     * @param request          聊天请求
+     * @param session          当前会话
+     * @param memory           记忆内容
+     * @param toolDefinitions  可用工具列表
+     * @param interceptorChain 拦截器链
+     * @param chatFacade       聊天门面
+     * @param traceId          指定的追踪 ID，用于关联日志
+     */
+    public ChatContext(ChatRequest request, Session session,
+                       MemoryContent memory, List<ToolDefinition> toolDefinitions,
+                       InterceptorChain interceptorChain,
+                       ChatFacade chatFacade, String traceId) {
+        this.request = request;
+        this.session = session;
+        this.memory = memory;
+        this.messages = new ArrayList<>(session.getMessages());
+        this.toolDefinitions = toolDefinitions;
+        this.interceptorChain = interceptorChain;
+        this.modelProvider = null;
+        this.chatFacade = chatFacade;
+        this.tracing = new TraceContext(traceId);
+    }
+
+    /**
+     * @deprecated 使用 ChatFacade 构造函数替代
+     */
+    @Deprecated
     public ChatContext(ChatRequest request, Session session,
                        MemoryContent memory, List<ToolDefinition> toolDefinitions,
                        InterceptorChain interceptorChain,
@@ -69,20 +118,14 @@ public class ChatContext {
         this.toolDefinitions = toolDefinitions;
         this.interceptorChain = interceptorChain;
         this.modelProvider = modelProvider;
+        this.chatFacade = null;
         this.tracing = new TraceContext();
     }
 
     /**
-     * 构造聊天上下文（使用指定的追踪 ID）。
-     *
-     * @param request          聊天请求
-     * @param session          当前会话
-     * @param memory           记忆内容
-     * @param toolDefinitions  可用工具列表
-     * @param interceptorChain 拦截器链
-     * @param modelProvider    模型提供者
-     * @param traceId          指定的追踪 ID，用于关联日志
+     * @deprecated 使用 ChatFacade 构造函数替代
      */
+    @Deprecated
     public ChatContext(ChatRequest request, Session session,
                        MemoryContent memory, List<ToolDefinition> toolDefinitions,
                        InterceptorChain interceptorChain,
@@ -95,6 +138,7 @@ public class ChatContext {
         this.toolDefinitions = toolDefinitions;
         this.interceptorChain = interceptorChain;
         this.modelProvider = modelProvider;
+        this.chatFacade = null;
         this.tracing = new TraceContext(traceId);
     }
 
@@ -112,7 +156,11 @@ public class ChatContext {
 
     public InterceptorChain getInterceptorChain() { return interceptorChain; }
 
+    @Deprecated
     public ModelProvider getModelProvider() { return modelProvider; }
+
+    /** @return 新框架聊天门面 */
+    public ChatFacade getChatFacade() { return chatFacade; }
 
     public ChatResult getResult() { return result; }
 

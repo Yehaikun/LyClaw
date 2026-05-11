@@ -6,6 +6,10 @@ import org.slf4j.MDC;
 
 import java.util.UUID;
 
+import static lyjew.com.lyclaw.tracing.TraceConstants.HEADER_SPAN_ID;
+import static lyjew.com.lyclaw.tracing.TraceConstants.HEADER_TRACE_ID;
+import static lyjew.com.lyclaw.tracing.TraceConstants.MDC_TRACE_ID;
+
 /**
  * Feign分布式链路追踪拦截器。
  *
@@ -41,14 +45,14 @@ public class TraceFeignInterceptor implements RequestInterceptor {
     @Override
     public void apply(RequestTemplate template) {
         // 优先从MDC获取已有traceId，保持调用链连续性
-        String traceId = MDC.get("traceId");
+        String traceId = MDC.get(MDC_TRACE_ID);
         if (traceId == null || traceId.isEmpty()) {
             // 首次进入时生成新的traceId（32位UUID，无横线）
             traceId = UUID.randomUUID().toString().replace("-", "");
         }
         // 每次调用生成新的spanId标识当前调用段（16位UUID前缀）
         String spanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-        template.header("X-Trace-Id", traceId);
-        template.header("X-Span-Id", spanId);
+        template.header(HEADER_TRACE_ID, traceId);
+        template.header(HEADER_SPAN_ID, spanId);
     }
 }

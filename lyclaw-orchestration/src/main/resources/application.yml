@@ -31,6 +31,16 @@ server:
   port: 8081
 
 lyclaw:
+  chat:
+    legacy: false
+    default-provider: deepseek
+    default-model: deepseek-v4-flash
+    models:
+      deepseek:
+        provider: openai-protocol
+        base-url: https://api.deepseek.com
+        api-key: ${DEEPSEEK_API_KEY:}
+        model: deepseek-v4-flash
   llm:
     deepseek:
       api-key: ${DEEPSEEK_API_KEY:}

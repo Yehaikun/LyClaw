@@ -1,10 +1,11 @@
 package lyjew.com.lyclaw.orchestration.stage;
 
 import lombok.extern.slf4j.Slf4j;
-import lyjew.com.lyclaw.adapter.ModelAdapter;
+import lyjew.com.lyclaw.chat.ChatFacade;
+import lyjew.com.lyclaw.chat.ChatModel;
+import lyjew.com.lyclaw.chat.RoutingDecision;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
-import lyjew.com.lyclaw.provider.ModelProvider;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import org.springframework.http.codec.ServerSentEvent;
 import lyjew.com.lyclaw.framework.annotation.PipelineStage;
@@ -31,16 +32,16 @@ import java.util.List;
 @PipelineStage(name = "Respond", after = ReflectionStage.class, group = "POSTPROCESSING")
 public class RespondStage extends PipelineStageBase {
 
-    /** 模型提供者，用于获取配置的 LLM 适配器 */
-    private final ModelProvider modelProvider;
+    /** 聊天门面，统一入口用于调用 LLM */
+    private final ChatFacade chatFacade;
 
     /**
      * 构造响应生成阶段。
      *
-     * @param modelProvider 模型提供者，用于获取 LLM 适配器
+     * @param chatFacade 聊天门面，用于调用 LLM
      */
-    public RespondStage(ModelProvider modelProvider) {
-        this.modelProvider = modelProvider;
+    public RespondStage(ChatFacade chatFacade) {
+        this.chatFacade = chatFacade;
     }
 
     /**
@@ -82,32 +83,30 @@ public class RespondStage extends PipelineStageBase {
             pipelineCtx.getCurrentStage().set("RESPOND");
             context.getTracing().beginStage("RESPOND");
 
-            // 获取配置的 LLM 适配器
-            ModelAdapter adapter = modelProvider.getConfiguredAdapter();
+            // 构建 LLM 请求
+            lyjew.com.lyclaw.model.ChatRequest llmRequest = buildLlmRequest(context, toolResults);
 
             Flux<ServerSentEvent<String>> bodyFlux;
-            if (adapter != null) {
-                // LLM 路径：构建请求并调用流式接口
-                lyjew.com.lyclaw.model.ChatRequest llmRequest = buildLlmRequest(context, toolResults);
+            if (chatFacade != null) {
+                // LLM 路径：通过 ChatFacade 路由并调用流式接口
                 log.info(logJson("INFO", "llm_call", "RESPOND", traceId,
-                        "Calling LLM: provider=" + adapter.getProvider()
-                                + " model=" + adapter.getModel()
-                                + " messages=" + llmRequest.getMessageCount(),
+                        "Calling LLM via ChatFacade: messages=" + llmRequest.getMessageCount(),
                         null));
 
-                // 调用 LLM 流式接口，逐条提取纯文本并通过 SSE 推送
-                bodyFlux = adapter.chatStream(llmRequest)
-                        .handle((line, sink) -> {
-                            String text = adapter.extractSsePlainText(line);
-                            // 仅推送非空文本片段
+                // ChatFacade 流式调用 -> Flux<ModelResponse>，直接从 ModelResponse 取文本无需手动 SSE 解析
+                lyjew.com.lyclaw.chat.RoutingDecision decision = chatFacade.route(llmRequest, null);
+                lyjew.com.lyclaw.chat.ChatModel model = chatFacade.resolveModel(decision);
+                bodyFlux = model.stream(llmRequest)
+                        .handle((response, sink) -> {
+                            String text = response.getContent() != null ? response.getContent() : "";
                             if (!text.isEmpty()) {
                                 sink.next(sseEvent("message", text));
                             }
                         });
             } else {
-                // 无 LLM 适配器降级路径：使用硬编码文本响应
+                // 无 ChatFacade 降级路径：使用硬编码文本响应
                 log.warn(logJson("WARN", "llm_missing", "RESPOND", traceId,
-                        "No LLM adapter configured, using hardcoded response", null));
+                        "No ChatFacade available, using hardcoded response", null));
                 String responseText = buildFinalResponse(sc, fc, toolResults, report);
                 bodyFlux = Flux.just(sseEvent("message", responseText));
             }

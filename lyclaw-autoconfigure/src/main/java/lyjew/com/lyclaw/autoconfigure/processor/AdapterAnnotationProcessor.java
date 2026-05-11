@@ -14,7 +14,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link BeanPostProcessor} that discovers beans implementing
  * {@link ModelAdapter} and optionally decorated with the
  * {@code @Adapter} annotation to bind a provider key.
+ *
+ * @deprecated 已由 ChatModelPostProcessor 取代。
+ *             新系统使用 @ChatModel 注解标记 ChatModel 实现。
  */
+@Deprecated
 public class AdapterAnnotationProcessor implements BeanPostProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(AdapterAnnotationProcessor.class);

@@ -1,12 +1,12 @@
 package lyjew.com.lyclaw.plan.controller;
 
+import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.interceptor.InterceptorChain;
 import lyjew.com.lyclaw.memory.MemoryContent;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.plan.impl.TaskGraphImpl;
-import lyjew.com.lyclaw.provider.ModelProvider;
 import lyjew.com.lyclaw.task.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -45,7 +45,7 @@ public class PlanController {
     private final TaskPlanner hierarchicalPlanner;
     private final PlanValidator planValidator;
     private final InterceptorChain interceptorChain;
-    private final ModelProvider modelProvider;
+    private final ChatFacade chatFacade;
 
     /**
      * 构造函数，注入多种规划策略和依赖组件。
@@ -56,7 +56,7 @@ public class PlanController {
      * @param hierarchicalPlanner  层次化规划器（可为 null）
      * @param planValidator        计划校验器
      * @param interceptorChain     拦截器链
-     * @param modelProvider        模型提供者（可为 null）
+     * @param chatFacade           聊天门面（可为 null）
      */
     public PlanController(@org.springframework.beans.factory.annotation.Qualifier("DAGTaskPlanner")
                           TaskPlanner defaultPlanner,
@@ -68,14 +68,14 @@ public class PlanController {
                           @org.springframework.lang.Nullable TaskPlanner hierarchicalPlanner,
                           PlanValidator planValidator,
                           InterceptorChain interceptorChain,
-                          @org.springframework.lang.Nullable ModelProvider modelProvider) {
+                          @org.springframework.lang.Nullable ChatFacade chatFacade) {
         this.defaultPlanner = defaultPlanner;
         this.cotPlanner = cotPlanner;
         this.reActPlanner = reActPlanner;
         this.hierarchicalPlanner = hierarchicalPlanner;
         this.planValidator = planValidator;
         this.interceptorChain = interceptorChain;
-        this.modelProvider = modelProvider;
+        this.chatFacade = chatFacade;
     }
 
     /**
@@ -259,6 +259,6 @@ public class PlanController {
         MemoryContent memory = new MemoryContent("", "", false, List.of(), 0.0);
         ChatRequest chatRequest = ChatRequest.builder()
                 .sessionId(request.getSessionId()).messages(new ArrayList<>()).build();
-        return new ChatContext(chatRequest, session, memory, new ArrayList<>(), interceptorChain, modelProvider);
+        return new ChatContext(chatRequest, session, memory, new ArrayList<>(), interceptorChain, chatFacade);
     }
 }

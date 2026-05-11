@@ -16,7 +16,11 @@ import java.util.Set;
  * Auto-configuration for the ModelAdapter detection and the
  * corresponding {@link ModelProvider} bean that selects the
  * adapter matching the configured LLM provider.
+ *
+ * @deprecated 已由 ChatAutoConfiguration + ChatModelPostProcessor 取代。
+ *             保留以备回滚到旧版配置（lyclaw.chat.legacy=true）。
  */
+@Deprecated
 @AutoConfiguration
 @ConditionalOnClass(ModelAdapter.class)
 public class AdapterAutoConfiguration {

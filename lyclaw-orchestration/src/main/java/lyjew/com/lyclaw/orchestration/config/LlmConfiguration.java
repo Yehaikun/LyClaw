@@ -17,10 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * LLM（大语言模型）配置类。
  *
- * 负责根据 application.yml 中的配置项创建并初始化 DeepSeek 模型适配器。
- * 如果没有配置 API Key，则 LLM 响应功能被禁用，但应用仍可正常启动。
- * 通过 @Primary 注解确保该 ModelProvider 在存在多个实现时优先注入。
+ * @deprecated 已由 ChatAutoConfiguration + OpenAiProtocolAutoConfigurator 取代。
+ *             当 lyclaw.chat.legacy=false 时，新框架接管全部模型管理。
+ *             保留以备回滚到旧版配置（设置 lyclaw.chat.legacy=true）。
  */
+@Deprecated
 @Slf4j
 @Configuration
 public class LlmConfiguration {

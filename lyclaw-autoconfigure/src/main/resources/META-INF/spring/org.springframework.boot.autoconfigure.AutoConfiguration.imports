@@ -3,3 +3,6 @@ lyjew.com.lyclaw.autoconfigure.autoconfigure.ToolAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.PipelineAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.InterceptorAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.AdapterAutoConfiguration
+lyjew.com.lyclaw.autoconfigure.autoconfigure.StorageAutoConfiguration
+lyjew.com.lyclaw.autoconfigure.autoconfigure.ChatAutoConfiguration
+lyjew.com.lyclaw.autoconfigure.autoconfigure.ProcessorAutoConfiguration

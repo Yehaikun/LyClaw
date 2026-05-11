@@ -2,6 +2,7 @@ package lyjew.com.lyclaw.facade;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.memory.MemoryContent;
 import lyjew.com.lyclaw.memory.MemoryStats;
@@ -13,9 +14,7 @@ import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.orchestration.AgentEvent;
 import lyjew.com.lyclaw.orchestration.OrchestrationContext;
 import lyjew.com.lyclaw.orchestration.Orchestrator;
-import lyjew.com.lyclaw.provider.ModelProvider;
-import lyjew.com.lyclaw.storage.ConfigStorage;
-import lyjew.com.lyclaw.storage.SessionStorage;
+import lyjew.com.lyclaw.storage.StorageFacade;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
@@ -23,6 +22,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * LyClaw系统的外观(Facade)入口，对外暴露统一的API调用接口。
@@ -47,14 +47,12 @@ public class LyClawFacade {
 
     /** 编排引擎，负责多Agent协作任务的调度执行 */
     private final Orchestrator orchestrator;
-    /** 模型提供商，管理多种AI模型适配器 */
-    private final ModelProvider modelProvider;
+    /** 聊天门面，统一入口用于调用 LLM */
+    private final ChatFacade chatFacade;
     /** 工具注册表，管理所有可用的Tool/Skill定义 */
     private final ToolRegistry toolRegistry;
-    /** 会话存储，持久化会话状态和历史 */
-    private final SessionStorage sessionStorage;
-    /** 配置存储，持久化模型配置 */
-    private final ConfigStorage configStorage;
+    /** 存储门面，统一入口用于持久化会话和配置 */
+    private final StorageFacade storageFacade;
     /** 记忆系统，管理长期/短期记忆 */
     private final MemorySystem memorySystem;
 
@@ -83,12 +81,12 @@ public class LyClawFacade {
 
     /** @return 所有会话列表 */
     public List<Session> getSessions() {
-        return sessionStorage.getAll();
+        return storageFacade.list("sessions", Session.class);
     }
 
     /** @return 所有可用的模型提供者名称集合 */
     public Set<String> getProviders() {
-        return modelProvider.listProviders();
+        return chatFacade.getModels().keySet();
     }
 
     /** @return 所有已注册的工具定义列表 */
@@ -97,19 +95,13 @@ public class LyClawFacade {
     }
 
     /**
-     * 配置模型参数，保存配置并应用到对应的模型适配器。
+     * 配置模型参数，保存配置到存储层。
      *
      * @param config 模型配置
      */
     public void configureModel(ModelConfig config) {
-        configStorage.save(config);
-        var adapter = modelProvider.getAdapter(config.getProvider());
-        if (adapter != null) {
-            adapter.configure(config);
-            log.info("Model configured: provider={}, model={}", config.getProvider(), config.getModel());
-        } else {
-            log.warn("No adapter found for provider: {}", config.getProvider());
-        }
+        storageFacade.save("configs", config.getName(), config);
+        log.info("Model config saved: provider={}, model={}", config.getProvider(), config.getModel());
     }
 
     /**
@@ -119,7 +111,7 @@ public class LyClawFacade {
      * @return 会话对象，不存在时返回null
      */
     public Session getSession(String id) {
-        return sessionStorage.get(id).orElse(null);
+        return storageFacade.load("sessions", id, Session.class).orElse(null);
     }
 
     /**
@@ -128,13 +120,13 @@ public class LyClawFacade {
      * @param id 会话ID
      */
     public void deleteSession(String id) {
-        sessionStorage.delete(id);
+        storageFacade.delete("sessions", id);
         log.info("Session deleted: {}", id);
     }
 
     /** @return 所有模型配置列表 */
     public List<ModelConfig> getModelConfigs() {
-        return configStorage.getAll();
+        return storageFacade.list("configs", ModelConfig.class);
     }
 
     /** @return 记忆系统统计信息 */
@@ -149,12 +141,12 @@ public class LyClawFacade {
      * @return 构建好的聊天上下文
      */
     private ChatContext buildContext(ChatRequest request) {
-        Session session = sessionStorage.get(request.getSessionId())
+        Session session = storageFacade.load("sessions", request.getSessionId(), Session.class)
                 .orElseGet(() -> {
                     var newSession = Session.builder()
                             .id(request.getSessionId())
                             .build();
-                    sessionStorage.save(newSession);
+                    storageFacade.save("sessions", newSession.getId(), newSession);
                     return newSession;
                 });
 
@@ -164,7 +156,7 @@ public class LyClawFacade {
                 MemoryContent.empty(),
                 toolRegistry.getAllDefinitions(),
                 null,
-                modelProvider
+                chatFacade
         );
     }
 }

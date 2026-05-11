@@ -13,10 +13,7 @@ import org.springframework.stereotype.Component;
 
 import org.springframework.beans.factory.annotation.Value;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -297,10 +294,7 @@ public class ToolSandboxImpl implements ToolSandbox {
     }
 
     /**
-     * 在独立 OS 进程中执行 Shell 命令。
-     *
-     * <p>通过 {@code sh -c <command>} 启动子进程，超时时间 {@value #DEFAULT_TIMEOUT_SECONDS} 秒。
-     * 输出长度受 {@value #MAX_OUTPUT_LENGTH} 限制，超出部分截断并追加省略标记。</p>
+     * 在独立 OS 进程中执行 Shell 命令，委托给 {@link lyjew.com.lyclaw.action.util.CommandExecutor}。
      *
      * @param toolName  工具名称（用于结果标记）
      * @param command   要执行的 Shell 命令
@@ -308,67 +302,35 @@ public class ToolSandboxImpl implements ToolSandbox {
      * @return 执行结果
      */
     private ToolResult executeCommandInProcess(String toolName, String command, long startTime) {
-        try {
-            // 创建子进程：sh -c <command>
-            ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
-            pb.redirectErrorStream(true);  // 合并 stderr 到 stdout
-            Process process = pb.start();
-            boolean finished = process.waitFor(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        lyjew.com.lyclaw.action.util.CommandExecutor.CommandResult cr =
+                lyjew.com.lyclaw.action.util.CommandExecutor.execute(
+                        command, DEFAULT_TIMEOUT_SECONDS, MAX_OUTPUT_LENGTH);
+        long elapsed = System.currentTimeMillis() - startTime;
 
-            // 超时处理：强制终止进程
-            if (!finished) {
-                process.destroyForcibly();
-                return ToolResult.builder()
-                        .toolName(toolName)
-                        .success(false)
-                        .errorMessage("命令执行超时（" + DEFAULT_TIMEOUT_SECONDS + "秒）")
-                        .durationMs(System.currentTimeMillis() - startTime)
-                        .build();
-            }
-
-            // 读取进程输出
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (output.length() + line.length() + 1 > MAX_OUTPUT_LENGTH) {
-                        output.append("\n...（输出已截断）");
-                        break;
-                    }
-                    if (output.length() > 0) output.append("\n");
-                    output.append(line);
-                }
-            }
-
-            long elapsed = System.currentTimeMillis() - startTime;
-            int exitCode = process.exitValue();
-
-            if (exitCode == 0) {
-                return ToolResult.builder()
-                        .toolName(toolName)
-                        .success(true)
-                        .output(output.length() > 0 ? output.toString() : "命令执行成功，无输出")
-                        .durationMs(elapsed)
-                        .build();
-            } else {
-                return ToolResult.builder()
-                        .toolName(toolName)
-                        .success(false)
-                        .errorMessage("退出码 " + exitCode)
-                        .output(output.toString())
-                        .durationMs(elapsed)
-                        .build();
-            }
-        } catch (Exception e) {
-            long elapsed = System.currentTimeMillis() - startTime;
+        if (cr.timedOut()) {
             return ToolResult.builder()
                     .toolName(toolName)
                     .success(false)
-                    .errorMessage("进程执行异常: " + e.getMessage())
+                    .errorMessage("命令执行超时（" + DEFAULT_TIMEOUT_SECONDS + "秒）")
                     .durationMs(elapsed)
                     .build();
         }
+        if (cr.isSuccess()) {
+            String out = cr.output().isEmpty() ? "命令执行成功，无输出" : cr.output();
+            return ToolResult.builder()
+                    .toolName(toolName)
+                    .success(true)
+                    .output(out)
+                    .durationMs(elapsed)
+                    .build();
+        }
+        return ToolResult.builder()
+                .toolName(toolName)
+                .success(false)
+                .errorMessage("退出码 " + cr.exitCode())
+                .output(cr.output())
+                .durationMs(elapsed)
+                .build();
     }
 
     /**
