@@ -22,7 +22,7 @@
         <module>lyclaw-autoconfigure</module>
 
         <!-- L1 基础层 -->
-        <module>lyclaw-core</module>
+        <module>lyclaw-feign</module>
 
         <!-- L0 基础设施层 -->
         <module>lyclaw-infra</module>
@@ -128,10 +128,10 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- 加 core -->
+            <!-- Feign RPC 客户端 -->
             <dependency>
                 <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-core</artifactId>
+                <artifactId>lyclaw-feign</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

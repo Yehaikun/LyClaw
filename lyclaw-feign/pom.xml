@@ -12,10 +12,10 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>lyclaw-core</artifactId>
+    <artifactId>lyclaw-feign</artifactId>
     <packaging>jar</packaging>
-    <name>LyClaw Core</name>
-    <description>抽象接口和模板基类</description>
+    <name>LyClaw Feign</name>
+    <description>微服务间Feign RPC客户端（内部通信，不被框架暴露）</description>
 
     <dependencies>
         <dependency>

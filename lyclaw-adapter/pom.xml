@@ -20,10 +20,6 @@
     <dependencies>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>lyjew.com</groupId>
             <artifactId>lyclaw-framework</artifactId>
         </dependency>
         <dependency>
@@ -43,6 +39,21 @@
         <dependency>
             <groupId>com.squareup.retrofit2</groupId>
             <artifactId>retrofit</artifactId>
+        </dependency>
+
+        <!-- Spring -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+            <scope>provided</scope>
         </dependency>
 
         <!-- Reactor -->

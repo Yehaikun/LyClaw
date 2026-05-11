@@ -20,7 +20,7 @@
     <dependencies>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-core</artifactId>
+            <artifactId>lyclaw-framework</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>

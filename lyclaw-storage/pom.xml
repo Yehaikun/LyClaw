@@ -23,8 +23,8 @@
             <artifactId>lyclaw-framework</artifactId>
         </dependency>
         <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-core</artifactId>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
         </dependency>
 
         <!-- Gson -->
