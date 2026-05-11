@@ -1,11 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { get } from '@/api/client'
+import type { ServiceHealth } from '@/types'
 
 export interface DashboardService {
   name: string
   port: number
   status: 'unknown' | 'healthy' | 'unhealthy'
+  uptime?: number
+  latency?: number
+  details?: Record<string, unknown>
 }
 
 const DEFAULT_SERVICES: DashboardService[] = [
@@ -25,6 +29,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
   )
   const isPolling = ref<boolean>(false)
   const lastCheck = ref<number | null>(null)
+  const autoRefresh = ref<boolean>(true)
+  const totalLatency = ref<number | null>(null)
 
   let pollingTimer: ReturnType<typeof setInterval> | null = null
 
@@ -47,23 +53,51 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
   }
 
+  /** Toggle auto-refresh on/off. */
+  function toggleAutoRefresh(): void {
+    if (autoRefresh.value) {
+      autoRefresh.value = false
+      stopPolling()
+    } else {
+      autoRefresh.value = true
+      startPolling(10000)
+    }
+  }
+
   /** Check health of all registered services via the gateway's aggregated endpoint. */
   async function checkHealth(): Promise<void> {
+    const startTime = performance.now()
+
     try {
-      const result = await get<Record<string, { healthy: boolean; status: string }>>(
+      const result = await get<Record<string, ServiceHealth>>(
         '/api/dashboard/health',
       )
+      const endTime = performance.now()
+      totalLatency.value = endTime - startTime
+
       for (const svc of services.value) {
         const entry = result[svc.name]
         if (entry) {
           svc.status = entry.healthy ? 'healthy' : 'unhealthy'
+          svc.uptime = entry.uptime
+          svc.latency = entry.latency
+          svc.details = entry.details
         } else {
           svc.status = 'unhealthy'
+          svc.uptime = undefined
+          svc.latency = undefined
+          svc.details = undefined
         }
       }
     } catch {
+      const endTime = performance.now()
+      totalLatency.value = endTime - startTime
+
       for (const svc of services.value) {
         svc.status = 'unhealthy'
+        svc.uptime = undefined
+        svc.latency = undefined
+        svc.details = undefined
       }
     }
     lastCheck.value = Date.now()
@@ -74,9 +108,12 @@ export const useDashboardStore = defineStore('dashboard', () => {
     services,
     isPolling,
     lastCheck,
+    autoRefresh,
+    totalLatency,
     // Actions
     startPolling,
     stopPolling,
+    toggleAutoRefresh,
     checkHealth,
   }
 })

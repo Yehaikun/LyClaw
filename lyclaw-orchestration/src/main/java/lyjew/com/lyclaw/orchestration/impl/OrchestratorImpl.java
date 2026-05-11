@@ -33,6 +33,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Objects;
@@ -85,6 +86,7 @@ public class OrchestratorImpl implements Orchestrator {
             ChatRequest request = context.getRequest();
             String sessionId = request.getSessionId();
             String userMessage = request.getLastUserMessage();
+            String traceId = context.getTracing().getTraceId();
 
             // Shared mutable state — written by pipeline, read by respond
             final List<String> toolResults = new ArrayList<>();
@@ -99,40 +101,67 @@ public class OrchestratorImpl implements Orchestrator {
                     new AtomicBoolean(false);
             final AtomicLong respondStartMs =
                     new AtomicLong();
+            final AtomicReference<String> currentStage =
+                    new AtomicReference<>("init");
 
             // ---- Stages 1–5: synchronous pipeline ----
             Flux<ServerSentEvent<String>> pipelineFlux = Flux.<ServerSentEvent<String>>create(sink -> {
                 try {
+                    // ---- Stage 1: CONTEXT_BUILD ----
+                    currentStage.set("CONTEXT_BUILD");
+                    context.getTracing().beginStage("CONTEXT_BUILD");
                     long t1 = System.currentTimeMillis();
+                    log.info(logJson("INFO", "stage_start", "CONTEXT_BUILD", traceId,
+                            "Loading session and retrieving memories", null));
                     sink.next(sseEvent("context_build_start", "Loading session and retrieving memories"));
-                    log.info("[Orchestrator] Stage 1: CONTEXT_BUILD for session={}", sessionId);
 
+                    long memCallStart = System.currentTimeMillis();
                     MemoryQuery memoryQuery = MemoryQuery.builder()
                             .queryText(userMessage)
                             .topK(10)
                             .build();
                     MemoryQueryResult memoryResult = memoryFeignClient.retrieve(memoryQuery);
+                    long memCallDuration = System.currentTimeMillis() - memCallStart;
                     int memoryHits = memoryResult != null ? memoryResult.getTotalHits() : 0;
-                    log.info("[Orchestrator] Memory retrieved: {} entries in {}ms",
-                            memoryHits, memoryResult != null ? memoryResult.getQueryTimeMs() : 0);
+                    log.info(logJson("INFO", "feign_call", "CONTEXT_BUILD", traceId,
+                            "memoryFeignClient.retrieve completed: " + memoryHits + " entries",
+                            memCallDuration));
                     sink.next(sseEvent("context_build_complete",
                             "Loaded session, retrieved " + memoryHits + " memory entries"));
                     if (metricsCollector != null) {
                         metricsCollector.recordMemoryRetrieval(
                                 memoryResult != null ? memoryResult.getQueryTimeMs() : 0, memoryHits);
-                        metricsCollector.recordPipelineStage("CONTEXT_BUILD",
-                                System.currentTimeMillis() - t1);
+                    }
+                    long stage1Duration = System.currentTimeMillis() - t1;
+                    context.getTracing().endStage("CONTEXT_BUILD");
+                    log.info(logJson("INFO", "stage_complete", "CONTEXT_BUILD", traceId,
+                            "Context build complete, " + memoryHits + " memory entries retrieved",
+                            stage1Duration));
+                    if (metricsCollector != null) {
+                        metricsCollector.recordPipelineStage("CONTEXT_BUILD", stage1Duration);
                     }
 
+                    // ---- Stage 2: INTERCEPT ----
+                    currentStage.set("INTERCEPT");
+                    context.getTracing().beginStage("INTERCEPT");
                     long t2 = System.currentTimeMillis();
+                    log.info(logJson("INFO", "stage_start", "INTERCEPT", traceId,
+                            "Running security checks and content filter", null));
                     sink.next(sseEvent("intercept_start", "Running security checks and content filter"));
-                    log.info("[Orchestrator] Stage 2: INTERCEPT");
 
                     if (securityManager != null) {
+                        long secStart = System.currentTimeMillis();
                         var approvalResult = securityManager.approve(context, "EXECUTE_CHAT");
+                        long secDuration = System.currentTimeMillis() - secStart;
+                        log.info(logJson("INFO", "feign_call", "INTERCEPT", traceId,
+                                "securityManager.approve completed: approved=" + approvalResult.isApproved(),
+                                secDuration));
                         if (!approvalResult.isApproved()) {
-                            log.warn("[Orchestrator] Security check denied: {}", approvalResult.getReason());
-                            sink.next(sseEvent("intercept_blocked", "Security check denied: " + approvalResult.getReason()));
+                            String reason = approvalResult.getReason();
+                            log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
+                                    "Security check denied: " + reason, secDuration));
+                            context.getTracing().endStage("INTERCEPT");
+                            sink.next(sseEvent("intercept_blocked", "Security check denied: " + reason));
                             sink.next(sseEvent("done", "{\"status\":\"blocked\"}"));
                             sink.complete();
                             return;
@@ -140,24 +169,39 @@ public class OrchestratorImpl implements Orchestrator {
                     }
 
                     if (contentFilter != null) {
+                        long filterStart = System.currentTimeMillis();
                         FilterResult filterResult = contentFilter.filter(userMessage, context);
+                        long filterDuration = System.currentTimeMillis() - filterStart;
+                        log.info(logJson("INFO", "feign_call", "INTERCEPT", traceId,
+                                "contentFilter.filter completed: passed=" + filterResult.isPassed(),
+                                filterDuration));
                         if (!filterResult.isPassed()) {
-                            log.warn("[Orchestrator] Content filter blocked: {}", filterResult.getReason());
-                            sink.next(sseEvent("intercept_blocked", "Content filter blocked: " + filterResult.getReason()));
+                            String reason = filterResult.getReason();
+                            log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
+                                    "Content filter blocked: " + reason, filterDuration));
+                            context.getTracing().endStage("INTERCEPT");
+                            sink.next(sseEvent("intercept_blocked", "Content filter blocked: " + reason));
                             sink.next(sseEvent("done", "{\"status\":\"blocked\"}"));
                             sink.complete();
                             return;
                         }
                     }
                     sink.next(sseEvent("intercept_complete", "Security check and content filter passed"));
+                    long stage2Duration = System.currentTimeMillis() - t2;
+                    context.getTracing().endStage("INTERCEPT");
+                    log.info(logJson("INFO", "stage_complete", "INTERCEPT", traceId,
+                            "Intercept checks passed", stage2Duration));
                     if (metricsCollector != null) {
-                        metricsCollector.recordPipelineStage("INTERCEPT",
-                                System.currentTimeMillis() - t2);
+                        metricsCollector.recordPipelineStage("INTERCEPT", stage2Duration);
                     }
 
+                    // ---- Stage 3: PLAN ----
+                    currentStage.set("PLAN");
+                    context.getTracing().beginStage("PLAN");
                     long t3 = System.currentTimeMillis();
+                    log.info(logJson("INFO", "stage_start", "PLAN", traceId,
+                            "Planning task decomposition", null));
                     sink.next(sseEvent("plan_start", "Planning task decomposition"));
-                    log.info("[Orchestrator] Stage 3: PLAN");
 
                     PlanRequest planReq = PlanRequest.builder()
                             .sessionId(sessionId)
@@ -165,7 +209,11 @@ public class OrchestratorImpl implements Orchestrator {
                             .strategy("default")
                             .context(Map.of("sessionId", sessionId, "timestamp", System.currentTimeMillis()))
                             .build();
+                    long planCallStart = System.currentTimeMillis();
                     Map<String, Object> planResult = planFeignClient.plan(planReq);
+                    long planCallDuration = System.currentTimeMillis() - planCallStart;
+                    log.info(logJson("INFO", "feign_call", "PLAN", traceId,
+                            "planFeignClient.plan completed", planCallDuration));
                     @SuppressWarnings("unchecked")
                     List<Map<String, Object>> rawNodes = planResult != null && planResult.get("nodes") instanceof List
                             ? (List<Map<String, Object>>) planResult.get("nodes")
@@ -186,7 +234,8 @@ public class OrchestratorImpl implements Orchestrator {
                                 raw.get("timeoutMs") instanceof Number
                                         ? ((Number) raw.get("timeoutMs")).longValue() : 30000L));
                     }
-                    log.info("[Orchestrator] Plan generated: {} task(s)", nodes.size());
+                    log.info(logJson("INFO", "plan_result", "PLAN", traceId,
+                            "Plan generated: " + nodes.size() + " task(s)", null));
                     sink.next(sseEvent("plan_complete", "Planned " + nodes.size() + " task(s)"));
 
                     for (int i = 0; i < nodes.size(); i++) {
@@ -196,11 +245,18 @@ public class OrchestratorImpl implements Orchestrator {
                                         + "\",\"type\":\"" + escapeJson(node.getType())
                                         + "\",\"description\":\"" + escapeJson(node.getDescription()) + "\"}"));
                     }
-                    if (metricsCollector != null) metricsCollector.recordPipelineStage("PLAN",
-                            System.currentTimeMillis() - t3);
+                    long stage3Duration = System.currentTimeMillis() - t3;
+                    context.getTracing().endStage("PLAN");
+                    log.info(logJson("INFO", "stage_complete", "PLAN", traceId,
+                            "Plan decomposition complete, " + nodes.size() + " task(s)", stage3Duration));
+                    if (metricsCollector != null) metricsCollector.recordPipelineStage("PLAN", stage3Duration);
 
+                    // ---- Stage 4: EXECUTE ----
+                    currentStage.set("EXECUTE");
+                    context.getTracing().beginStage("EXECUTE");
                     long t4 = System.currentTimeMillis();
-                    log.info("[Orchestrator] Stage 4: EXECUTE {} task(s)", nodes.size());
+                    log.info(logJson("INFO", "stage_start", "EXECUTE", traceId,
+                            "Executing " + nodes.size() + " task(s)", null));
 
                     for (int nodeIndex = 0; nodeIndex < nodes.size(); nodeIndex++) {
                         TaskNode node = nodes.get(nodeIndex);
@@ -218,13 +274,18 @@ public class OrchestratorImpl implements Orchestrator {
                                             "sessionId", sessionId))
                                     .sessionId(sessionId)
                                     .build();
+                            long actionCallStart = System.currentTimeMillis();
                             ToolResult result = actionFeignClient.executeTool(toolReq);
                             long toolDuration = System.currentTimeMillis() - toolStart;
+                            long actionCallDuration = System.currentTimeMillis() - actionCallStart;
 
                             if (result != null && result.isSuccess()) {
                                 successCount.incrementAndGet();
                                 String output = result.getOutput() != null ? result.getOutput() : "";
                                 toolResults.add(output);
+                                log.info(logJson("INFO", "feign_call", "EXECUTE", traceId,
+                                        "actionFeignClient.executeTool success: " + node.getNodeId(),
+                                        actionCallDuration));
                                 sink.next(sseEvent("action_result",
                                         "{\"index\":" + (nodeIndex + 1) + ",\"status\":\"success\",\"output\":\""
                                                 + escapeJson(output) + "\",\"durationMs\":" + toolDuration + "}"));
@@ -233,6 +294,10 @@ public class OrchestratorImpl implements Orchestrator {
                                 failCount.incrementAndGet();
                                 String error = result != null ? result.getErrorMessage() : "unknown error";
                                 toolResults.add("ERROR: " + error);
+                                log.warn(logJson("WARN", "feign_call", "EXECUTE", traceId,
+                                        "actionFeignClient.executeTool failed: " + node.getNodeId()
+                                                + " error=" + error,
+                                        actionCallDuration));
                                 sink.next(sseEvent("action_result",
                                         "{\"index\":" + (nodeIndex + 1) + ",\"status\":\"failed\",\"error\":\""
                                                 + escapeJson(error) + "\",\"durationMs\":" + toolDuration + "}"));
@@ -241,8 +306,10 @@ public class OrchestratorImpl implements Orchestrator {
                         } catch (Exception e) {
                             failCount.incrementAndGet();
                             long toolDuration = System.currentTimeMillis() - toolStart;
-                            log.error("[Orchestrator] Tool execution failed: nodeId={}, error={}",
-                                    node.getNodeId(), e.getMessage());
+                            log.error(logJson("ERROR", "feign_call", "EXECUTE", traceId,
+                                    "actionFeignClient.executeTool exception: nodeId="
+                                            + node.getNodeId() + " error=" + e.getMessage(),
+                                    toolDuration));
                             toolResults.add("ERROR: " + e.getMessage());
                             sink.next(sseEvent("action_result",
                                     "{\"index\":" + (nodeIndex + 1) + ",\"status\":\"error\",\"error\":\""
@@ -253,12 +320,21 @@ public class OrchestratorImpl implements Orchestrator {
                     sink.next(sseEvent("action_complete",
                             "{\"total\":" + nodes.size() + ",\"success\":" + successCount.get()
                                     + ",\"failed\":" + failCount.get() + "}"));
-                    if (metricsCollector != null) metricsCollector.recordPipelineStage("EXECUTE",
-                            System.currentTimeMillis() - t4);
+                    long stage4Duration = System.currentTimeMillis() - t4;
+                    context.getTracing().endStage("EXECUTE");
+                    log.info(logJson("INFO", "stage_complete", "EXECUTE", traceId,
+                            "Execution complete: " + successCount.get() + " success, "
+                                    + failCount.get() + " failed",
+                            stage4Duration));
+                    if (metricsCollector != null) metricsCollector.recordPipelineStage("EXECUTE", stage4Duration);
 
+                    // ---- Stage 5: REFLECT ----
+                    currentStage.set("REFLECT");
+                    context.getTracing().beginStage("REFLECT");
                     long t5 = System.currentTimeMillis();
+                    log.info(logJson("INFO", "stage_start", "REFLECT", traceId,
+                            "Reflecting on execution results", null));
                     sink.next(sseEvent("reflect_start", "Reflecting on execution results"));
-                    log.info("[Orchestrator] Stage 5: REFLECT");
 
                     String combinedOutput = String.join("\n", toolResults);
                     ReflectRequest reflectReq = ReflectRequest.builder()
@@ -266,25 +342,40 @@ public class OrchestratorImpl implements Orchestrator {
                             .output(combinedOutput.isEmpty() ? userMessage : combinedOutput)
                             .context("Orchestration pipeline execution - " + nodes.size() + " tasks processed")
                             .build();
+                    long reflectCallStart = System.currentTimeMillis();
                     ReflectionReport r = reflectFeignClient.reflect(reflectReq);
+                    long reflectCallDuration = System.currentTimeMillis() - reflectCallStart;
+                    log.info(logJson("INFO", "feign_call", "REFLECT", traceId,
+                            "reflectFeignClient.reflect completed", reflectCallDuration));
                     reportRef.set(r);
                     double score = r != null ? r.getOverallScore() : 0.0;
                     reflectScoreRef.set(score);
-                    log.info("[Orchestrator] Reflection complete: score={}", score);
+                    log.info(logJson("INFO", "reflect_result", "REFLECT", traceId,
+                            "Reflection complete: score=" + score, null));
                     sink.next(sseEvent("reflect_complete",
                             "{\"score\":" + score + ",\"reflectionId\":\""
                                     + (r != null ? r.getReflectionId() : "N/A") + "\"}"));
-                    if (metricsCollector != null) metricsCollector.recordPipelineStage("REFLECT",
-                            System.currentTimeMillis() - t5);
+                    long stage5Duration = System.currentTimeMillis() - t5;
+                    context.getTracing().endStage("REFLECT");
+                    log.info(logJson("INFO", "stage_complete", "REFLECT", traceId,
+                            "Reflection complete, score=" + score, stage5Duration));
+                    if (metricsCollector != null) metricsCollector.recordPipelineStage("REFLECT", stage5Duration);
 
                     respondStartMs.set(System.currentTimeMillis());
                     pipelineOk.set(true);
+                    currentStage.set("pipeline_done");
                     sink.complete();
 
                 } catch (Exception e) {
-                    log.error("[Orchestrator] Pipeline failed: {}", e.getMessage(), e);
+                    String failedStage = currentStage.get();
+                    context.getTracing().endStage(failedStage);
+                    long elapsed = System.currentTimeMillis() - orchestrationStart;
+                    log.error(logJson("ERROR", "stage_error", failedStage, traceId,
+                            "Pipeline failed: " + e.getMessage(), elapsed), e);
                     sink.next(sseEvent("error",
-                            "{\"message\":\"" + escapeJson(e.getMessage()) + "\"}"));
+                            "{\"message\":\"" + escapeJson(e.getMessage())
+                                    + "\",\"traceId\":\"" + escapeJson(traceId)
+                                    + "\",\"stage\":\"" + escapeJson(failedStage) + "\"}"));
                     sink.next(sseEvent("done", "{\"status\":\"error\"}"));
                     sink.complete();
                 }
@@ -301,15 +392,21 @@ public class OrchestratorImpl implements Orchestrator {
                 ReflectionReport report = reportRef.get();
                 double score = reflectScoreRef.get();
 
-                log.info("[Orchestrator] Stage 6: RESPOND");
+                log.info(logJson("INFO", "stage_start", "RESPOND", traceId,
+                        "Generating AI response", null));
+                currentStage.set("RESPOND");
+                context.getTracing().beginStage("RESPOND");
 
                 ModelAdapter adapter = modelProvider.getConfiguredAdapter();
 
                 Flux<ServerSentEvent<String>> bodyFlux;
                 if (adapter != null) {
                     lyjew.com.lyclaw.model.ChatRequest llmRequest = buildLlmRequest(context, toolResults);
-                    log.info("[Orchestrator] Calling LLM: provider={}, model={}, messages={}",
-                            adapter.getProvider(), adapter.getModel(), llmRequest.getMessageCount());
+                    log.info(logJson("INFO", "llm_call", "RESPOND", traceId,
+                            "Calling LLM: provider=" + adapter.getProvider()
+                                    + " model=" + adapter.getModel()
+                                    + " messages=" + llmRequest.getMessageCount(),
+                            null));
 
                     bodyFlux = adapter.chatStream(llmRequest)
                             .handle((line, sink) -> {
@@ -319,7 +416,8 @@ public class OrchestratorImpl implements Orchestrator {
                                 }
                             });
                 } else {
-                    log.warn("[Orchestrator] No LLM adapter configured, using hardcoded response");
+                    log.warn(logJson("WARN", "llm_missing", "RESPOND", traceId,
+                            "No LLM adapter configured, using hardcoded response", null));
                     String responseText = buildFinalResponse(sc, fc, toolResults, report);
                     bodyFlux = Flux.just(sseEvent("message", responseText));
                 }
@@ -328,9 +426,12 @@ public class OrchestratorImpl implements Orchestrator {
                         .concatWith(bodyFlux)
                         .concatWith(buildTailFlux(
                                 context, orchestrationStart, respondStartMs.get(),
-                                sc, fc, toolResults, report, score))
+                                sc, fc, toolResults, report, score, traceId, currentStage))
                         .onErrorResume(err -> {
-                            log.error("[Orchestrator] LLM call failed: {}", err.getMessage());
+                            context.getTracing().endStage("RESPOND");
+                            long elapsed = System.currentTimeMillis() - orchestrationStart;
+                            log.error(logJson("ERROR", "stage_error", "RESPOND", traceId,
+                                    "LLM call failed: " + err.getMessage(), elapsed), err);
                             String fallback = buildFinalResponse(sc, fc, toolResults, report);
                             return Flux.just(
                                     sseEvent("message", fallback),
@@ -345,54 +446,88 @@ public class OrchestratorImpl implements Orchestrator {
 
     private Flux<ServerSentEvent<String>> buildTailFlux(ChatContext context, long orchestrationStart, long respondStartMs,
                                         int successCount, int failCount, List<String> toolResults,
-                                        ReflectionReport report, double score) {
-        String sessionId = context.getRequest().getSessionId();
-        int taskCount = toolResults.size();
+                                        ReflectionReport report, double score,
+                                        String traceId, AtomicReference<String> currentStage) {
+        return Flux.defer(() -> {
+            String sessionId = context.getSession() != null
+                    ? context.getSession().getSessionId()
+                    : context.getRequest().getSessionId();
+            int taskCount = toolResults.size();
 
-        // Persist memory
-        PerceptionData perception = PerceptionData.builder()
-                .role("assistant")
-                .content("Orchestration completed | Tasks: " + taskCount
-                        + " | Success: " + successCount
-                        + " | Failed: " + failCount
-                        + " | ReflectScore: " + score)
-                .timestamp(System.currentTimeMillis())
-                .metadata(Map.of("sessionId", sessionId,
-                        "taskCount", taskCount,
-                        "successCount", successCount,
-                        "failCount", failCount,
-                        "orchestrationDurationMs", System.currentTimeMillis() - orchestrationStart))
-                .build();
-        memoryFeignClient.ingest(perception, sessionId, "default");
+            // Persist memory (non-blocking fire-and-forget, failure must not break the stream)
+            try {
+                PerceptionData perception = PerceptionData.builder()
+                        .role("assistant")
+                        .content("Orchestration completed | Tasks: " + taskCount
+                                + " | Success: " + successCount
+                                + " | Failed: " + failCount
+                                + " | ReflectScore: " + score)
+                        .timestamp(System.currentTimeMillis())
+                        .metadata(Map.of("sessionId", sessionId != null ? sessionId : "",
+                                "taskCount", taskCount,
+                                "successCount", successCount,
+                                "failCount", failCount,
+                                "orchestrationDurationMs", System.currentTimeMillis() - orchestrationStart))
+                        .build();
+                memoryFeignClient.ingest(perception, sessionId, "default");
+            } catch (Exception e) {
+                log.warn(logJson("WARN", "memory_ingest_failed", "RESPOND", traceId,
+                        "Memory ingest failed (non-critical): " + e.getMessage(), null));
+            }
 
-        if (metricsCollector != null) {
-            metricsCollector.recordPipelineStage("RESPOND",
-                    System.currentTimeMillis() - respondStartMs);
+            long respondDuration = System.currentTimeMillis() - respondStartMs;
+            if (metricsCollector != null) {
+                metricsCollector.recordPipelineStage("RESPOND", respondDuration);
+            }
+            context.getTracing().endStage("RESPOND");
+            log.info(logJson("INFO", "stage_complete", "RESPOND", traceId,
+                    "Response generated and memory persisted", respondDuration));
+
+            long totalDuration = System.currentTimeMillis() - orchestrationStart;
+            context.getTracing().markEnd();
+            log.info(logJson("INFO", "pipeline_complete", "ORCHESTRATION_TOTAL", traceId,
+                    "Orchestration completed: " + taskCount + " tasks", totalDuration));
+
+            if (metricsCollector != null) {
+                metricsCollector.recordPipelineStage("ORCHESTRATION_TOTAL", totalDuration);
+                metricsCollector.recordLlmCall("orchestrator", "llm", 0, 0, totalDuration);
+                metricsCollector.recordPipelineStage("METRICS", 0);
+            }
+
+            currentStage.set("done");
+
+            return Flux.just(
+                    sseEvent("respond_complete", "Response generated and memory persisted"),
+                    sseEvent("metrics",
+                            "{\"totalDurationMs\":" + totalDuration
+                                    + ",\"tasksProcessed\":" + taskCount
+                                    + ",\"successRate\":"
+                                    + (taskCount > 0
+                                            ? String.format("%.2f", (double) successCount / taskCount)
+                                            : "1.0")
+                                    + ",\"reflectScore\":" + score
+                                    + ",\"traceId\":\"" + escapeJson(traceId) + "\"}"),
+                    sseEvent("done",
+                            "{\"status\":\"completed\",\"durationMs\":" + totalDuration
+                                    + ",\"traceId\":\"" + escapeJson(traceId) + "\"}")
+            );
+        });
+    }
+
+    private String logJson(String level, String event, String stage, String traceId,
+                           String message, Long durationMs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"timestamp\":\"").append(Instant.now().toString()).append("\"");
+        sb.append(",\"level\":\"").append(level).append("\"");
+        sb.append(",\"event\":\"").append(event).append("\"");
+        sb.append(",\"stage\":\"").append(stage).append("\"");
+        sb.append(",\"traceId\":\"").append(traceId).append("\"");
+        sb.append(",\"message\":\"").append(escapeJson(message)).append("\"");
+        if (durationMs != null) {
+            sb.append(",\"durationMs\":").append(durationMs);
         }
-
-        long totalDuration = System.currentTimeMillis() - orchestrationStart;
-        log.info("[Orchestrator] Orchestration completed: {} tasks in {}ms",
-                taskCount, totalDuration);
-
-        if (metricsCollector != null) {
-            metricsCollector.recordPipelineStage("ORCHESTRATION_TOTAL", totalDuration);
-            metricsCollector.recordLlmCall("orchestrator", "llm", 0, 0, totalDuration);
-            metricsCollector.recordPipelineStage("METRICS", 0);
-        }
-
-        return Flux.just(
-                sseEvent("respond_complete", "Response generated and memory persisted"),
-                sseEvent("metrics",
-                        "{\"totalDurationMs\":" + totalDuration
-                                + ",\"tasksProcessed\":" + taskCount
-                                + ",\"successRate\":"
-                                + (taskCount > 0
-                                        ? String.format("%.2f", (double) successCount / taskCount)
-                                        : "1.0")
-                                + ",\"reflectScore\":" + score + "}"),
-                sseEvent("done",
-                        "{\"status\":\"completed\",\"durationMs\":" + totalDuration + "}")
-        );
+        sb.append("}");
+        return sb.toString();
     }
 
     private lyjew.com.lyclaw.model.ChatRequest buildLlmRequest(ChatContext context, List<String> toolResults) {

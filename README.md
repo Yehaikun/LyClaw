@@ -32,30 +32,30 @@ LyClaw 采用分层管道架构：请求经网关路由至 facade 统一入口�
 
 | 模块 | 职责 | 进度 |
 |------|------|:----:|
-| **lyclaw-gateway** | API 网关入口，路由转发，全局鉴权，Trace 注入 | `▸▸▸▸▸▸▸▸▸▸` 90% |
-| **lyclaw-facade** | 统一门面，编排调度核心链路各服务 | `▸▸▸▸▸▸▸▸▸▸` 95% |
-| **lyclaw-orchestration** | 引擎选择、管道执行、Agent 协调、多智能体共识 | `▸▸▸▸▸▸▸▸▸▸` 90% |
-| **lyclaw-adapter** | 多模型适配层：DeepSeek / OpenAI / Anthropic / MiniMax | `▸▸▸▸▸▸▸▸▸▸` 95% |
-| **lyclaw-core** | SPI 接口定义、领域模型、缓存、上下文契约 | `▸▸▸▸▸▸▸▸▸▸` 90% |
+| **lyclaw-gateway** | API 网关入口，路由转发，全局鉴权，Trace 注入 | `▸▸▸▸░░░░░░` 40% |
+| **lyclaw-facade** | 统一门面，编排调度核心链路各服务 | `▸▸▸░░░░░░░` 30% |
+| **lyclaw-orchestration** | 引擎选择、管道执行、Agent 协调、多智能体共识 | `▸▸▸░░░░░░░` 30% |
+| **lyclaw-adapter** | 多模型适配层：DeepSeek / OpenAI / Anthropic / MiniMax | `▸▸▸▸░░░░░░` 40% |
+| **lyclaw-core** | SPI 接口定义、领域模型、缓存、上下文契约 | `▸▸▸░░░░░░░` 35% |
 
 ### 领域服务
 
 | 模块 | 职责 | 进度 |
 |------|------|:----:|
-| **lyclaw-plan** | 任务规划与分解：ReAct / CoT / Hierarchical / DAG | `▸▸▸▸▸▸▸▸▸▸` 85% |
-| **lyclaw-action** | 工具注册、技能执行、MCP 工具适配、多层沙箱 | `▸▸▸▸▸▸▸▸▸▸` 80% |
-| **lyclaw-reflect** | 反思引擎：错误检测、质量评估、策略调整 | `▸▸▸▸▸▸▸▸▸▸` 75% |
-| **lyclaw-memory** | 分层记忆系统：短期 / 长期 / 向量检索 / LLM 提取 | `▸▸▸▸▸▸▸▸▸▸` 80% |
-| **lyclaw-protocol** | MCP 协议全实现 + A2A Agent 间通信网关 | `▸▸▸▸▸▸▸▸▸▸` 75% |
+| **lyclaw-plan** | 任务规划与分解：ReAct / CoT / Hierarchical / DAG | `▸▸░░░░░░░░` 25% |
+| **lyclaw-action** | 工具注册、技能执行、MCP 工具适配、多层沙箱 | `▸▸░░░░░░░░` 25% |
+| **lyclaw-reflect** | 反思引擎：错误检测、质量评估、策略调整 | `▸▸░░░░░░░░` 20% |
+| **lyclaw-memory** | 分层记忆系统：短期 / 长期 / 向量检索 / LLM 提取 | `▸▸▸░░░░░░░` 30% |
+| **lyclaw-protocol** | MCP 协议全实现 + A2A Agent 间通信网关 | `▸▸░░░░░░░░` 25% |
 
 ### 基础设施
 
 | 模块 | 职责 | 进度 |
 |------|------|:----:|
-| **lyclaw-storage** | 持久化引擎：本地文件 / JSON / Markdown 多格式 | `▸▸▸▸▸▸▸▸▸▸` 90% |
-| **lyclaw-common** | 共享模型、枚举、日志工具、错误码体系 | `▸▸▸▸▸▸▸▸▸▸` 95% |
-| **lyclaw-infra** | 安全过滤、告警管理、指标采集、内部事件总线 | `▸▸▸▸▸▸▸▸▸▸` 70% |
-| **lyclaw-ui** | Vue 3 前端：聊天界面、会话管理、Markdown 渲染 | `▸▸▸▸▸▸▸▸▸▸` 80% |
+| **lyclaw-storage** | 持久化引擎：本地文件 / JSON / Markdown 多格式 | `▸▸▸▸░░░░░░` 40% |
+| **lyclaw-common** | 共享模型、枚举、日志工具、错误码体系 | `▸▸▸▸░░░░░░` 40% |
+| **lyclaw-infra** | 安全过滤、告警管理、指标采集、内部事件总线 | `▸▸░░░░░░░░` 20% |
+| **lyclaw-ui** | Vue 3 前端：聊天界面、会话管理、Markdown 渲染 | `▸▸▸░░░░░░░` 35% |
 
 ---
 

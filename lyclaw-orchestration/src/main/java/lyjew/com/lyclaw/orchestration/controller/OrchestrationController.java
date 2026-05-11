@@ -11,6 +11,7 @@ import lyjew.com.lyclaw.orchestration.dto.ChatRequest;
 import lyjew.com.lyclaw.provider.ModelProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -37,18 +38,25 @@ public class OrchestrationController {
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request) {
+    public Flux<ServerSentEvent<String>> chatStream(
+            @RequestBody ChatRequest request,
+            @RequestHeader(value = "X-Trace-Id", required = false) String requestTraceId,
+            ServerHttpResponse response) {
+        String traceId = (requestTraceId != null && !requestTraceId.isBlank())
+                ? requestTraceId : UUID.randomUUID().toString().replace("-", "");
+        response.getHeaders().add("X-Trace-Id", traceId);
         Session session = resolveSession(request.getSessionId());
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
-        ChatContext context = buildChatContext(modelRequest, session);
+        ChatContext context = buildChatContext(modelRequest, session, traceId);
         return orchestrator.execute(context);
     }
 
     @PostMapping("/chat")
     public Mono<ChatResult> chat(@RequestBody ChatRequest request) {
+        String traceId = UUID.randomUUID().toString().replace("-", "");
         Session session = resolveSession(request.getSessionId());
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
-        ChatContext context = buildChatContext(modelRequest, session);
+        ChatContext context = buildChatContext(modelRequest, session, traceId);
         Flux<ServerSentEvent<String>> flux = orchestrator.execute(context);
         return flux.collectList()
                 .map(results -> {
@@ -123,7 +131,7 @@ public class OrchestrationController {
                 .build();
     }
 
-    private ChatContext buildChatContext(lyjew.com.lyclaw.model.ChatRequest modelRequest, Session session) {
+    private ChatContext buildChatContext(lyjew.com.lyclaw.model.ChatRequest modelRequest, Session session, String traceId) {
         MemoryContent memory = new MemoryContent("", "", true, Collections.emptyList(), 0.0);
         return new ChatContext(
                 modelRequest,
@@ -131,7 +139,8 @@ public class OrchestrationController {
                 memory,
                 Collections.emptyList(),
                 interceptorChain,
-                modelProvider
+                modelProvider,
+                traceId
         );
     }
 }

@@ -29,7 +29,9 @@ import dockerfile from 'highlight.js/lib/languages/dockerfile'
 import plaintext from 'highlight.js/lib/languages/plaintext'
 import properties from 'highlight.js/lib/languages/properties'
 import makefile from 'highlight.js/lib/languages/makefile'
+import mermaid from 'mermaid'
 import '@/assets/styles/markdown.css'
+import 'highlight.js/styles/github.css'
 
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('js', javascript)
@@ -66,9 +68,15 @@ hljs.registerLanguage('properties', properties)
 hljs.registerLanguage('ini', properties)
 hljs.registerLanguage('makefile', makefile)
 
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'default',
+  securityLevel: 'loose',
+})
+
 marked.use({
   gfm: true,
-  breaks: true,
+  breaks: false,
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,6 +105,7 @@ function enhanceCodeBlocks() {
   const pres = rootRef.value.querySelectorAll('pre')
   pres.forEach((pre) => {
     if (pre.parentElement?.classList.contains('code-block-wrapper')) return
+    if (pre.parentElement?.classList.contains('mermaid-wrapper')) return
     const code = pre.querySelector('code')
     if (!code) return
 
@@ -150,8 +159,114 @@ function wrapTables() {
   })
 }
 
+async function enhanceMermaidBlocks() {
+  if (!rootRef.value) return
+  const pres = rootRef.value.querySelectorAll('pre')
+  const tasks: Promise<void>[] = []
+
+  pres.forEach((pre) => {
+    if (pre.parentElement?.classList.contains('mermaid-wrapper')) return
+    const code = pre.querySelector('code')
+    if (!code) return
+
+    const lang = code instanceof HTMLElement && code.className
+      ? extractLang(code)
+      : null
+
+    if (lang !== 'mermaid') return
+
+    const mermaidCode = code.textContent || ''
+    const id = 'mermaid-' + Math.random().toString(36).slice(2, 10)
+
+    const task = mermaid.render(id, mermaidCode).then(({ svg }) => {
+      const wrapper = document.createElement('div')
+      wrapper.className = 'mermaid-wrapper'
+
+      const toolbar = document.createElement('div')
+      toolbar.className = 'mermaid-toolbar'
+
+      const label = document.createElement('span')
+      label.className = 'mermaid-label'
+      label.textContent = 'mermaid'
+
+      const downloadSvgBtn = document.createElement('button')
+      downloadSvgBtn.className = 'mermaid-download-btn'
+      downloadSvgBtn.textContent = 'SVG'
+      downloadSvgBtn.title = '下载 SVG'
+      downloadSvgBtn.onclick = () => downloadSvg(svg)
+
+      const downloadPngBtn = document.createElement('button')
+      downloadPngBtn.className = 'mermaid-download-btn'
+      downloadPngBtn.textContent = 'PNG'
+      downloadPngBtn.title = '下载 PNG'
+      downloadPngBtn.onclick = () => downloadPng(svg)
+
+      toolbar.appendChild(label)
+      toolbar.appendChild(downloadSvgBtn)
+      toolbar.appendChild(downloadPngBtn)
+
+      const svgContainer = document.createElement('div')
+      svgContainer.className = 'mermaid-svg'
+      svgContainer.innerHTML = svg
+
+      wrapper.appendChild(toolbar)
+      wrapper.appendChild(svgContainer)
+      pre.parentNode!.insertBefore(wrapper, pre)
+      pre.remove()
+    }).catch((err: Error) => {
+      console.warn('Mermaid render failed:', err.message)
+      // Keep the original code block on error
+    })
+
+    tasks.push(task)
+  })
+
+  await Promise.all(tasks)
+}
+
+function downloadSvg(svg: string) {
+  const blob = new Blob([svg], { type: 'image/svg+xml' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'diagram.svg'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function downloadPng(svg: string) {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const img = new Image()
+  const blob = new Blob([svg], { type: 'image/svg+xml' })
+  const url = URL.createObjectURL(blob)
+
+  img.onload = () => {
+    canvas.width = img.width * 2
+    canvas.height = img.height * 2
+    ctx.scale(2, 2)
+    ctx.drawImage(img, 0, 0)
+    URL.revokeObjectURL(url)
+
+    canvas.toBlob((pngBlob) => {
+      if (!pngBlob) return
+      const pngUrl = URL.createObjectURL(pngBlob)
+      const a = document.createElement('a')
+      a.href = pngUrl
+      a.download = 'diagram.png'
+      a.click()
+      URL.revokeObjectURL(pngUrl)
+    }, 'image/png')
+  }
+
+  img.src = url
+}
+
 function enhanceAll() {
   enhanceCodeBlocks()
+  enhanceMermaidBlocks()
   wrapTables()
 }
 

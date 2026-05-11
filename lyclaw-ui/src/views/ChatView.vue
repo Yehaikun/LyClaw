@@ -8,6 +8,7 @@ import WelcomeHero from '@/components/WelcomeHero.vue'
 import MessageBubble from '@/components/MessageBubble.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ModelSelector from '@/components/ModelSelector.vue'
+import TraceIdBadge from '@/components/TraceIdBadge.vue'
 import type { Message } from '@/types'
 
 const route = useRoute()
@@ -190,9 +191,17 @@ watch(
 
       <!-- Error bar -->
       <div v-if="chatStore.error" class="error-bar">
-        <span class="error-text">{{ chatStore.error }}</span>
-        <button class="error-retry-btn" @click="handleRetry">Retry</button>
-        <button class="error-dismiss-btn" @click="chatStore.error = null">Dismiss</button>
+        <div class="error-bar-content">
+          <span class="error-text">{{ chatStore.error }}</span>
+          <TraceIdBadge
+            v-if="chatStore.errorTraceId"
+            :trace-id="chatStore.errorTraceId"
+          />
+        </div>
+        <div class="error-bar-actions">
+          <button class="error-retry-btn" @click="handleRetry">Retry</button>
+          <button class="error-dismiss-btn" @click="chatStore.error = null">Dismiss</button>
+        </div>
       </div>
 
     </template>
@@ -293,6 +302,7 @@ watch(
 .error-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--spacing-sm);
   padding: 8px 24px;
   background: rgba(198, 69, 69, 0.08);
@@ -300,8 +310,22 @@ watch(
   flex-shrink: 0;
 }
 
-.error-text {
+.error-bar-content {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
   flex: 1;
+}
+
+.error-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.error-text {
   font-family: var(--font-sans);
   font-size: var(--body-sm-size);
   color: var(--color-error);

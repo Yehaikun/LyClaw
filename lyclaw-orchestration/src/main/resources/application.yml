@@ -14,6 +14,19 @@ spring:
           default:
             connectTimeout: 10000
             readTimeout: 300000
+            loggerLevel: BASIC
+          lyclaw-plan-service:
+            connectTimeout: 5000
+            readTimeout: 60000
+          lyclaw-action-service:
+            connectTimeout: 5000
+            readTimeout: 120000
+          lyclaw-reflect-service:
+            connectTimeout: 5000
+            readTimeout: 60000
+          lyclaw-memory-service:
+            connectTimeout: 5000
+            readTimeout: 30000
 server:
   port: 8081
 
@@ -23,3 +36,17 @@ lyclaw:
       api-key: ${DEEPSEEK_API_KEY:}
       base-url: https://api.deepseek.com
       model: deepseek-v4-flash
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30000
+        permittedNumberOfCallsInHalfOpenState: 3
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 500ms

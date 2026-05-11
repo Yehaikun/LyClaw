@@ -5,10 +5,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 
 @RestController
 public class HealthController {
@@ -34,14 +38,42 @@ public class HealthController {
     );
 
     private final DiscoveryClient discoveryClient;
+    private final long startupTime;
+    private final String version;
 
     public HealthController(DiscoveryClient discoveryClient) {
         this.discoveryClient = discoveryClient;
+        this.startupTime = System.currentTimeMillis();
+        this.version = loadVersion();
+    }
+
+    private String loadVersion() {
+        try (InputStream is = getClass().getResourceAsStream("/META-INF/build-info.properties")) {
+            if (is != null) {
+                Properties props = new Properties();
+                props.load(is);
+                String v = props.getProperty("build.version");
+                if (v != null && !v.isEmpty()) {
+                    return v;
+                }
+            }
+        } catch (IOException ignored) {
+            // fallback to "dev"
+        }
+        return "dev";
     }
 
     @GetMapping("/api/dashboard/health")
     public Mono<Map<String, Object>> health() {
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        long uptime = System.currentTimeMillis() - startupTime;
+
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("traceId", traceId);
+        result.put("version", version);
+        result.put("uptimeMs", uptime);
+        result.put("uptime", formatUptime(uptime));
+
         List<String> registered = discoveryClient.getServices();
         result.put("gateway", buildServiceStatus("gateway", registered));
         result.put("orchestration", buildServiceStatus("orchestration", registered));
@@ -50,6 +82,36 @@ public class HealthController {
         result.put("action", buildServiceStatus("action", registered));
         result.put("reflect", buildServiceStatus("reflect", registered));
         result.put("protocol", buildServiceStatus("protocol", registered));
+        result.put("timestamp", System.currentTimeMillis());
+        return Mono.just(result);
+    }
+
+    @GetMapping("/api/health/liveness")
+    public Mono<Map<String, Object>> liveness() {
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "UP");
+        result.put("traceId", traceId);
+        result.put("timestamp", System.currentTimeMillis());
+        return Mono.just(result);
+    }
+
+    @GetMapping("/api/health/readiness")
+    public Mono<Map<String, Object>> readiness() {
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        boolean nacosConnected;
+        try {
+            List<String> services = discoveryClient.getServices();
+            nacosConnected = services != null;
+        } catch (Exception e) {
+            nacosConnected = false;
+        }
+
+        result.put("traceId", traceId);
+        result.put("status", nacosConnected ? "UP" : "DOWN");
+        result.put("nacos", nacosConnected ? "connected" : "disconnected");
         result.put("timestamp", System.currentTimeMillis());
         return Mono.just(result);
     }
@@ -67,5 +129,21 @@ public class HealthController {
         status.put("healthy", healthy);
         status.put("status", healthy ? "healthy" : "unhealthy");
         return status;
+    }
+
+    private String formatUptime(long uptimeMs) {
+        long seconds = uptimeMs / 1000;
+        long minutes = seconds / 60;
+        long hours = minutes / 60;
+        long days = hours / 24;
+        if (days > 0) {
+            return String.format("%dd %dh %dm", days, hours % 24, minutes % 60);
+        } else if (hours > 0) {
+            return String.format("%dh %dm %ds", hours, minutes % 60, seconds % 60);
+        } else if (minutes > 0) {
+            return String.format("%dm %ds", minutes, seconds % 60);
+        } else {
+            return String.format("%ds", seconds);
+        }
     }
 }

@@ -324,8 +324,20 @@ export interface AgentCard {
 
 // ===== Infrastructure Types =====
 
+export interface HealthStatus {
+  service: string
+  status: 'UP' | 'DOWN' | 'DEGRADED'
+  uptimeSeconds?: number
+  traceId?: string
+  details?: Record<string, unknown>
+}
+
 export interface ServiceHealth {
   healthy: boolean
+  status?: string
+  uptime?: number
+  latency?: number
+  details?: Record<string, unknown>
 }
 
 export interface SSEEvent {

@@ -1,13 +1,14 @@
 package lyjew.com.lyclaw.feign;
 
 import lyjew.com.lyclaw.protocol.mcp.McpToolDescriptor;
+import lyjew.com.lyclaw.tracing.FeignConfig;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
-@FeignClient(name = "lyclaw-protocol-service", path = "/api/protocol")
+@FeignClient(name = "lyclaw-protocol-service", path = "/api/protocol", configuration = FeignConfig.class)
 public interface ProtocolFeignClient {
 
     @PostMapping("/mcp/discover")

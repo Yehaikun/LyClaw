@@ -2,7 +2,10 @@
   <div class="error-alert" role="alert">
     <div class="error-alert-body">
       <AlertTriangle class="error-alert-icon" :size="18" />
-      <p class="error-alert-message">{{ message }}</p>
+      <div class="error-alert-content">
+        <p class="error-alert-message">{{ message }}</p>
+        <TraceIdBadge v-if="traceId" :trace-id="traceId" class="error-alert-trace" />
+      </div>
     </div>
     <button
       v-if="dismissible"
@@ -17,10 +20,12 @@
 
 <script setup lang="ts">
 import { AlertTriangle, X } from 'lucide-vue-next'
+import TraceIdBadge from '@/components/TraceIdBadge.vue'
 
 defineProps<{
   message: string
   dismissible?: boolean
+  traceId?: string
 }>()
 
 defineEmits<{
@@ -53,11 +58,22 @@ defineEmits<{
   margin-top: 1px;
 }
 
+.error-alert-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
 .error-alert-message {
   font-size: var(--body-md-size);
   font-weight: var(--body-md-weight);
   line-height: var(--body-md-line-height);
   color: var(--color-error);
+}
+
+.error-alert-trace {
+  align-self: flex-start;
 }
 
 .error-alert-close {

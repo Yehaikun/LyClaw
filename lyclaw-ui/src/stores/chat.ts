@@ -10,6 +10,7 @@ export const useChatStore = defineStore('chat', () => {
   const currentStreamingText = ref<string>('')
   const isStreaming = ref<boolean>(false)
   const error = ref<string | null>(null)
+  const errorTraceId = ref<string | undefined>(undefined)
   const currentModel = ref<string>('deepseek-4-pro')
   const currentProvider = ref<string>('deepseek')
   const currentSessionId = ref<string | null>(null)
@@ -54,6 +55,7 @@ export const useChatStore = defineStore('chat', () => {
         currentSessionId.value = activeSessionId
       } catch (err) {
         error.value = `Failed to create session: ${(err as Error).message}`
+        errorTraceId.value = undefined
         return
       }
     }
@@ -75,12 +77,14 @@ export const useChatStore = defineStore('chat', () => {
         },
         () => {
           // Streaming completed successfully
-          const assistantMsg: Message = {
-            role: 'assistant',
-            content: currentStreamingText.value,
-            model: currentModel.value,
+          if (currentStreamingText.value) {
+            const assistantMsg: Message = {
+              role: 'assistant',
+              content: currentStreamingText.value,
+              model: currentModel.value,
+            }
+            messages.value.push(assistantMsg)
           }
-          messages.value.push(assistantMsg)
           currentStreamingText.value = ''
           isStreaming.value = false
         },
@@ -96,18 +100,30 @@ export const useChatStore = defineStore('chat', () => {
           }
           currentStreamingText.value = ''
           isStreaming.value = false
+          // Capture traceId from ApiError if present
+          if (err instanceof ApiError) {
+            errorTraceId.value = (err as ApiError).traceId
+          } else {
+            errorTraceId.value = undefined
+          }
           // Only fallback to non-streaming for non-abort errors
           if (err.name !== 'AbortError' && !(err instanceof ApiError && (err as ApiError).status === 0)) {
             error.value = err.message
             sendMessageNonStreaming(request)
           } else {
             error.value = null  // partial content already saved, don't show error
+            errorTraceId.value = undefined
           }
         },
       )
     } catch (err) {
       isStreaming.value = false
       error.value = (err as Error).message
+      if (err instanceof ApiError) {
+        errorTraceId.value = (err as ApiError).traceId
+      } else {
+        errorTraceId.value = undefined
+      }
     }
   }
 
@@ -138,6 +154,11 @@ export const useChatStore = defineStore('chat', () => {
       isStreaming.value = false
     } catch (fallbackErr) {
       error.value = `Chat failed: ${(fallbackErr as Error).message}`
+      if (fallbackErr instanceof ApiError) {
+        errorTraceId.value = (fallbackErr as ApiError).traceId
+      } else {
+        errorTraceId.value = undefined
+      }
       isStreaming.value = false
       throw fallbackErr
     }
@@ -153,6 +174,7 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     currentStreamingText.value = ''
     error.value = null
+    errorTraceId.value = undefined
   }
 
   /** Retry the last user message. */
@@ -223,6 +245,7 @@ export const useChatStore = defineStore('chat', () => {
     currentStreamingText,
     isStreaming,
     error,
+    errorTraceId,
     currentModel,
     currentProvider,
     currentSessionId,

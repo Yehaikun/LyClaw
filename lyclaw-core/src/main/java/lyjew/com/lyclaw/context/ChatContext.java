@@ -42,6 +42,20 @@ public class ChatContext {
         this.tracing = new TraceContext();
     }
 
+    public ChatContext(ChatRequest request, Session session,
+                       MemoryContent memory, List<ToolDefinition> toolDefinitions,
+                       InterceptorChain interceptorChain,
+                       ModelProvider modelProvider, String traceId) {
+        this.request = request;
+        this.session = session;
+        this.memory = memory;
+        this.messages = new ArrayList<>(session.getMessages());
+        this.toolDefinitions = toolDefinitions;
+        this.interceptorChain = interceptorChain;
+        this.modelProvider = modelProvider;
+        this.tracing = new TraceContext(traceId);
+    }
+
     public ChatRequest getRequest() { return request; }
 
     public Session getSession() { return session; }

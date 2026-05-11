@@ -16,30 +16,31 @@
 .markdown-content h5,
 .markdown-content h6 {
   color: var(--color-ink);
-  font-weight: var(--display-sm-weight);
-  line-height: var(--display-sm-line-height);
+  font-weight: 600;
+  line-height: 1.35;
   margin-top: var(--spacing-lg);
   margin-bottom: var(--spacing-sm);
 }
 
 .markdown-content h1 {
-  font-size: var(--display-sm-size);
+  font-size: 1.75rem;
   padding-bottom: var(--spacing-xs);
-  border-bottom: 1px solid var(--divider-color-soft);
+  border-bottom: 1px solid var(--divider-color);
 }
 
 .markdown-content h2 {
-  font-size: var(--title-lg-size);
+  font-size: 1.5rem;
   padding-bottom: var(--spacing-xxs);
-  border-bottom: 1px solid var(--divider-color-soft);
+  border-bottom: 1px solid var(--divider-color);
 }
 
 .markdown-content h3 {
-  font-size: var(--title-md-size);
+  font-size: 1.25rem;
 }
 
 .markdown-content h4 {
-  font-size: var(--title-sm-size);
+  font-size: 1.0625rem;
+  color: var(--color-body-strong);
 }
 
 .markdown-content h5,
@@ -72,22 +73,23 @@
 }
 
 .markdown-content ul {
-  list-style: disc;
+  list-style-type: disc;
 }
 
 .markdown-content ol {
-  list-style: decimal;
+  list-style-type: decimal;
 }
 
 .markdown-content ul ul {
-  list-style: circle;
+  list-style-type: circle;
 }
 
 .markdown-content ul ul ul {
-  list-style: square;
+  list-style-type: square;
 }
 
 .markdown-content li {
+  display: list-item;
   margin-bottom: var(--spacing-xxs);
 }
 
@@ -132,7 +134,8 @@
   margin: var(--spacing-md) 0;
   border-radius: var(--code-block-radius);
   overflow: hidden;
-  border: 1px solid var(--divider-color-soft);
+  border: 1px solid var(--code-block-border, #dedee0);
+  box-shadow: var(--code-block-shadow, 0 1px 3px rgba(0,0,0,0.08));
 }
 
 .markdown-content .code-block-header {
@@ -140,8 +143,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: var(--color-surface-soft);
-  border-bottom: 1px solid var(--divider-color-soft);
+  background: #e4e4e7;
+  border-bottom: 1px solid var(--code-block-border, #dedee0);
 }
 
 .markdown-content .code-block-lang {
@@ -180,8 +183,8 @@
 .markdown-content pre {
   margin: var(--spacing-md) 0;
   padding: var(--code-block-padding-y) var(--code-block-padding-x);
-  background: var(--code-block-bg);
-  color: var(--code-block-fg);
+  background: var(--code-block-bg, #f0f0f2);
+  color: var(--code-block-fg, #1a1a1e);
   border-radius: var(--code-block-radius);
   overflow-x: auto;
   font-family: var(--font-mono);
@@ -290,5 +293,64 @@
 }
 
 .markdown-content li:has(input[type="checkbox"]) {
-  list-style: none;
+  list-style-type: none;
+}
+
+/* ---- Mermaid Diagrams ---- */
+.markdown-content .mermaid-wrapper {
+  margin: var(--spacing-md) 0;
+  border: 1px solid var(--code-block-border, #dedee0);
+  border-radius: var(--code-block-radius);
+  overflow: hidden;
+  box-shadow: var(--code-block-shadow, 0 1px 3px rgba(0,0,0,0.08));
+}
+
+.markdown-content .mermaid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #e4e4e7;
+  border-bottom: 1px solid var(--code-block-border, #dedee0);
+}
+
+.markdown-content .mermaid-label {
+  font-family: var(--font-sans);
+  font-size: var(--caption-size);
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: lowercase;
+  margin-right: auto;
+}
+
+.markdown-content .mermaid-download-btn {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--rounded-sm);
+  background: var(--color-surface-card);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.markdown-content .mermaid-download-btn:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.markdown-content .mermaid-svg {
+  padding: var(--spacing-md);
+  background: #ffffff;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+.markdown-content .mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
 }

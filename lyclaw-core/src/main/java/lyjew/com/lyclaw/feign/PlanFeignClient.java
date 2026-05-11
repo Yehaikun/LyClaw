@@ -3,12 +3,13 @@ package lyjew.com.lyclaw.feign;
 import lyjew.com.lyclaw.task.PlanRequest;
 import lyjew.com.lyclaw.task.ReviseRequest;
 import lyjew.com.lyclaw.task.TaskPlan;
+import lyjew.com.lyclaw.tracing.FeignConfig;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-@FeignClient(name = "lyclaw-plan-service", path = "/api/plan")
+@FeignClient(name = "lyclaw-plan-service", path = "/api/plan", configuration = FeignConfig.class)
 public interface PlanFeignClient {
 
     @PostMapping("/plan")

@@ -241,8 +241,10 @@
   --divider-color-soft: var(--color-hairline-soft);
 
   /* ---- Component Tokens: Code Block ---- */
-  --code-block-bg: var(--color-surface-dark);
-  --code-block-fg: var(--color-on-dark);
+  --code-block-bg: #f0f0f2;
+  --code-block-fg: #1a1a1e;
+  --code-block-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  --code-block-border: #dedee0;
   --code-block-radius: var(--rounded-md);
   --code-block-padding-x: var(--spacing-md);
   --code-block-padding-y: var(--spacing-md);
