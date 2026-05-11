@@ -11,21 +11,54 @@ import org.springframework.http.codec.ServerSentEvent;
 import lyjew.com.lyclaw.framework.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
+/**
+ * 反思评估阶段，属于核心（CORE）组，在 PlanExecutionStage 之后执行。
+ *
+ * <p>职责：收集执行阶段产生的所有工具输出结果，调用远程反思服务进行评估和打分，
+ * 生成 ReflectionReport（包含整体评分和质量维度指标）。反思结果会存入 PipelineContext，
+ * 供后续 RespondStage 和 MetricsStage 使用。
+ *
+ * <p>如果反思服务调用失败，会降级处理：设置评分为 0.0，标记流水线正常完成（pipelineOk=true），
+ * 保证即使反思不可用也不影响用户收到最终响应。
+ *
+ * <p>执行顺序：第 3 位（getOrder 返回 3）。
+ */
 @Slf4j
 @PipelineStage(name = "Reflection", after = PlanExecutionStage.class, group = "CORE")
 public class ReflectionStage extends PipelineStageBase {
 
+    /** 反思服务 Feign 客户端，用于远程调用评估服务 */
     private final ReflectFeignClient reflectFeignClient;
+    /** 指标采集器，用于记录反思阶段耗时 */
     private final MetricsCollector metricsCollector;
 
+    /**
+     * 构造反思评估阶段。
+     *
+     * @param reflectFeignClient 反思服务远程调用客户端
+     * @param metricsCollector   指标采集器，可为 null
+     */
     public ReflectionStage(ReflectFeignClient reflectFeignClient,
                             @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
         this.reflectFeignClient = reflectFeignClient;
         this.metricsCollector = metricsCollector;
     }
 
+    /**
+     * 执行反思评估流程。
+     *
+     * <p>将所有工具执行结果拼接为文本，发送给远程反思服务进行评估。
+     * 如果 toolResults 为空，则回退使用原始用户消息作为评估输入。
+     * 反思完成后将报告和评分存入 PipelineContext，并标记流水线正常完成（pipelineOk=true），
+     * 同时记录 respondStartMs 供 MetricsStage 计算响应耗时。
+     *
+     * @param context     当前聊天上下文，包含 sessionId 和追踪信息
+     * @param pipelineCtx 流水线上下文，包含工具执行结果，并接收反思报告和评分
+     * @return SSE 事件流，包含反思进度和评分结果
+     */
     @Override
     public Flux<ServerSentEvent<String>> execute(ChatContext context, PipelineContext pipelineCtx) {
+        // 流水线已被上游终止，跳过本阶段
         if (pipelineCtx.isTerminated()) return Flux.empty();
 
         return Flux.create(sink -> {
@@ -43,6 +76,7 @@ public class ReflectionStage extends PipelineStageBase {
                         "Reflecting on execution results", null));
                 sink.next(sseEvent("reflect_start", "Reflecting on execution results"));
 
+                // 将所有工具输出拼接为一个字符串，空时回退使用用户消息
                 String combinedOutput = String.join("\n", toolResults);
                 ReflectRequest reflectReq = ReflectRequest.builder()
                         .sessionId(sessionId)
@@ -55,6 +89,7 @@ public class ReflectionStage extends PipelineStageBase {
                 log.info(logJson("INFO", "feign_call", "REFLECT", traceId,
                         "reflectFeignClient.reflect completed", reflectCallDuration));
 
+                // 将反思报告和评分存入流水线上下文，供后续阶段使用
                 pipelineCtx.getReportRef().set(r);
                 double score = r != null ? r.getOverallScore() : 0.0;
                 pipelineCtx.getReflectScoreRef().set(score);
@@ -73,12 +108,14 @@ public class ReflectionStage extends PipelineStageBase {
                     metricsCollector.recordPipelineStage("REFLECT", stage5Duration);
                 }
 
+                // 记录响应开始时间戳，标记流水线正常完成，通知后续阶段可以开始响应生成
                 pipelineCtx.getRespondStartMs().set(System.currentTimeMillis());
                 pipelineCtx.setPipelineOk(true);
                 pipelineCtx.getCurrentStage().set("pipeline_done");
 
                 sink.complete();
             } catch (Exception e) {
+                // 反思服务异常：降级处理，评分为 0，不阻塞后续流程
                 log.warn(logJson("WARN", "stage_error", "REFLECT", traceId,
                         "Reflection failed, continuing degraded: " + e.getMessage(), null));
                 pipelineCtx.getReportRef().set(null);

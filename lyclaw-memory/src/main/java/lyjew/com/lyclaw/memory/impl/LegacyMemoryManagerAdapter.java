@@ -8,21 +8,48 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 遗留内存管理器适配器，将旧版 MemoryManager 接口桥接到新的 MemorySystem 架构。
+ *
+ * <p>该类作为兼容层，允许旧版代码通过 MemoryManager 接口操作新的三层内存系统
+ * （感知层/短期记忆层/长期记忆层）。它维护一个本地 {@code currentContent} 缓冲区，
+ * 同时将所有写入持久化到长期记忆层中。</p>
+ *
+ * <p>设计动机：在系统从单层内存架构迁移到多层内存架构的过程中，
+ * 旧版 Agent 组件仍然依赖 MemoryManager 接口。该适配器确保平滑过渡，
+ * 避免大规模代码重构。</p>
+ */
 @Slf4j
 @Component
 public class LegacyMemoryManagerAdapter implements MemoryManager {
 
+    /** 旧版系统中使用的固定用户ID */
     private static final String LEGACY_USER_ID = "legacy";
+    /** 旧版系统中使用的固定会话ID */
     private static final String LEGACY_SESSION_ID = "legacy-global";
 
     private final MemorySystem memorySystem;
     private MemoryStrategy strategy;
+    /** 本地内存缓冲区，保存最近一次写入的内容 */
     private String currentContent = "";
 
+    /**
+     * 构造函数，注入内存系统实例。
+     *
+     * @param memorySystem 底层多层内存系统
+     */
     public LegacyMemoryManagerAdapter(MemorySystem memorySystem) {
         this.memorySystem = memorySystem;
     }
 
+    /**
+     * 读取长期记忆，返回格式化的记忆内容。
+     *
+     * <p>从长期记忆层检索最多100条记录，合并为 Markdown 格式的列表，
+     * 并追加本地缓冲区中的当前内容。</p>
+     *
+     * @return 包含格式化记忆文本的 MemoryContent
+     */
     @Override
     public MemoryContent read() {
         MemoryQuery query = MemoryQuery.builder()
@@ -51,11 +78,17 @@ public class LegacyMemoryManagerAdapter implements MemoryManager {
         return new MemoryContent(content, "Long-Term Memory", true, Collections.emptyList(), 0.0);
     }
 
+    /**
+     * 追加内容到当前缓冲区并持久化到长期记忆。
+     *
+     * @param content 要追加的文本内容，空值或空白内容会被忽略
+     */
     @Override
     public void append(String content) {
         if (content == null || content.isBlank()) return;
 
         log.info("LegacyMemoryManagerAdapter.append: appending {} chars", content.length());
+        // 追加到本地缓冲区
         currentContent = currentContent + "\n" + content;
 
         PerceptionData data = PerceptionData.builder()
@@ -70,6 +103,11 @@ public class LegacyMemoryManagerAdapter implements MemoryManager {
         memorySystem.commitLongTerm(entry);
     }
 
+    /**
+     * 用新内容完全覆盖当前缓冲区并持久化到长期记忆。
+     *
+     * @param content 新的文本内容，如果为 null 则清空缓冲区
+     */
     @Override
     public void rewrite(String content) {
         log.info("LegacyMemoryManagerAdapter.rewrite: rewriting with {} chars",
@@ -89,6 +127,12 @@ public class LegacyMemoryManagerAdapter implements MemoryManager {
         }
     }
 
+    /**
+     * 搜索记忆条目，跨长期记忆和短期记忆层检索匹配内容。
+     *
+     * @param query 搜索查询文本
+     * @return 匹配的记忆内容列表，查询为空时返回空列表
+     */
     @Override
     public List<MemoryContent> search(String query) {
         if (query == null || query.isBlank()) return Collections.emptyList();

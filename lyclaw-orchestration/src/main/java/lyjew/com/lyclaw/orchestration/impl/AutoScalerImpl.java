@@ -6,16 +6,35 @@ import org.springframework.stereotype.Service;
 
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Agent 自动扩缩容实现。
+ *
+ * 根据 Agent 池快照评估是否需要扩容或缩容。决策规则：
+ * 1. 队列溢出：排队任务超过最大队列深度 -> 扩容
+ * 2. 空闲不足：空闲 Agent 少于目标值(3) -> 扩容
+ * 3. 空闲过多：空闲 Agent 超过高水位线(6) -> 缩容
+ * 4. 否则保持现状
+ */
 @Slf4j
 @Service
 public class AutoScalerImpl implements AutoScaler {
 
+    /** 目标空闲 Agent 数量 */
     private static final int TARGET_IDLE = 3;
+    /** 每次扩容步长 */
     private static final int SCALE_UP_STEP = 2;
+    /** 每次缩容步长 */
     private static final int SCALE_DOWN_STEP = 1;
 
+    /** 当前 Agent 总数（模拟值，生产环境应从实际池中获取） */
     private int currentAgentCount = 3;
 
+    /**
+     * 评估当前快照并生成扩缩容决策。
+     *
+     * @param snapshot Agent 池快照（包含空闲数、排队数等）
+     * @return 扩缩容决策（NONE/SCALE_UP/SCALE_DOWN）
+     */
     @Override
     public ScalingDecision evaluate(AgentPoolSnapshot snapshot) {
         if (snapshot == null) {
@@ -37,8 +56,10 @@ public class AutoScalerImpl implements AutoScaler {
                 snapshot.getTotalAgents(), idleAgents, snapshot.getRunningAgents(),
                 queuedTasks, maxQueueDepth);
 
+        // 规则1：队列溢出 -> 扩容
         if (maxQueueDepth > 0 && queuedTasks > maxQueueDepth) {
             int queueOverflow = queuedTasks - maxQueueDepth;
+            // delta 取队列溢出的一半，但不小于 1，不超过步长上限
             int delta = Math.min(SCALE_UP_STEP, Math.max(1, queueOverflow / 2));
             log.info("[AutoScaler] SCALE_UP (queue overflow): queued={}, maxQueueDepth={}, delta={}",
                     queuedTasks, maxQueueDepth, delta);
@@ -49,6 +70,7 @@ public class AutoScalerImpl implements AutoScaler {
                     .build();
         }
 
+        // 规则2：空闲不足 -> 扩容
         if (idleAgents < TARGET_IDLE) {
             int deficit = TARGET_IDLE - idleAgents;
             int delta = Math.min(SCALE_UP_STEP, Math.max(1, deficit));
@@ -61,6 +83,7 @@ public class AutoScalerImpl implements AutoScaler {
                     .build();
         }
 
+        // 规则3：高水位线 = 目标值的 2 倍，空闲过多 -> 缩容
         int highWatermark = TARGET_IDLE * 2;
         if (idleAgents > highWatermark) {
             int excess = idleAgents - TARGET_IDLE;
@@ -74,6 +97,7 @@ public class AutoScalerImpl implements AutoScaler {
                     .build();
         }
 
+        // 规则4：空闲在合理范围内 -> 不变
         log.debug("[AutoScaler] NONE: idle={}, within range [{}, {}]",
                 idleAgents, TARGET_IDLE, highWatermark);
         return ScalingDecision.builder()
@@ -84,6 +108,13 @@ public class AutoScalerImpl implements AutoScaler {
                 .build();
     }
 
+    /**
+     * 应用扩缩容决策，更新当前 Agent 数量。
+     * 缩容时保证数量不低于 1。
+     *
+     * @param decision 扩缩容决策
+     * @return 包含前后数量和耗时的结果 Future
+     */
     @Override
     public CompletableFuture<ScalingResult> apply(ScalingDecision decision) {
         return CompletableFuture.supplyAsync(() -> {
@@ -105,14 +136,14 @@ public class AutoScalerImpl implements AutoScaler {
                 case SCALE_UP -> {
                     newCount = previousCount + decision.getDelta();
                     currentAgentCount = newCount;
-                    log.info("[AutoScaler] Scale UP applied: {} → {} (delta={}, reason={})",
+                    log.info("[AutoScaler] Scale UP applied: {} -> {} (delta={}, reason={})",
                             previousCount, newCount, decision.getDelta(), decision.getReason());
                 }
                 case SCALE_DOWN -> {
-                    newCount = Math.max(1, previousCount - decision.getDelta());
+                    newCount = Math.max(1, previousCount - decision.getDelta());  // 保底最少 1 个
                     if (newCount != previousCount) {
                         currentAgentCount = newCount;
-                        log.info("[AutoScaler] Scale DOWN applied: {} → {} (delta={}, reason={})",
+                        log.info("[AutoScaler] Scale DOWN applied: {} -> {} (delta={}, reason={})",
                                 previousCount, newCount, decision.getDelta(), decision.getReason());
                     } else {
                         log.info("[AutoScaler] Scale DOWN blocked: already at minimum (1 agent). reason={}",
@@ -123,7 +154,7 @@ public class AutoScalerImpl implements AutoScaler {
             }
 
             long durationMs = System.currentTimeMillis() - startMs;
-            log.info("[AutoScaler] Scaling result: {} → {}, durationMs={}",
+            log.info("[AutoScaler] Scaling result: {} -> {}, durationMs={}",
                     previousCount, newCount, durationMs);
 
             return ScalingResult.builder()
@@ -135,10 +166,16 @@ public class AutoScalerImpl implements AutoScaler {
         });
     }
 
+    /**
+     * @return 当前 Agent 数量
+     */
     public int getCurrentAgentCount() {
         return currentAgentCount;
     }
 
+    /**
+     * 手动设置 Agent 数量，确保不小于 1。
+     */
     public void setCurrentAgentCount(int count) {
         this.currentAgentCount = Math.max(1, count);
         log.info("[AutoScaler] Agent count manually set to: {}", this.currentAgentCount);

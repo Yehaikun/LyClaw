@@ -14,6 +14,14 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * 网关健康检查和仪表盘控制器。
+ * <p>
+ * 提供Kubernetes风格的存活性(liveness)和就绪性(readiness)端点，
+ * 以及聚合所有微服务健康状态的仪表盘接口。
+ * 通过Nacos DiscoveryClient检查各微服务的注册状态。
+ * </p>
+ */
 @RestController("gatewayHealthController")
 public class HealthController {
 
@@ -47,6 +55,7 @@ public class HealthController {
         this.version = loadVersion();
     }
 
+    /** 从构建信息中加载版本号，无构建信息时返回"dev" */
     private String loadVersion() {
         try (InputStream is = getClass().getResourceAsStream("/META-INF/build-info.properties")) {
             if (is != null) {
@@ -63,6 +72,11 @@ public class HealthController {
         return "dev";
     }
 
+    /**
+     * 仪表盘健康检查：聚合网关及各微服务的健康状态。
+     *
+     * @return 包含traceId、版本、运行时长及各服务状态的响应
+     */
     @GetMapping("/api/dashboard/health")
     public Mono<Map<String, Object>> health() {
         String traceId = UUID.randomUUID().toString().replace("-", "");
@@ -86,6 +100,7 @@ public class HealthController {
         return Mono.just(result);
     }
 
+    /** 网关存活性检查：始终返回UP */
     @GetMapping("/api/gateway/health/liveness")
     public Mono<Map<String, Object>> gatewayLiveness() {
         Map<String, Object> result = new LinkedHashMap<>();
@@ -94,6 +109,7 @@ public class HealthController {
         return Mono.just(result);
     }
 
+    /** 全局存活性检查 */
     @GetMapping("/api/health/liveness")
     public Mono<Map<String, Object>> liveness() {
         String traceId = UUID.randomUUID().toString().replace("-", "");
@@ -104,6 +120,11 @@ public class HealthController {
         return Mono.just(result);
     }
 
+    /**
+     * 就绪性检查：检查Nacos连接状态。
+     *
+     * @return Nacos连接正常时返回UP，否则返回DOWN
+     */
     @GetMapping("/api/health/readiness")
     public Mono<Map<String, Object>> readiness() {
         String traceId = UUID.randomUUID().toString().replace("-", "");
@@ -124,6 +145,13 @@ public class HealthController {
         return Mono.just(result);
     }
 
+    /**
+     * 构建单个服务的健康状态对象。
+     *
+     * @param displayName       服务显示名称
+     * @param registeredServices Nacos中已注册的服务列表
+     * @return 包含名称、健康状态的状态Map
+     */
     private Map<String, Object> buildServiceStatus(String displayName, List<String> registeredServices) {
         String nacosName = SERVICE_DISPLAY.entrySet().stream()
                 .filter(e -> e.getValue().equals(displayName))
@@ -139,6 +167,12 @@ public class HealthController {
         return status;
     }
 
+    /**
+     * 将毫秒级运行时间格式化为人类可读的字符串。
+     *
+     * @param uptimeMs 运行时间（毫秒）
+     * @return 格式化后的字符串，如"2d 3h 5m"、"1h 30m 45s"
+     */
     private String formatUptime(long uptimeMs) {
         long seconds = uptimeMs / 1000;
         long minutes = seconds / 60;

@@ -10,14 +10,34 @@ import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * 默认错误检测器，使用规则匹配检测 AI 输出中的三类错误。
+ *
+ * <p>检测能力：</p>
+ * <ol>
+ *   <li><b>幻觉检测 (Hallucination)</b> — 无证据支持的断言、高频置信标记、
+ *       与已知事实的矛盾</li>
+ *   <li><b>逻辑矛盾 (Logic Contradiction)</b> — 同一输出的不同句子出现
+ *       互斥的陈述（如同时说"增加"和"减少"）</li>
+ *   <li><b>工具失败模式 (Tool Failure Pattern)</b> — 连续失败、
+ *       系统性故障、超时</li>
+ * </ol>
+ *
+ * <p>检测方法基于预定义的模式库和关键词匹配，不依赖 LLM 调用。
+ * 置信度评分由经验常量确定，用于供上层 StrategyAdjuster 做决策。</p>
+ */
 @Slf4j
 @Component
 public class DefaultErrorDetector implements ErrorDetector {
 
+    /** 幻觉检测的基础置信度 */
     private static final double HALLUCINATION_BASE_CONFIDENCE = 0.65;
+    /** 逻辑矛盾检测的置信度 */
     private static final double CONTRADICTION_BASE_CONFIDENCE = 0.75;
+    /** 连续失败次数阈值，超过此值视为工具问题 */
     private static final int CONSECUTIVE_FAILURE_THRESHOLD = 3;
 
+    /** 无证据支持的主张标记词 */
     private static final String[] UNSUPPORTED_CLAIM_MARKERS = {
             "research shows", "studies have shown", "study shows",
             "it is well known", "as we all know", "obviously",
@@ -27,12 +47,14 @@ public class DefaultErrorDetector implements ErrorDetector {
             "it has been demonstrated", "clearly"
     };
 
+    /** 高频自信标记词：绝对化表述可能是幻觉的信号 */
     private static final String[] HIGH_CONFIDENCE_MARKERS = {
             "definitely", "certainly", "absolutely", "always",
             "never", "without exception", "every single",
             "in all cases", "guaranteed", "invariably"
     };
 
+    /** 矛盾词对：如果同一输出的不同句子分别包含一对中的两个词，则检测为逻辑矛盾 */
     private static final String[][] CONTRADICTION_PAIRS = {
             {"increase", "decrease"}, {"increasing", "decreasing"},
             {"rose", "fell"}, {"always", "never"},
@@ -54,6 +76,21 @@ public class DefaultErrorDetector implements ErrorDetector {
             {"good", "bad"},
     };
 
+    /**
+     * 检测输出文本中的幻觉错误。
+     *
+     * <p>检测逻辑：
+     * <ul>
+     *   <li>与已知事实对比，检查否定不一致</li>
+     *   <li>无证据支持的主张（如 "research shows" 等）</li>
+     *   <li>高频绝对化断言（如 "definitely", "never" 等）</li>
+     * </ul>
+     * </p>
+     *
+     * @param output     待检测的输出文本
+     * @param knownFacts 已知事实列表，用于交叉验证
+     * @return 检测到的错误列表
+     */
     @Override
     public List<DetectedError> detectHallucination(String output, List<String> knownFacts) {
         if (output == null || output.isBlank()) return Collections.emptyList();
@@ -111,6 +148,15 @@ public class DefaultErrorDetector implements ErrorDetector {
         return errors;
     }
 
+    /**
+     * 检测输出文本内部的逻辑矛盾。
+     *
+     * <p>按句子拆分输出文本，逐对比较，使用预定义的矛盾词对
+     * （如 increase/decrease）检测不一致陈述。</p>
+     *
+     * @param output 待检测的输出文本
+     * @return 检测到的逻辑矛盾错误列表
+     */
     @Override
     public List<DetectedError> detectLogicContradiction(String output) {
         if (output == null || output.isBlank()) return Collections.emptyList();
@@ -155,6 +201,14 @@ public class DefaultErrorDetector implements ErrorDetector {
         return errors;
     }
 
+    /**
+     * 检测工具调用历史中的失败模式。
+     *
+     * <p>分析连续失败、系统性故障（所有调用均失败）和超时三种模式。</p>
+     *
+     * @param history 工具调用历史记录
+     * @return 检测到的工具失败错误列表
+     */
     @Override
     public List<DetectedError> detectToolFailurePattern(List<ToolCallRecord> history) {
         if (history == null || history.isEmpty()) return Collections.emptyList();
@@ -167,6 +221,10 @@ public class DefaultErrorDetector implements ErrorDetector {
         return errors;
     }
 
+    /**
+     * 判断输出是否与已知事实矛盾。
+     * 通过对比否定词和共享关键词来检测。
+     */
     private boolean contradictsFact(String lowerOutput, String lowerFact) {
         Set<String> factTerms = extractSignificantTerms(lowerFact);
         Set<String> outputTerms = new HashSet<>(Arrays.asList(lowerOutput.split("[^\\p{L}\\p{N}]+")));
@@ -182,6 +240,7 @@ public class DefaultErrorDetector implements ErrorDetector {
         return false;
     }
 
+    /** 检查文本是否包含否定词。 */
     private boolean containsNegation(String text) {
         String[] negators = {" not ", "n't ", " never ", " no ", " neither ", " none ", " cannot ", " can't "};
         for (String n : negators) {
@@ -190,6 +249,7 @@ public class DefaultErrorDetector implements ErrorDetector {
         return false;
     }
 
+    /** 按句号、问号、感叹号、换行等分隔符拆分文本为句子列表。 */
     private List<String> splitSentences(String text) {
         if (text == null || text.isBlank()) return Collections.emptyList();
         return Arrays.stream(text.split("[.!?\\n]+"))
@@ -198,10 +258,12 @@ public class DefaultErrorDetector implements ErrorDetector {
                 .toList();
     }
 
+    /** 使用词边界匹配检测句子中是否包含指定单词。 */
     private boolean containsWord(String sentence, String word) {
         return Pattern.compile("\\b" + Pattern.quote(word) + "\\b").matcher(sentence).find();
     }
 
+    /** 检测同一工具的连续失败模式。超过阈值则报警。 */
     private List<DetectedError> detectConsecutiveFailures(List<ToolCallRecord> history) {
         List<DetectedError> errors = new ArrayList<>();
         Map<String, Integer> consecutiveCounts = new HashMap<>();
@@ -237,6 +299,7 @@ public class DefaultErrorDetector implements ErrorDetector {
         return errors;
     }
 
+    /** 检测系统性故障：所有调用均失败且调用次数 >= 3。 */
     private List<DetectedError> detectSystemicFailure(List<ToolCallRecord> history) {
         long successCount = history.stream().filter(ToolCallRecord::isSuccess).count();
 
@@ -253,6 +316,7 @@ public class DefaultErrorDetector implements ErrorDetector {
         return Collections.emptyList();
     }
 
+    /** 检测超时调用：失败且耗时超过 30 秒。 */
     private List<DetectedError> detectTimeouts(List<ToolCallRecord> history) {
         List<DetectedError> errors = new ArrayList<>();
         for (ToolCallRecord record : history) {
@@ -269,6 +333,9 @@ public class DefaultErrorDetector implements ErrorDetector {
         return errors;
     }
 
+    /**
+     * 从文本中提取有意义的词项（过滤停用词和短词）。
+     */
     private Set<String> extractSignificantTerms(String text) {
         Set<String> stopWords = new HashSet<>(Arrays.asList(
                 "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -285,6 +352,7 @@ public class DefaultErrorDetector implements ErrorDetector {
                 .collect(HashSet::new, Set::add, Set::addAll);
     }
 
+    /** 安全的子串提取，自动处理越界。 */
     private String safeSubstring(String text, int start, int end) {
         if (text == null) return "";
         int safeStart = Math.max(0, Math.min(start, text.length()));
@@ -292,6 +360,7 @@ public class DefaultErrorDetector implements ErrorDetector {
         return text.substring(safeStart, safeEnd);
     }
 
+    /** 提取关键词周围的上下文文本（指定窗口大小）。 */
     private String extractSurroundingContext(String output, String keyword, int window) {
         if (output == null || keyword == null) return "";
         int idx = output.toLowerCase().indexOf(keyword.toLowerCase());
@@ -301,6 +370,9 @@ public class DefaultErrorDetector implements ErrorDetector {
         return output.substring(start, end) + "...";
     }
 
+    /**
+     * 修剪文本到单词边界，去除前后非字母数字字符，限制最大长度。
+     */
     private String trimToWord(String text) {
         if (text == null || text.length() < 5) return text;
         int start = 0;
@@ -311,6 +383,7 @@ public class DefaultErrorDetector implements ErrorDetector {
         return trimmed.length() > 100 ? trimmed.substring(0, 100) + "..." : trimmed;
     }
 
+    /** 截断句子到最大 60 字符。 */
     private String trimSentences(String sentence) {
         if (sentence == null) return "";
         return sentence.length() > 60 ? sentence.substring(0, 60) + "..." : sentence;

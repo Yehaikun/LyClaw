@@ -4,12 +4,22 @@ import lyjew.com.lyclaw.tool.ToolResult;
 
 import java.util.List;
 
+/**
+ * 聊天结果 DTO，封装一次 LLM 对话完成后的完整输出信息。
+ *
+ * <p>包含生成文本内容、完成原因、Token 使用量、工具调用结果列表和执行耗时。</p>
+ */
 public class ChatResult {
 
+    /** LLM 生成的文本内容 */
     private String content;
+    /** 完成原因（如 stop、length、tool_calls） */
     private String finishReason;
+    /** Token 使用量摘要 */
     private String tokenUsage;
+    /** 本次对话中的工具调用结果列表 */
     private List<ToolResult> toolResults;
+    /** 总执行耗时（毫秒） */
     private long durationMs;
 
     public ChatResult(String content, String finishReason, String tokenUsage,

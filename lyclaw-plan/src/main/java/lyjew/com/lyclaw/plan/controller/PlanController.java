@@ -13,18 +13,51 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
+/**
+ * 任务规划 REST API 控制器，提供计划生成、修订、分解和图构建接口。
+ *
+ * <p>支持多种规划策略的动态切换（DAG、CoT、ReAct、层次化），
+ * 并对生成的计划进行校验和进度跟踪。</p>
+ *
+ * <p>端点列表：
+ * <ul>
+ *   <li><b>POST /api/plan/plan</b> — 根据用户意图生成任务计划</li>
+ *   <li><b>POST /api/plan/revise</b> — 根据反馈修订现有计划</li>
+ *   <li><b>POST /api/plan/decompose</b> — 使用指定策略分解任务</li>
+ *   <li><b>GET /api/plan/progress/{planId}</b> — 查询计划执行进度</li>
+ *   <li><b>POST /api/plan/validate</b> — 校验计划的有效性</li>
+ *   <li><b>POST /api/plan/graph</b> — 从 JSON 构建任务图</li>
+ *   <li><b>GET /api/plan/strategies</b> — 列出可用的分解策略</li>
+ * </ul>
+ * </p>
+ */
 @RestController
 @RequestMapping("/api/plan")
 public class PlanController {
 
+    /** 默认规划器 (DAGTaskPlanner) */
     private final TaskPlanner defaultPlanner;
+    /** 链式思考规划器（可选） */
     private final TaskPlanner cotPlanner;
+    /** ReAct 规划器（可选） */
     private final TaskPlanner reActPlanner;
+    /** 层次化规划器（可选） */
     private final TaskPlanner hierarchicalPlanner;
     private final PlanValidator planValidator;
     private final InterceptorChain interceptorChain;
     private final ModelProvider modelProvider;
 
+    /**
+     * 构造函数，注入多种规划策略和依赖组件。
+     *
+     * @param defaultPlanner       默认 DAG 规划器
+     * @param cotPlanner           CoT 规划器（可为 null）
+     * @param reActPlanner         ReAct 规划器（可为 null）
+     * @param hierarchicalPlanner  层次化规划器（可为 null）
+     * @param planValidator        计划校验器
+     * @param interceptorChain     拦截器链
+     * @param modelProvider        模型提供者（可为 null）
+     */
     public PlanController(@org.springframework.beans.factory.annotation.Qualifier("DAGTaskPlanner")
                           TaskPlanner defaultPlanner,
                           @org.springframework.beans.factory.annotation.Qualifier("cotPlanner")
@@ -45,6 +78,12 @@ public class PlanController {
         this.modelProvider = modelProvider;
     }
 
+    /**
+     * 根据用户意图生成任务计划。
+     *
+     * @param request 包含 strategy、userIntent、sessionId 的计划请求
+     * @return 包含计划、策略、节点数、预估时间和校验结果的响应
+     */
     @PostMapping("/plan")
     public ResponseEntity<Map<String, Object>> plan(@RequestBody PlanRequest request) {
         ChatContext context = buildContext(request);
@@ -62,6 +101,12 @@ public class PlanController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 根据反思反馈修订现有计划。
+     *
+     * @param request 包含 currentPlan、feedback、reason 的修订请求
+     * @return 修订后的任务计划
+     */
     @PostMapping("/revise")
     public ResponseEntity<TaskPlan> revise(@RequestBody ReviseRequest request) {
         ReflectionFeedback feedback = ReflectionFeedback.builder()
@@ -72,6 +117,12 @@ public class PlanController {
         return ResponseEntity.ok(revised);
     }
 
+    /**
+     * 使用指定策略将根任务分解为子任务图。
+     *
+     * @param request 包含 taskDescription、strategy、planner 的请求映射
+     * @return 包含完整任务图、节点数、关键路径和最大并行度的响应
+     */
     @PostMapping("/decompose")
     public ResponseEntity<Map<String, Object>> decompose(@RequestBody Map<String, Object> request) {
         String description = (String) request.getOrDefault("taskDescription", "default task");
@@ -98,6 +149,7 @@ public class PlanController {
         return ResponseEntity.ok(response);
     }
 
+    /** 查询计划执行进度（当前为模拟实现）。 */
     @GetMapping("/progress/{planId}")
     public ResponseEntity<Map<String, Object>> progress(@PathVariable String planId) {
         Map<String, Object> progress = new HashMap<>();
@@ -108,11 +160,18 @@ public class PlanController {
         return ResponseEntity.ok(progress);
     }
 
+    /** 校验任务计划的有效性。 */
     @PostMapping("/validate")
     public ResponseEntity<PlanValidator.ValidationResult> validate(@RequestBody TaskPlan plan) {
         return ResponseEntity.ok(planValidator.validate(plan));
     }
 
+    /**
+     * 从 JSON 定义构建任务图。
+     *
+     * @param request 包含 nodes 和 edges 列表的请求映射
+     * @return 构建好的 TaskGraphImpl 实例
+     */
     @PostMapping("/graph")
     public ResponseEntity<TaskGraphImpl> buildGraph(@RequestBody Map<String, Object> request) {
         TaskGraphImpl graph = new TaskGraphImpl();
@@ -142,6 +201,7 @@ public class PlanController {
         return ResponseEntity.ok(graph);
     }
 
+    /** 列出所有可用的分解策略及其描述。 */
     @GetMapping("/strategies")
     public ResponseEntity<List<Map<String, String>>> listStrategies() {
         List<Map<String, String>> strategies = new ArrayList<>();
@@ -154,6 +214,10 @@ public class PlanController {
         return ResponseEntity.ok(strategies);
     }
 
+    /**
+     * 根据策略名称选择对应的规划器。
+     * 如果指定规划器不可用（为 null），回退到默认规划器。
+     */
     private TaskPlanner selectPlanner(String strategyName) {
         if (strategyName == null || strategyName.isBlank()) return defaultPlanner;
         return switch (strategyName.toLowerCase()) {
@@ -164,6 +228,7 @@ public class PlanController {
         };
     }
 
+    /** 将 PlanGraph 转换为 TaskGraphImpl（完整图结构）。 */
     private TaskGraphImpl convertToFullGraph(PlanGraph graph) {
         TaskGraphImpl full = new TaskGraphImpl();
         for (TaskNode node : graph.getNodeMap().values()) full.addNode(node);
@@ -176,6 +241,7 @@ public class PlanController {
         return full;
     }
 
+    /** 返回分解策略的英文描述文本。 */
     private String describeStrategy(DecompositionStrategy strategy) {
         return switch (strategy) {
             case SEQUENTIAL -> "Sequential decomposition: A -> B -> C linear chain";
@@ -187,6 +253,7 @@ public class PlanController {
         };
     }
 
+    /** 从 PlanRequest 构建 ChatContext 上下文对象。 */
     private ChatContext buildContext(PlanRequest request) {
         Session session = Session.builder().sessionId(request.getSessionId()).build();
         MemoryContent memory = new MemoryContent("", "", false, List.of(), 0.0);

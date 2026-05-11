@@ -15,6 +15,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * 网络（对等共识）协作模式。
+ *
+ * 所有 Agent 地位平等(peer)，通过多轮投票达成共识。
+ * 采用全连接网状(Mesh)拓扑，每个 Agent 都可以与任意其他 Agent 通信。
+ * 每轮收集所有 Agent 的响应，检查是否达成共识（>= 67% 同意），
+ * 超时或达到最大轮次后，即使未完全达成共识也会返回最佳结果。
+ */
 @Slf4j
 @Component
 public class NetworkCollaborationMode implements CollaborationMode {
@@ -22,6 +30,7 @@ public class NetworkCollaborationMode implements CollaborationMode {
     public static final String MODE_ID = "network";
 
     private final ConsensusEngine consensusEngine;
+    /** 共享上下文（可用于跨 Agent 数据共享） */
     private final ConcurrentHashMap<String, Map<String, Object>> sharedContexts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Double> progressMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> cancelMap = new ConcurrentHashMap<>();
@@ -40,6 +49,10 @@ public class NetworkCollaborationMode implements CollaborationMode {
         return TopologyType.MESH;
     }
 
+    /**
+     * 全连接网状分配：每个 Agent 都是 peer，两两之间建立双向通信通道。
+     * 通道数量 = N*(N-1)/2 对，即 N 个 Agent 的完全图。
+     */
     @Override
     public AssignmentPlan assign(List<AgentHandle> availableAgents, OrchestrationContext ctx) {
         if (availableAgents == null || availableAgents.isEmpty()) {
@@ -52,16 +65,18 @@ public class NetworkCollaborationMode implements CollaborationMode {
         List<AssignmentPlan.Assignment> assignments = new ArrayList<>();
         Map<String, List<String>> channels = new HashMap<>();
 
+        // 每个 Agent 分配 peer 角色
         for (int i = 0; i < availableAgents.size(); i++) {
             AgentHandle agent = availableAgents.get(i);
             assignments.add(AssignmentPlan.Assignment.builder()
                     .agentId(agent.getAgentId())
-                    .taskNodeId("shared-context")
+                    .taskNodeId("shared-context")  // 共享同一个上下文节点
                     .role("peer")
                     .priority(i + 1)
                     .build());
         }
 
+        // 建立全连接：每对 Agent 之间建立双向通道
         for (int i = 0; i < availableAgents.size(); i++) {
             for (int j = i + 1; j < availableAgents.size(); j++) {
                 String ai = availableAgents.get(i).getAgentId();
@@ -80,6 +95,16 @@ public class NetworkCollaborationMode implements CollaborationMode {
                 .build();
     }
 
+    /**
+     * 执行多轮网络共识流程。
+     *
+     * 每轮收集所有 peer 的响应，通过共识引擎判断是否达成共识。
+     * 如果达成共识则提前结束；否则继续下一轮，直到达到最大轮次。
+     * 最终即使不完全达成共识也会返回最佳决策。
+     *
+     * @param ctx 协作上下文
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<AgentResult> execute(CollaborationContext ctx) {
         String collabId = ctx.getCollaborationId();
@@ -101,12 +126,14 @@ public class NetworkCollaborationMode implements CollaborationMode {
                 List<PeerResponse> allResponses = new ArrayList<>();
                 ConsensusResult finalConsensus = null;
 
+                // 多轮共识循环：直到达成共识或达到最大轮次
                 while (round < maxRounds && !cancelMap.getOrDefault(collabId, false)) {
                     round++;
                     final int currentRound = round;
                     log.info("[NetworkCollab] Round {}/{}: {} peers voting...",
                             round, maxRounds, participants.size());
 
+                    // 收集本轮所有 Agent 的响应（并发）
                     List<PeerResponse> roundResponses = Collections.synchronizedList(new ArrayList<>());
                     List<CompletableFuture<Void>> responseFutures = new ArrayList<>();
 
@@ -131,13 +158,16 @@ public class NetworkCollaborationMode implements CollaborationMode {
                         responseFutures.add(f);
                     }
 
+                    // 等待所有 Agent 本轮响应完成
                     CompletableFuture.allOf(responseFutures.toArray(new CompletableFuture[0])).join();
                     allResponses.addAll(roundResponses);
 
                     updateProgress(collabId, (double) round / maxRounds);
 
+                    // 检查本轮是否达成共识（至少需要2个响应）
                     if (roundResponses.size() >= 2) {
                         if (consensusEngine.hasConsensus(new ArrayList<>(roundResponses))) {
+                            // 达成共识，提前结束
                             finalConsensus = consensusEngine.resolve(
                                     new ArrayList<>(roundResponses), round);
                             log.info("[NetworkCollab] Consensus reached at round {}: decision={}, agreementRate={}",
@@ -149,6 +179,7 @@ public class NetworkCollaborationMode implements CollaborationMode {
                     }
                 }
 
+                // 未达成共识时，用全部历史响应做最终解析
                 if (finalConsensus == null && !allResponses.isEmpty()) {
                     finalConsensus = consensusEngine.resolve(allResponses, round);
                     log.info("[NetworkCollab] Final resolution (no full consensus): decision={}",

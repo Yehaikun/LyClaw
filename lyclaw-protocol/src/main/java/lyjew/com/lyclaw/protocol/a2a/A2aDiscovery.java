@@ -13,17 +13,35 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
+/**
+ * A2A Agent发现服务，负责通过well-known路径发现远程Agent、注册Agent卡片、按能力查询Agent。
+ * <p>
+ * 使用内存缓存提升查询性能，支持通过Agent ID或URL查找已发现的Agent。
+ * 当前为模拟实现，通过simulateDiscovery生成测试数据。
+ * </p>
+ */
 @Slf4j
 @Component
 public class A2aDiscovery {
 
+    /** A2A协议标准的Agent卡片发现路径 */
     private static final String WELL_KNOWN_PATH = "/.well-known/agent-card.json";
 
+    /** 已发现Agent的缓存，key为agentId */
     private final ConcurrentHashMap<String, A2aAgentCard> discoveredAgents = new ConcurrentHashMap<>();
+    /** URL到agentId的反向索引，用于快速查找 */
     private final ConcurrentHashMap<String, String> urlToAgentId = new ConcurrentHashMap<>();
+    /** JSON解析器 */
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** 虚拟线程执行器，用于异步发现远程Agent */
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
+    /**
+     * 发现指定URL的远程Agent。
+     *
+     * @param url Agent的URL
+     * @return Agent卡片的CompletableFuture
+     */
     public CompletableFuture<A2aAgentCard> discover(String url) {
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("Agent URL must not be null or empty");
@@ -61,6 +79,11 @@ public class A2aDiscovery {
         }, executor);
     }
 
+    /**
+     * 注册一个Agent卡片到发现缓存中。
+     *
+     * @param card Agent卡片
+     */
     public void registerAgent(A2aAgentCard card) {
         if (card == null) {
             throw new IllegalArgumentException("Agent card must not be null");
@@ -81,10 +104,17 @@ public class A2aDiscovery {
                 card.getAgentId(), card.getName(), card.getUrl());
     }
 
+    /** @return 所有已发现Agent的不可变映射 */
     public Map<String, A2aAgentCard> getDiscoveredAgents() {
         return Map.copyOf(discoveredAgents);
     }
 
+    /**
+     * 按能力查找Agent。
+     *
+     * @param capability 目标能力
+     * @return 具备该能力的Agent列表
+     */
     public List<A2aAgentCard> findAgentsByCapability(AgentCapability capability) {
         return discoveredAgents.values().stream()
                 .filter(card -> card.getCapabilities() != null
@@ -92,10 +122,22 @@ public class A2aDiscovery {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 按Agent ID查找Agent。
+     *
+     * @param agentId Agent ID
+     * @return Agent卡片，未找到则返回null
+     */
     public A2aAgentCard findAgent(String agentId) {
         return discoveredAgents.get(agentId);
     }
 
+    /**
+     * 移除指定Agent。
+     *
+     * @param agentId Agent ID
+     * @return 是否成功移除
+     */
     public boolean removeAgent(String agentId) {
         A2aAgentCard removed = discoveredAgents.remove(agentId);
         if (removed != null && removed.getUrl() != null) {
@@ -110,10 +152,12 @@ public class A2aDiscovery {
         return removed != null;
     }
 
+    /** @return 已发现Agent的总数 */
     public int getAgentCount() {
         return discoveredAgents.size();
     }
 
+    /** 模拟Agent发现过程，生成测试用的Agent卡片数据 */
     private A2aAgentCard simulateDiscovery(String url) {
         String agentId = "discovered-" + UUID.randomUUID().toString().substring(0, 8);
 
@@ -145,6 +189,14 @@ public class A2aDiscovery {
                 .build();
     }
 
+    /**
+     * 从JSON响应解析Agent卡片（预留方法，当前未被调用）。
+     *
+     * @param jsonBody JSON格式的Agent卡片响应
+     * @param url      Agent的URL
+     * @return 解析后的Agent卡片
+     * @throws JsonProcessingException JSON解析失败时抛出
+     */
     @SuppressWarnings("unused")
     private A2aAgentCard parseAgentCard(String jsonBody, String url)
             throws JsonProcessingException {

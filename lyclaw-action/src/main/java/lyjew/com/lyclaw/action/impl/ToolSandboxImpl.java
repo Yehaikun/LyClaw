@@ -25,30 +25,64 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 工具沙箱实现，在不同安全隔离级别下执行工具调用。
+ *
+ * <p>支持以下安全级别（由低到高严格递增）：
+ * <ul>
+ *   <li><b>NONE</b> - 无隔离，直接在调用线程中执行</li>
+ *   <li><b>READ_ONLY</b> - 只读级别，仅允许标记为只读的工具执行（如 calculator、current_time、web_search）</li>
+ *   <li><b>RESTRICTED</b> - 受限级别，在临时工作目录中隔离执行，执行后自动清理临时文件</li>
+ *   <li><b>CONTAINER</b> - 容器级别，command 工具通过独立进程执行，其他工具降级到 RESTRICTED</li>
+ *   <li><b>ISOLATED</b> - 完全隔离，与 CONTAINER 类似但对 command 工具提供更高的进程隔离</li>
+ * </ul>
+ * </p>
+ *
+ * <p>沙箱提供健康检查（{@link #isHealthy()}）和优雅销毁（{@link #destroy()}）能力。</p>
+ */
 @Slf4j
 @Component
 public class ToolSandboxImpl implements ToolSandbox {
 
+    /** 工具默认执行超时时间（秒） */
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
+    /** 命令执行输出最大长度限制，超出部分截断 */
     private static final int MAX_OUTPUT_LENGTH = 10000;
 
+    /** 沙箱异步线程池，2 个守护线程用于受限/容器/隔离级别的工具执行 */
     private final ExecutorService sandboxExecutor = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "sandbox-worker");
         t.setDaemon(true);
         return t;
     });
 
+    /** 沙箱健康状态标记 */
     private final AtomicBoolean healthy = new AtomicBoolean(true);
+    /** JSON 序列化工具，用于将参数 map 序列化为 JSON 字符串 */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** 配置化的只读工具白名单（可从 application.yml 注入） */
     @Value("${lyclaw.sandbox.readonly-tools:calculator,current_time,web_search}")
     private List<String> configReadOnlyTools;
 
+    /**
+     * 设置只读工具列表（仅用于测试时注入）。
+     */
     // visible for testing
     void setConfigReadOnlyTools(List<String> tools) {
         this.configReadOnlyTools = tools;
     }
 
+    /**
+     * 在指定沙箱安全级别下执行工具。
+     *
+     * <p>首先检查沙箱健康状态，然后根据安全级别分发执行。</p>
+     *
+     * @param tool  待执行的工具
+     * @param args  工具参数
+     * @param level 沙箱安全级别
+     * @return 执行结果
+     */
     @Override
     public ToolResult execute(Tool tool, Map<String, Object> args, SandboxLevel level) {
         if (!healthy.get()) {
@@ -62,8 +96,10 @@ public class ToolSandboxImpl implements ToolSandbox {
 
         long startTime = System.currentTimeMillis();
         try {
+            // 将参数 Map 构建为 ToolCall 对象
             ToolCall toolCall = buildToolCall(tool.getName(), args);
             SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.NONE;
+            // 根据安全级别分发到不同的执行方法
             return switch (effectiveLevel) {
                 case NONE -> executeNone(tool, toolCall, startTime);
                 case READ_ONLY -> executeReadOnly(tool, toolCall, startTime);
@@ -83,11 +119,22 @@ public class ToolSandboxImpl implements ToolSandbox {
         }
     }
 
+    /**
+     * 返回沙箱当前是否处于健康状态。
+     *
+     * @return true 表示沙箱可用
+     */
     @Override
     public boolean isHealthy() {
         return healthy.get();
     }
 
+    /**
+     * 销毁沙箱，优雅关闭线程池。
+     *
+     * <p>先标记为不健康状态，再等待线程池中的任务结束（最多 5 秒），
+     * 超时则强制关闭。</p>
+     */
     @Override
     public void destroy() {
         log.info("正在销毁沙箱...");
@@ -104,12 +151,21 @@ public class ToolSandboxImpl implements ToolSandbox {
         log.info("沙箱已销毁");
     }
 
+    /**
+     * NONE 级别执行：无隔离，直接在当前线程中执行工具。
+     */
     private ToolResult executeNone(Tool tool, ToolCall toolCall, long startTime) {
         lyjew.com.lyclaw.tool.ToolResult innerResult = tool.execute(toolCall, null);
         return convertResult(tool.getName(), innerResult, startTime);
     }
 
+    /**
+     * READ_ONLY 级别执行：仅允许标记为只读的工具。
+     *
+     * <p>检查工具定义中的 isReadOnly 标记和配置的只读工具白名单。两者任一满足即放行。</p>
+     */
     private ToolResult executeReadOnly(Tool tool, ToolCall toolCall, long startTime) {
+        // 检查工具是否为只读（工具自身标记 或 在配置白名单中）
         boolean isReadOnly = (tool.getDefinition() != null && tool.getDefinition().isReadOnly())
                 || (configReadOnlyTools != null && configReadOnlyTools.contains(tool.getName()));
         if (!isReadOnly) {
@@ -124,19 +180,37 @@ public class ToolSandboxImpl implements ToolSandbox {
         return convertResult(tool.getName(), innerResult, startTime);
     }
 
+    /**
+     * RESTRICTED 级别执行：在临时工作目录中隔离执行。
+     *
+     * <p>隔离机制：
+     * <ol>
+     *   <li>创建临时目录（lyclaw-sandbox- 前缀）</li>
+     *   <li>将 user.dir 系统属性临时切换到临时目录</li>
+     *   <li>执行工具</li>
+     *   <li>恢复 user.dir</li>
+     *   <li>递归删除临时目录及其中的所有文件</li>
+     * </ol>
+     * </p>
+     * <p>工具在独立的守护线程中执行，超时时间 {@value #DEFAULT_TIMEOUT_SECONDS} 秒。</p>
+     */
     private ToolResult executeRestricted(Tool tool, ToolCall toolCall, long startTime) {
         try {
             Future<lyjew.com.lyclaw.tool.ToolResult> future = sandboxExecutor.submit(() -> {
+                // 创建临时工作目录
                 Path tempDir = Files.createTempDirectory("lyclaw-sandbox-");
                 try {
                     String originalDir = System.getProperty("user.dir");
+                    // 切换到临时目录
                     System.setProperty("user.dir", tempDir.toString());
                     try {
                         return tool.execute(toolCall, null);
                     } finally {
+                        // 恢复原始工作目录
                         System.setProperty("user.dir", originalDir);
                     }
                 } finally {
+                    // 清理临时目录（递归删除所有文件和子目录）
                     try {
                         Files.walk(tempDir)
                                 .sorted(java.util.Comparator.reverseOrder())
@@ -168,13 +242,21 @@ public class ToolSandboxImpl implements ToolSandbox {
         }
     }
 
+    /**
+     * CONTAINER 级别执行：command 工具通过独立 OS 进程执行，实现进程级隔离。
+     *
+     * <p>对于 command 工具，使用 {@link #executeCommandInProcess} 创建独立 Shell 进程执行。
+     * 其他不支持进程隔离的工具降级到 RESTRICTED 级别。</p>
+     */
     private ToolResult executeContainer(Tool tool, ToolCall toolCall,
                                          Map<String, Object> args, long startTime) {
         try {
+            // command 工具：通过独立进程执行
             if ("command".equals(tool.getName()) && args.containsKey("command")) {
                 return executeCommandInProcess(tool.getName(),
                         (String) args.get("command"), startTime);
             }
+            // 其他工具：降级到 RESTRICTED
             log.debug("工具 {} 不支持进程隔离，降级到 RESTRICTED", tool.getName());
             return executeRestricted(tool, toolCall, startTime);
         } catch (Exception e) {
@@ -188,6 +270,12 @@ public class ToolSandboxImpl implements ToolSandbox {
         }
     }
 
+    /**
+     * ISOLATED 级别执行：最高隔离级别，command 工具通过独立进程执行。
+     *
+     * <p>当前实现与 CONTAINER 类似，对 command 工具提供进程隔离，
+     * 其他工具降级到 RESTRICTED。未来可增强为完整容器/Docker 隔离。</p>
+     */
     private ToolResult executeIsolated(Tool tool, ToolCall toolCall,
                                         Map<String, Object> args, long startTime) {
         try {
@@ -208,13 +296,26 @@ public class ToolSandboxImpl implements ToolSandbox {
         }
     }
 
+    /**
+     * 在独立 OS 进程中执行 Shell 命令。
+     *
+     * <p>通过 {@code sh -c <command>} 启动子进程，超时时间 {@value #DEFAULT_TIMEOUT_SECONDS} 秒。
+     * 输出长度受 {@value #MAX_OUTPUT_LENGTH} 限制，超出部分截断并追加省略标记。</p>
+     *
+     * @param toolName  工具名称（用于结果标记）
+     * @param command   要执行的 Shell 命令
+     * @param startTime 开始时间戳（毫秒）
+     * @return 执行结果
+     */
     private ToolResult executeCommandInProcess(String toolName, String command, long startTime) {
         try {
+            // 创建子进程：sh -c <command>
             ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
-            pb.redirectErrorStream(true);
+            pb.redirectErrorStream(true);  // 合并 stderr 到 stdout
             Process process = pb.start();
             boolean finished = process.waitFor(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
+            // 超时处理：强制终止进程
             if (!finished) {
                 process.destroyForcibly();
                 return ToolResult.builder()
@@ -225,6 +326,7 @@ public class ToolSandboxImpl implements ToolSandbox {
                         .build();
             }
 
+            // 读取进程输出
             StringBuilder output = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -269,6 +371,15 @@ public class ToolSandboxImpl implements ToolSandbox {
         }
     }
 
+    /**
+     * 根据工具名称和参数构建 ToolCall 对象。
+     *
+     * <p>将参数 Map 序列化为 JSON 字符串作为 arguments。序列化失败时退化为 toString()。</p>
+     *
+     * @param toolName 工具名称
+     * @param args     参数键值对
+     * @return ToolCall 对象
+     */
     private ToolCall buildToolCall(String toolName, Map<String, Object> args) {
         String arguments;
         try {
@@ -282,6 +393,14 @@ public class ToolSandboxImpl implements ToolSandbox {
                 .build();
     }
 
+    /**
+     * 将内部 ToolResult 转换为公开 API 的 ToolResult。
+     *
+     * @param toolName    工具名称
+     * @param innerResult 内部执行结果
+     * @param startTime   执行开始时间戳（毫秒）
+     * @return 格式化后的 ToolResult
+     */
     private ToolResult convertResult(String toolName,
                                       lyjew.com.lyclaw.tool.ToolResult innerResult,
                                       long startTime) {

@@ -20,6 +20,13 @@ import reactor.core.scheduler.Schedulers;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 编排服务 REST 控制器。
+ *
+ * 提供聊天（流式/同步）、会话管理的 HTTP 端点。
+ * 流式聊天使用 SSE (Server-Sent Events) 协议，通过 Flux 持续推送数据。
+ * 会话存储使用 ConcurrentHashMap 实现简单的内存级会话管理。
+ */
 @RestController
 @RequestMapping("/api")
 public class OrchestrationController {
@@ -27,6 +34,7 @@ public class OrchestrationController {
     private final Orchestrator orchestrator;
     private final InterceptorChain interceptorChain;
     private final ModelProvider modelProvider;
+    /** 内存会话存储，键为 sessionId */
     private final Map<String, Session> sessionStore = new ConcurrentHashMap<>();
 
     public OrchestrationController(Orchestrator orchestrator,
@@ -37,20 +45,46 @@ public class OrchestrationController {
         this.modelProvider = modelProvider;
     }
 
+    /**
+     * 流式聊天端点（SSE）。
+     *
+     * 接收聊天请求，解析会话，构建上下文后委托给 Orchestrator 执行管线。
+     * 响应以 text/event-stream 格式持续推送，直到管线完成或出错。
+     *
+     * @param request         聊天请求 DTO
+     * @param requestTraceId  HTTP 头中的可选追踪 ID
+     * @param response        服务端 HTTP 响应对象，用于设置响应头
+     * @return SSE 事件流 Flux
+     */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chatStream(
             @RequestBody ChatRequest request,
             @RequestHeader(value = "X-Trace-Id", required = false) String requestTraceId,
             ServerHttpResponse response) {
+        // 优先使用请求头传入的 traceId，否则生成新的
         String traceId = (requestTraceId != null && !requestTraceId.isBlank())
                 ? requestTraceId : UUID.randomUUID().toString().replace("-", "");
+        // 在响应头中回传 traceId，便于客户端追踪
         response.getHeaders().add("X-Trace-Id", traceId);
+        // 解析或创建会话
         Session session = resolveSession(request.getSessionId());
+        // 将 DTO 转换为内部 domain 模型
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
+        // 组装聊天上下文
         ChatContext context = buildChatContext(modelRequest, session, traceId);
+        // 委托编排器执行完整管线
         return orchestrator.execute(context);
     }
 
+    /**
+     * 同步聊天端点。
+     *
+     * 与流式端点逻辑类似，但将所有 SSE 事件收集后合并为单个 ChatResult 返回。
+     * 适用于不需要实时流式输出的场景。
+     *
+     * @param request 聊天请求 DTO
+     * @return 合并后的聊天结果 Mono
+     */
     @PostMapping("/chat")
     public Mono<ChatResult> chat(@RequestBody ChatRequest request) {
         String traceId = UUID.randomUUID().toString().replace("-", "");
@@ -58,19 +92,26 @@ public class OrchestrationController {
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
         ChatContext context = buildChatContext(modelRequest, session, traceId);
         Flux<ServerSentEvent<String>> flux = orchestrator.execute(context);
+        // 将所有 SSE 事件收集后，筛选 message 类型的事件并拼接内容
         return flux.collectList()
                 .map(results -> {
                     String content = results != null
                             ? results.stream()
-                                    .filter(e -> "message".equals(e.event()))
+                                    .filter(e -> "message".equals(e.event()))   // 只取 message 事件
                                     .map(e -> e.data() != null ? e.data() : "")
-                                    .reduce("", String::concat)
+                                    .reduce("", String::concat)                 // 拼接所有消息片段
                             : "";
                     return new ChatResult(content, "stop", null, null, 0L);
                 })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic());  // 在弹性线程池订阅，避免阻塞事件循环
     }
 
+    /**
+     * 创建新会话。
+     *
+     * @param request 可选的请求体（用于携带会话名称等元信息）
+     * @return 新创建的 Session
+     */
     @PostMapping("/sessions")
     public Session createSession(@RequestBody(required = false) ChatRequest request) {
         String sessionId = UUID.randomUUID().toString();
@@ -82,6 +123,13 @@ public class OrchestrationController {
         return session;
     }
 
+    /**
+     * 获取指定会话。
+     *
+     * @param sessionId 会话 ID
+     * @return 对应的 Session
+     * @throws NoSuchElementException 会话不存在时抛出
+     */
     @GetMapping("/sessions/{sessionId}")
     public Session getSession(@PathVariable String sessionId) {
         Session session = sessionStore.get(sessionId);
@@ -91,6 +139,12 @@ public class OrchestrationController {
         return session;
     }
 
+    /**
+     * 删除指定会话。
+     *
+     * @param sessionId 会话 ID
+     * @return 包含删除状态和会话 ID 的 Map
+     */
     @DeleteMapping("/sessions/{sessionId}")
     public Map<String, Object> deleteSession(@PathVariable String sessionId) {
         Session removed = sessionStore.remove(sessionId);
@@ -100,10 +154,18 @@ public class OrchestrationController {
         return result;
     }
 
+    /**
+     * 解析会话：如果已有则返回，否则创建新会话并存入 store。
+     *
+     * @param sessionId 会话 ID，可为 null
+     * @return 已存在或新创建的 Session
+     */
     private Session resolveSession(String sessionId) {
+        // 如果传入了 sessionId 且在 store 中存在，直接返回
         if (sessionId != null && sessionStore.containsKey(sessionId)) {
             return sessionStore.get(sessionId);
         }
+        // 否则创建新会话，保留客户端传入的 sessionId 或生成新的
         String newId = sessionId != null ? sessionId : UUID.randomUUID().toString();
         Session session = Session.builder()
                 .sessionId(newId)
@@ -113,6 +175,13 @@ public class OrchestrationController {
         return session;
     }
 
+    /**
+     * 将 DTO 层的 ChatRequest 转换为 domain 模型层的 ChatRequest。
+     * 松散的消息 Map 结构被转换为强类型的 Message 对象列表。
+     *
+     * @param dto 客户端传入的 DTO
+     * @return domain 层的 ChatRequest
+     */
     private lyjew.com.lyclaw.model.ChatRequest buildModelRequest(ChatRequest dto) {
         List<Message> messages = new ArrayList<>();
         if (dto.getMessages() != null) {
@@ -131,13 +200,23 @@ public class OrchestrationController {
                 .build();
     }
 
+    /**
+     * 组装 ChatContext。
+     * 聚合请求、会话、记忆、拦截器链、模型提供者和追踪 ID。
+     *
+     * @param modelRequest domain 层请求
+     * @param session      当前会话
+     * @param traceId      追踪 ID
+     * @return 组装好的 ChatContext
+     */
     private ChatContext buildChatContext(lyjew.com.lyclaw.model.ChatRequest modelRequest, Session session, String traceId) {
+        // 创建空的记忆内容作为初始状态
         MemoryContent memory = new MemoryContent("", "", true, Collections.emptyList(), 0.0);
         return new ChatContext(
                 modelRequest,
                 session,
                 memory,
-                Collections.emptyList(),
+                Collections.emptyList(),  // 工具定义由后续管线阶段填充
                 interceptorChain,
                 modelProvider,
                 traceId

@@ -10,6 +10,16 @@ import lyjew.com.lyclaw.pipeline.PipelineStage;
 import lyjew.com.lyclaw.security.SecurityManager;
 import org.springframework.stereotype.Component;
 
+/**
+ * 拦截器阶段（同步管线，order=1）。
+ *
+ * 在上下文构建后、工具调用前执行三道检查：
+ * 1. 拦截器链检查（preHandle）
+ * 2. 安全管理器审批（securityManager.approve）
+ * 3. 内容过滤器检查（contentFilter.filter）
+ *
+ * 任何一道失败都会导致管线断裂（breakChain），请求被拒绝。
+ */
 @Slf4j
 @Component
 public class InterceptorStage implements PipelineStage {
@@ -28,11 +38,18 @@ public class InterceptorStage implements PipelineStage {
                 interceptorChain.getInterceptors().size());
     }
 
+    /**
+     * 执行三道安全检查，任意失败则中断管线。
+     *
+     * @param context 聊天上下文
+     * @param chain   管线链
+     */
     @Override
     public void process(ChatContext context, Chain chain) {
         log.info("[InterceptorStage] Starting: executing {} interceptors...",
                 interceptorChain.getInterceptors().size());
 
+        // 检查1：拦截器链
         boolean chainPassed = interceptorChain.preHandle(context);
         if (!chainPassed) {
             log.warn("[InterceptorStage] Interceptor chain rejected the request, breaking pipeline");
@@ -42,6 +59,7 @@ public class InterceptorStage implements PipelineStage {
         }
         log.info("[InterceptorStage] Interceptor chain passed");
 
+        // 检查2：安全管理器审批
         if (securityManager != null) {
             try {
                 var approval = securityManager.approve(context, "EXECUTE_CHAT");
@@ -62,6 +80,7 @@ public class InterceptorStage implements PipelineStage {
             }
         }
 
+        // 检查3：内容过滤器
         if (contentFilter != null) {
             try {
                 String userMessage = context.getRequest().getLastUserMessage();
@@ -87,7 +106,7 @@ public class InterceptorStage implements PipelineStage {
             }
         }
 
-        log.info("[InterceptorStage] Completed — all checks passed");
+        log.info("[InterceptorStage] Completed - all checks passed");
         chain.next(context);
     }
 

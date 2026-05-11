@@ -5,6 +5,15 @@ import reactor.core.publisher.Flux;
 
 import java.util.Map;
 
+/**
+ * 模型 API 客户端接口，定义与 LLM 服务通信的底层 HTTP 操作。
+ *
+ * <p>该接口抽象了同步请求、流式请求和健康检查三种通信模式。
+ * 当前唯一实现是 {@link lyjew.com.lyclaw.client.ClientImpl.OkHttpModelApiClient}，
+ * 基于 OkHttp 实现 HTTP 通信，流式请求通过 Reactor Flux 返回 SSE 事件流。</p>
+ *
+ * <p>所有方法都可能抛出 {@link lyjew.com.lyclaw.exception.ModelException}。</p>
+ */
 public interface ModelApiClient {
 
     /**

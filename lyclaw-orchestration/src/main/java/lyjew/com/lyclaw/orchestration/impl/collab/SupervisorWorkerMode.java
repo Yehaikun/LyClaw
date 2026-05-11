@@ -11,6 +11,14 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 监督者-工作者（Supervisor-Worker）协作模式。
+ *
+ * 第一个 Agent 担任监督者(supervisor)，负责分解任务并分派给工作者(worker)。
+ * 所有 worker 并行执行各自子任务，完成后由监督者汇总结果。
+ * 采用星型(Star)拓扑，监督者与每个 worker 之间建立双向通信通道。
+ * 支持动态扩缩容（可增加 worker 数量）和取消操作。
+ */
 @Slf4j
 @Component
 public class SupervisorWorkerMode implements CollaborationMode {
@@ -30,6 +38,12 @@ public class SupervisorWorkerMode implements CollaborationMode {
         return TopologyType.STAR;
     }
 
+    /**
+     * 分配监督者-工作者角色。
+     * 第一个 Agent 为监督者(root 节点，最高优先级)，
+     * 其余为工作者，每个对应一个子任务节点。
+     * 建立双向通信：监督者->工作者（分发任务、收集结果），工作者->监督者（上报结果、错误）。
+     */
     @Override
     public AssignmentPlan assign(List<AgentHandle> availableAgents, OrchestrationContext ctx) {
         if (availableAgents == null || availableAgents.isEmpty()) {
@@ -44,14 +58,16 @@ public class SupervisorWorkerMode implements CollaborationMode {
         Map<String, List<String>> channels = new HashMap<>();
         int agentCount = availableAgents.size();
 
+        // 第一个 Agent 为监督者
         AgentHandle supervisor = availableAgents.get(0);
         assignments.add(AssignmentPlan.Assignment.builder()
                 .agentId(supervisor.getAgentId())
                 .taskNodeId("root")
                 .role("supervisor")
-                .priority(1)
+                .priority(1)   // 最高优先级
                 .build());
 
+        // 根据编排上下文中的任务列表分配 worker
         if (ctx.getTasks() != null) {
             List<String> taskIds = new ArrayList<>();
             for (int i = 0; i < ctx.getTasks().size() && i < agentCount - 1; i++) {
@@ -60,16 +76,18 @@ public class SupervisorWorkerMode implements CollaborationMode {
 
             for (int i = 1; i < agentCount; i++) {
                 AgentHandle worker = availableAgents.get(i);
+                // 如果有对应任务则关联，否则生成 subtask 编号
                 String taskNodeId = i - 1 < taskIds.size() ? taskIds.get(i - 1) : "subtask-" + i;
                 assignments.add(AssignmentPlan.Assignment.builder()
                         .agentId(worker.getAgentId())
                         .taskNodeId(taskNodeId)
                         .role("worker")
-                        .priority(5)
+                        .priority(5)   // 工作者优先级较低
                         .build());
             }
         }
 
+        // 建立星型双向通信通道
         for (int i = 1; i < agentCount; i++) {
             String workerId = availableAgents.get(i).getAgentId();
             channels.put(supervisor.getAgentId() + "->" + workerId,
@@ -88,6 +106,19 @@ public class SupervisorWorkerMode implements CollaborationMode {
                 .build();
     }
 
+    /**
+     * 执行监督者-工作者模式。
+     *
+     * 所有 worker 并行执行各自子任务，监督者等待全部完成后汇总结果。
+     * 工作流程：
+     * 1. 创建所有 worker 的异步任务
+     * 2. 等待全部完成（allOf.join）
+     * 3. 汇总成功的 worker 输出
+     * 4. 返回聚合结果
+     *
+     * @param ctx 协作上下文
+     * @return 异步结果
+     */
     @Override
     public CompletableFuture<AgentResult> execute(CollaborationContext ctx) {
         String collabId = ctx.getCollaborationId();
@@ -104,6 +135,7 @@ public class SupervisorWorkerMode implements CollaborationMode {
 
                 long startMs = System.currentTimeMillis();
 
+                // 并行创建所有 worker 的异步任务
                 List<CompletableFuture<AgentResult>> workerFutures = new ArrayList<>();
                 for (int i = 1; i < participants.size(); i++) {
                     AgentHandle worker = participants.get(i);
@@ -124,8 +156,10 @@ public class SupervisorWorkerMode implements CollaborationMode {
                     workerFutures.add(workerFuture);
                 }
 
+                // 等待所有 worker 完成
                 CompletableFuture.allOf(workerFutures.toArray(new CompletableFuture[0])).join();
 
+                // 汇总成功的 worker 输出
                 List<String> workerOutputs = new ArrayList<>();
                 long totalWorkerMs = 0;
                 for (CompletableFuture<AgentResult> wf : workerFutures) {
@@ -170,6 +204,7 @@ public class SupervisorWorkerMode implements CollaborationMode {
         return progressMap.getOrDefault(collaborationId, 0.0);
     }
 
+    /** 监督者-工作者模式支持动态扩缩容（可增减 worker） */
     @Override
     public boolean supportsDynamicScaling() {
         return true;

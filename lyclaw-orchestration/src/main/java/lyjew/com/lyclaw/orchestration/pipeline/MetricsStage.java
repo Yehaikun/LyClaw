@@ -9,6 +9,14 @@ import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.infra.metrics.MetricsSnapshot;
 import lyjew.com.lyclaw.pipeline.Chain;
 import lyjew.com.lyclaw.pipeline.PipelineStage;
+
+/**
+ * 指标采集阶段（同步管线，order=3）。
+ *
+ * 在管线末尾采集执行指标：LLM 调用次数、token 用量、管线各阶段耗时。
+ * 解析 ChatResult 中的 token 用量字符串（如 "prompt=100 completion=200 total=300"），
+ * 记录到 MetricsCollector。同时通过 EventBus 发布 METRICS_COLLECTED 事件。
+ */
 @Slf4j
 public class MetricsStage implements PipelineStage {
 
@@ -22,20 +30,29 @@ public class MetricsStage implements PipelineStage {
         log.info("[MetricsStage] Initialized");
     }
 
+    /**
+     * 采集并记录执行指标。
+     *
+     * @param context 聊天上下文
+     * @param chain   管线链
+     */
     @Override
     public void process(ChatContext context, Chain chain) {
         log.info("[MetricsStage] Starting metrics collection...");
 
+        // 标记追踪结束
         context.getTracing().markEnd();
 
         ChatResult result = context.getResult();
         if (result != null) {
+            // 解析 token 用量并记录 LLM 调用指标
             String tokenUsage = result.getTokenUsage();
             long durationMs = result.getDurationMs();
             log.info("[MetricsStage] Chat complete: tokenUsage={}, durationMs={}ms", tokenUsage, durationMs);
 
             if (metricsCollector != null) {
                 try {
+                    // 解析 "prompt=X completion=Y total=Z" 格式的字符串
                     int[] tokens = parseTokenUsage(tokenUsage);
                     metricsCollector.recordLlmCall(
                             context.getModelProvider().getConfiguredAdapter().getProvider(),
@@ -50,6 +67,7 @@ public class MetricsStage implements PipelineStage {
             log.info("[MetricsStage] Chat complete (no ChatResult): durationMs={}ms", durationMs);
         }
 
+        // 记录管线总耗时和快照
         if (metricsCollector != null) {
             try {
                 long totalDuration = context.getTracing().getTotalDuration();
@@ -64,6 +82,7 @@ public class MetricsStage implements PipelineStage {
             }
         }
 
+        // 发布指标采集完成事件
         if (eventBus != null) {
             eventBus.publish(new Event("MetricsStage", "METRICS_COLLECTED"));
         }
@@ -71,6 +90,11 @@ public class MetricsStage implements PipelineStage {
         chain.next(context);
     }
 
+    /**
+     * 解析 "prompt=X completion=Y total=Z" 格式的 token 用量字符串。
+     *
+     * @return int[3] 数组：[prompt, completion, total]
+     */
     private int[] parseTokenUsage(String tokenUsage) {
         int prompt = 0, completion = 0, total = 0;
         if (tokenUsage != null) {
@@ -84,10 +108,12 @@ public class MetricsStage implements PipelineStage {
                 }
             }
         }
+        // 如果没解析到 total，用 prompt+completion 推算
         if (total == 0) total = prompt + completion;
         return new int[]{prompt, completion, total};
     }
 
+    /** 安全解析整数，失败返回 0 */
     private int parseIntSafely(String s) {
         try {
             return Integer.parseInt(s);

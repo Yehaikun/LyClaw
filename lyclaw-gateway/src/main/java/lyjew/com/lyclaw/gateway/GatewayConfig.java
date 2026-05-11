@@ -12,9 +12,22 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import java.time.Duration;
 import java.util.List;
 
+/**
+ * 网关配置类，定义路由规则和CORS跨域配置。
+ * <p>
+ * 路由规则将不同API路径前缀的请求通过负载均衡(lb://)转发到对应的微服务。
+ * CORS配置允许所有来源和方法，适用于开发环境。
+ * </p>
+ */
 @Configuration
 public class GatewayConfig {
 
+    /**
+     * 自定义路由配置：将API路径映射到对应的微服务。
+     *
+     * @param builder 路由构建器
+     * @return 路由定位器
+     */
     @Bean
     public RouteLocator customRoutes(RouteLocatorBuilder builder) {
         return builder.routes()
@@ -45,6 +58,11 @@ public class GatewayConfig {
                 .build();
     }
 
+    /**
+     * CORS跨域过滤器配置：允许所有来源和方法，允许携带凭证，缓存1小时。
+     *
+     * @return CORS Web过滤器
+     */
     @Bean
     public CorsWebFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();

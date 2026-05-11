@@ -11,24 +11,46 @@ import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Agent 生命周期管理器。
+ *
+ * 管理 Agent 从创建、调度、暂停、恢复到终止的完整生命周期。
+ * 使用多个 ConcurrentHashMap 维护 Agent 的状态、句柄、规格和异步任务 Future。
+ * 通过 CachedThreadPool 支持弹性 Agent 任务并发。
+ */
 @Slf4j
 @Service
 public class AgentLifecycleManager implements AgentLifecycle {
 
+    /** Agent 状态映射表：agentId -> AgentState */
     private final ConcurrentHashMap<String, AgentState> stateMap = new ConcurrentHashMap<>();
+    /** Agent 句柄映射表：agentId -> AgentHandle */
     private final ConcurrentHashMap<String, AgentHandle> handleMap = new ConcurrentHashMap<>();
+    /** Agent 规格映射表：agentId -> AgentSpec */
     private final ConcurrentHashMap<String, AgentSpec> specMap = new ConcurrentHashMap<>();
+    /** Agent 异步 Future 映射表：agentId -> CompletableFuture */
     private final ConcurrentHashMap<String, CompletableFuture<AgentResult>> futureMap = new ConcurrentHashMap<>();
+    /** Agent 启动时间记录：agentId -> nanoTime */
     private final ConcurrentHashMap<String, Long> startTimeMap = new ConcurrentHashMap<>();
+    /** Agent ID 自增计数器 */
     private final AtomicInteger idCounter = new AtomicInteger(0);
+    /** Agent 执行线程池（守护线程，允许弹性扩容） */
     private final ExecutorService agentExecutor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "lifecycle-agent-worker");
         t.setDaemon(true);
         return t;
     });
 
+    /**
+     * 创建一个新的 Agent。
+     * 生成唯一 ID，初始化状态为 IDLE，记录创建时间和默认准确率。
+     *
+     * @param spec Agent 规格（名称、能力等）
+     * @return 包含 AgentHandle 的已完成 Future
+     */
     @Override
     public CompletableFuture<AgentHandle> create(AgentSpec spec) {
+        // 生成格式为 agent-{序号}-{uuid前8位} 的唯一 ID
         String agentId = "agent-" + idCounter.incrementAndGet() + "-" + UUID.randomUUID().toString().substring(0, 8);
 
         AgentHandle handle = AgentHandle.builder()
@@ -41,6 +63,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
                 .historicalAccuracy(0.8)
                 .build();
 
+        // 同时存入状态、句柄、规格三张表
         stateMap.put(agentId, AgentState.IDLE);
         handleMap.put(agentId, handle);
         specMap.put(agentId, spec);
@@ -51,8 +74,18 @@ public class AgentLifecycleManager implements AgentLifecycle {
         return CompletableFuture.completedFuture(handle);
     }
 
+    /**
+     * 调度 Agent 执行任务。
+     * 校验 Agent 存在且为 IDLE 状态后，使用 CAS 原子操作将状态切换为 RUNNING，
+     * 防止并发重复调度。然后异步执行任务，执行完成后更新准确率。
+     *
+     * @param agentId Agent ID
+     * @param task    要执行的任务
+     * @return 包含 AgentResult 的 Future
+     */
     @Override
     public CompletableFuture<AgentResult> schedule(String agentId, AgentTask task) {
+        // 校验 Agent 是否存在
         AgentState currentState = stateMap.get(agentId);
         if (currentState == null) {
             log.warn("[LifecycleManager] Cannot schedule unknown agent: {}", agentId);
@@ -61,6 +94,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
                             "Agent not found: " + agentId, "", 0));
         }
 
+        // 仅 IDLE 状态可调度
         if (currentState != AgentState.IDLE) {
             log.warn("[LifecycleManager] Cannot schedule agent {} in state {}", agentId, currentState);
             return CompletableFuture.completedFuture(
@@ -68,6 +102,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
                             "Agent is not IDLE (current: " + currentState + ")", "", 0));
         }
 
+        // 原子地将状态从 IDLE 切换到 RUNNING，防止竞态条件
         if (!stateMap.replace(agentId, AgentState.IDLE, AgentState.RUNNING)) {
             log.warn("[LifecycleManager] Race condition: agent {} state changed concurrently", agentId);
             return CompletableFuture.completedFuture(
@@ -75,6 +110,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
                             "State changed concurrently, abort scheduling", "", 0));
         }
 
+        // 记录任务启动时间（纳秒精度）
         startTimeMap.put(agentId, System.nanoTime());
 
         log.info("[LifecycleManager] Scheduling task on agent {}: taskId={}, type={}",
@@ -85,10 +121,12 @@ public class AgentLifecycleManager implements AgentLifecycle {
                 long start = System.currentTimeMillis();
                 log.info("[LifecycleManager] Agent {} executing task: {}", agentId, task.getTaskId());
 
+                // 生成任务结果负载
                 String resultPayload = "Task " + task.getTaskId() + " completed by " + agentId
                         + " (type=" + task.getType() + ", target=" + task.getTarget() + ")";
                 long elapsed = System.currentTimeMillis() - start;
 
+                // 任务成功完成，更新状态
                 stateMap.put(agentId, AgentState.COMPLETED);
 
                 AgentResult result = new AgentResult(agentId, "COMPLETED",
@@ -98,6 +136,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
                 log.info("[LifecycleManager] Agent {} completed task {} in {}ms",
                         agentId, task.getTaskId(), elapsed);
 
+                // 每次成功执行后略微提升 Agent 的历史准确率（指数移动平均）
                 AgentHandle handle = handleMap.get(agentId);
                 if (handle != null) {
                     handle.setHistoricalAccuracy(
@@ -122,6 +161,12 @@ public class AgentLifecycleManager implements AgentLifecycle {
         return future;
     }
 
+    /**
+     * 暂停 Agent。仅 RUNNING 或 WAITING 状态可被暂停，切换为 IDLE。
+     *
+     * @param agentId Agent ID
+     * @return 暂停成功返回 true
+     */
     @Override
     public boolean pause(String agentId) {
         AgentState current = stateMap.get(agentId);
@@ -130,6 +175,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
             return false;
         }
 
+        // 只有正在运行或等待中的 Agent 可以暂停
         if (current != AgentState.RUNNING && current != AgentState.WAITING) {
             log.warn("[LifecycleManager] Cannot pause agent {} in state {}", agentId, current);
             return false;
@@ -138,6 +184,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
         stateMap.put(agentId, AgentState.IDLE);
         log.info("[LifecycleManager] Agent {} paused (was {})", agentId, current);
 
+        // 同步更新句柄中的状态
         AgentHandle handle = handleMap.get(agentId);
         if (handle != null) {
             handle.setState(AgentState.IDLE);
@@ -146,6 +193,12 @@ public class AgentLifecycleManager implements AgentLifecycle {
         return true;
     }
 
+    /**
+     * 恢复暂停的 Agent。仅 IDLE 状态可恢复为 RUNNING。
+     *
+     * @param agentId Agent ID
+     * @return 恢复成功返回 true
+     */
     @Override
     public boolean resume(String agentId) {
         AgentState current = stateMap.get(agentId);
@@ -170,6 +223,12 @@ public class AgentLifecycleManager implements AgentLifecycle {
         return true;
     }
 
+    /**
+     * 终止 Agent。取消正在执行的 Future，清理时间记录，状态置为 CANCELLED。
+     *
+     * @param agentId Agent ID
+     * @return 终止成功返回 true
+     */
     @Override
     public boolean terminate(String agentId) {
         AgentState current = stateMap.get(agentId);
@@ -178,6 +237,7 @@ public class AgentLifecycleManager implements AgentLifecycle {
             return false;
         }
 
+        // 尝试取消未完成的 Future
         CompletableFuture<AgentResult> future = futureMap.remove(agentId);
         if (future != null && !future.isDone()) {
             future.cancel(true);
@@ -196,27 +256,47 @@ public class AgentLifecycleManager implements AgentLifecycle {
         return true;
     }
 
+    /**
+     * 获取 Agent 当前状态。
+     *
+     * @param agentId Agent ID
+     * @return 当前状态，不存在返回 null
+     */
     @Override
     public AgentState getState(String agentId) {
         return stateMap.get(agentId);
     }
 
+    /**
+     * 获取 Agent 句柄。
+     *
+     * @param agentId Agent ID
+     * @return AgentHandle，不存在返回 null
+     */
     public AgentHandle getHandle(String agentId) {
         return handleMap.get(agentId);
     }
 
+    /**
+     * @return 所有 Agent 状态的快照副本
+     */
     public ConcurrentHashMap<String, AgentState> getAllStates() {
         return new ConcurrentHashMap<>(stateMap);
     }
 
+    /**
+     * 统计指定状态的 Agent 数量。
+     */
     public long countByState(AgentState state) {
         return stateMap.values().stream().filter(s -> s == state).count();
     }
 
+    /** @return 空闲 Agent 数量 */
     public long getIdleCount() {
         return countByState(AgentState.IDLE);
     }
 
+    /** @return 运行中 Agent 数量 */
     public long getRunningCount() {
         return countByState(AgentState.RUNNING);
     }

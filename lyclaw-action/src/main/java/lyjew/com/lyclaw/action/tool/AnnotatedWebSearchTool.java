@@ -11,6 +11,15 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
+/**
+ * 互联网搜索工具，通过 Brave Search API 执行网络搜索。
+ *
+ * <p>该工具为只读操作，group 为 "builtin"。需要配置
+ * {@code SEARCH_API_KEY} 环境变量（Brave API Key）才能获取真实搜索结果。
+ * 通过 {@code @ToolCondition} 注解条件化激活。</p>
+ *
+ * <p>如果没有配置 API Key 或 API 调用失败，则返回模拟的占位搜索结果。</p>
+ */
 @Tool(name = "web_search",
       description = "搜索互联网获取最新信息",
       readonly = true,
@@ -18,12 +27,20 @@ import java.time.Duration;
 @ToolCondition(requiresConfig = "lyclaw.tools.brave.api-key")
 public class AnnotatedWebSearchTool {
 
+    /** HTTP 请求超时时间（15 秒） */
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(15);
+    /** 共享 HTTP 客户端，启用重定向跟随 */
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .connectTimeout(HTTP_TIMEOUT)
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
+    /**
+     * 执行网络搜索。
+     *
+     * @param query 搜索关键词
+     * @return 搜索结果 JSON 或模拟结果
+     */
     public String search(
         @Param(name = "query", description = "搜索关键词")
         String query
@@ -38,7 +55,17 @@ public class AnnotatedWebSearchTool {
         }
     }
 
+    /**
+     * 通过 Brave Search API 执行实际的搜索请求。
+     *
+     * <p>从环境变量 SEARCH_API_KEY 获取 API Key。如果 Key 不存在
+     * 或 API 返回非 200，则返回模拟结果。</p>
+     *
+     * @param query 搜索关键词
+     * @return 搜索结果 JSON 字符串
+     */
     private String performSearch(String query) {
+        // 从环境变量读取 Brave Search API Key
         String apiKey = System.getenv("SEARCH_API_KEY");
         if (apiKey != null && !apiKey.isEmpty()) {
             try {
@@ -57,10 +84,11 @@ public class AnnotatedWebSearchTool {
                     return response.body();
                 }
             } catch (Exception e) {
-                // Fall back to mock result
+                // API 调用失败，降级到模拟结果
             }
         }
 
+        // 返回模拟搜索结果
         return "搜索结果: '" + query + "'\n"
                 + "======================================\n"
                 + "提示：搜索 API Key 尚未配置或 API 调用失败，当前为模拟结果。\n"

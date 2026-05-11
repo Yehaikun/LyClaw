@@ -10,23 +10,55 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+/**
+ * 三层记忆系统实现，模拟人类记忆的多层结构进行信息管理。
+ *
+ * <p>架构基于认知心理学中的 <b>Atkinson-Shiffrin 多层记忆模型</b>，
+ * 将记忆划分为四个存储层，信息从感知层逐级向上流动：</p>
+ * <ol>
+ *   <li><b>感知层 (Sensory)</b> — 原始输入，未经加工，默认衰减因子 0.1</li>
+ *   <li><b>短期记忆 (Short-Term)</b> — 经过提取的精炼信息，衰减因子 0.05</li>
+ *   <li><b>长期记忆 (Long-Term)</b> — 永久保存的核心知识，衰减因子 0.02</li>
+ *   <li><b>实体记忆 (Entity)</b> — 结构化的实体属性信息</li>
+ * </ol>
+ *
+ * <p>核心流程：原始感知 → 提取 → 短期记忆 → 合并推广 → 长期记忆。
+ * 其中合并操作由 {@link lyjew.com.lyclaw.memory.consolidate.MemoryConsolidator} 负责，
+ * 清理操作由 {@link lyjew.com.lyclaw.memory.janitor.MemoryJanitor} 负责。</p>
+ *
+ * <p>所有存储层均使用 {@link ConcurrentHashMap} 以保证线程安全，
+ * 适合高并发 Agent 写入场景。</p>
+ */
 @Slf4j
 @Service
 public class TieredMemorySystem implements MemorySystem {
 
+    /** 感知层存储 */
     private final ConcurrentHashMap<String, MemoryEntry> perceptionStore = new ConcurrentHashMap<>();
+    /** 短期记忆层存储 */
     private final ConcurrentHashMap<String, MemoryEntry> shortTermStore = new ConcurrentHashMap<>();
+    /** 长期记忆层存储 */
     private final ConcurrentHashMap<String, MemoryEntry> longTermStore = new ConcurrentHashMap<>();
+    /** 实体记忆存储 */
     private final ConcurrentHashMap<String, EntityMemory> entityStore = new ConcurrentHashMap<>();
 
     private final MemoryRetriever memoryRetriever;
+    /** 上次合并操作的时间戳 */
     private long lastConsolidationTime;
+    /** 上次清理操作的时间戳 */
     private long lastJanitorRunTime;
 
     public TieredMemorySystem(MemoryRetriever memoryRetriever) {
         this.memoryRetriever = memoryRetriever;
     }
 
+    /**
+     * 将原始感知数据摄入感知层。
+     *
+     * @param sessionId 会话标识
+     * @param data      感知数据（角色、内容、时间戳等）
+     * @return 新创建的感知记忆条目
+     */
     @Override
     public MemoryEntry ingestPerception(String sessionId, PerceptionData data) {
         String entryId = UUID.randomUUID().toString();
@@ -47,6 +79,15 @@ public class TieredMemorySystem implements MemorySystem {
         return entry;
     }
 
+    /**
+     * 将条目存入短期记忆层，设置衰减因子为 0.05。
+     *
+     * <p>对超过 200 字符的内容自动生成摘要（截取前 200 字符）。</p>
+     *
+     * @param sessionId 会话标识
+     * @param entry     要存储的记忆条目
+     * @return 更新后的记忆条目
+     */
     @Override
     public MemoryEntry storeShortTerm(String sessionId, MemoryEntry entry) {
         entry.setLayer(MemoryLayerType.SHORT_TERM);
@@ -68,6 +109,12 @@ public class TieredMemorySystem implements MemorySystem {
         return entry;
     }
 
+    /**
+     * 将条目提交到长期记忆层，衰减因子降为 0.02（几乎不衰减）。
+     *
+     * @param entry 要提交的记忆条目
+     * @return 更新后的记忆条目
+     */
     @Override
     public MemoryEntry commitLongTerm(MemoryEntry entry) {
         entry.setLayer(MemoryLayerType.LONG_TERM);
@@ -86,16 +133,32 @@ public class TieredMemorySystem implements MemorySystem {
         return entry;
     }
 
+    /**
+     * 插入或更新实体记忆，自动递增版本号。
+     *
+     * @param entity 要 upsert 的实体记忆对象
+     */
     @Override
     public void upsertEntity(EntityMemory entity) {
+        // 实体键 = 实体类型:实体ID
         String key = entity.getEntityType() + ":" + entity.getEntityId();
         EntityMemory existing = entityStore.get(key);
+        // 版本号自增
         entity.setVersion(existing != null ? existing.getVersion() + 1 : 1L);
         entity.setUpdatedAt(System.currentTimeMillis());
         entityStore.put(key, entity);
         log.debug("Upserted entity {} (v{})", key, entity.getVersion());
     }
 
+    /**
+     * 执行多维度过滤和排序的记忆检索。
+     *
+     * <p>过滤顺序：层级过滤 → 类别过滤 → 标签过滤 → 元数据过滤，
+     * 最后交由 {@link MemoryRetriever} 进行混合排序。</p>
+     *
+     * @param query 检索查询对象
+     * @return 包含排序结果和统计信息的查询结果
+     */
     @Override
     public MemoryQueryResult retrieve(MemoryQuery query) {
         long start = System.currentTimeMillis();
@@ -142,6 +205,9 @@ public class TieredMemorySystem implements MemorySystem {
                 .retrievalMethod(memoryRetriever.getRetrievalMethod()).build();
     }
 
+    /**
+     * 获取指定会话的短期记忆，sessionId 为 null 时返回全部。
+     */
     @Override
     public List<MemoryEntry> getShortTermMemories(String sessionId) {
         if (sessionId == null) return List.copyOf(shortTermStore.values());
@@ -149,6 +215,10 @@ public class TieredMemorySystem implements MemorySystem {
                 .filter(e -> sessionId.equals(e.getSessionId())).collect(Collectors.toList());
     }
 
+    /**
+     * 根据上下文嵌入向量或时间排序获取 top-K 相关的长期记忆。
+     * 有嵌入时按余弦相似度排序，无嵌入时按创建时间降序排列。
+     */
     @Override
     public List<MemoryEntry> getRelevantLongTerm(float[] contextEmbedding, int topK) {
         if (longTermStore.isEmpty()) return Collections.emptyList();
@@ -171,11 +241,20 @@ public class TieredMemorySystem implements MemorySystem {
                 }).limit(topK).collect(Collectors.toList());
     }
 
+    /** 根据类型和 ID 查找实体记忆。 */
     @Override
     public Optional<EntityMemory> getEntity(String entityType, String entityId) {
         return Optional.ofNullable(entityStore.get(entityType + ":" + entityId));
     }
 
+    /**
+     * 根据合并策略将符合条件的短期记忆提升为长期记忆。
+     *
+     * <p>遍历短期记忆层，将重要性 >= 阈值的条目移除并提交到长期记忆层。</p>
+     *
+     * @param userId 用户标识，用于过滤用户相关的记忆
+     * @param policy 合并策略（阈值、批次大小等）
+     */
     @Override
     public void consolidate(String userId, MemoryConsolidationPolicy policy) {
         log.info("Consolidating memories for user {} with threshold={}, maxBatch={}",
@@ -202,6 +281,7 @@ public class TieredMemorySystem implements MemorySystem {
         log.info("Consolidated: {} entries promoted to long-term memory for user {}", promoted, userId);
     }
 
+    /** 清理所有层级中已过期的记忆条目，并更新清理时间戳。 */
     @Override
     public void evictExpiredPerceptions() {
         perceptionStore.entrySet().removeIf(e -> e.getValue().getTemporal() != null && e.getValue().getTemporal().isExpired());
@@ -210,6 +290,9 @@ public class TieredMemorySystem implements MemorySystem {
         lastJanitorRunTime = System.currentTimeMillis();
     }
 
+    /**
+     * 获取记忆系统的统计信息，包括各层条目数、总 token 数、平均重要性等。
+     */
     @Override
     public MemoryStats getStats() {
         long totalTokens = 0L;
@@ -244,10 +327,15 @@ public class TieredMemorySystem implements MemorySystem {
                 .build();
     }
 
+    /** 获取长期记忆层的不可变快照（包级访问，供 Janitor 使用）。 */
     List<MemoryEntry> getLongTermEntries() { return List.copyOf(longTermStore.values()); }
 
+    /** 从长期记忆层移除指定条目（包级访问，供 Janitor 使用）。 */
     void removeLongTermEntry(String entryId) { longTermStore.remove(entryId); }
 
+    /**
+     * 检查条目元数据是否与过滤条件匹配（所有条件必须同时满足）。
+     */
     private boolean matchesMetadata(Map<String, Object> entryMeta, Map<String, Object> filterMeta) {
         for (Map.Entry<String, Object> f : filterMeta.entrySet()) {
             Object value = entryMeta.get(f.getKey());
@@ -256,6 +344,10 @@ public class TieredMemorySystem implements MemorySystem {
         return true;
     }
 
+    /**
+     * 估算文本的 token 数量。
+     * 中文字符计为 1 token，其他字符按 1/4 token 估算。
+     */
     private long estimateTokens(String text) {
         if (text == null || text.isEmpty()) return 0L;
         int chineseChars = 0, otherChars = 0;
@@ -269,9 +361,11 @@ public class TieredMemorySystem implements MemorySystem {
                 otherChars++;
             }
         }
+        // 中文按 1 token/字，英文按 4 字/token
         return chineseChars + (otherChars / 4);
     }
 
+    /** 计算记忆条目与上下文嵌入向量的余弦相似度作为相关度评分。 */
     private double computeRelevance(MemoryEntry entry, float[] contextEmbedding) {
         float[] entryEmbedding = entry.getEmbedding();
         if (entryEmbedding == null || entryEmbedding.length != contextEmbedding.length) return 0.0;

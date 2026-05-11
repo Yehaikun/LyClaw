@@ -8,12 +8,25 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+/**
+ * 协作模式中心（Hub）。
+ *
+ * 管理所有可用的 Agent 协作模式（market、network、pipeline、supervisor_worker）。
+ * 在初始化时自动注册 Spring 容器中所有 CollaborationMode 实现。
+ * 支持按模式 ID 查找、列出所有模式、以及根据拓扑类型筛选兼容模式。
+ */
 @Slf4j
 @Service
 public class CollaborationHubImpl implements CollaborationHub {
 
+    /** 协作模式注册表：modeId -> CollaborationMode */
     private final ConcurrentHashMap<String, CollaborationMode> modeMap = new ConcurrentHashMap<>();
 
+    /**
+     * 构造时自动发现并注册所有 CollaborationMode Bean。
+     *
+     * @param modes Spring 自动注入的所有 CollaborationMode 实现
+     */
     public CollaborationHubImpl(List<CollaborationMode> modes) {
         if (modes != null) {
             for (CollaborationMode mode : modes) {
@@ -25,6 +38,11 @@ public class CollaborationHubImpl implements CollaborationHub {
                 modeMap.keySet().stream().sorted().collect(Collectors.toList()));
     }
 
+    /**
+     * 注册一个协作模式。相同 modeId 会覆盖旧实现。
+     *
+     * @param mode 要注册的协作模式
+     */
     @Override
     public void register(CollaborationMode mode) {
         if (mode == null) {
@@ -34,7 +52,7 @@ public class CollaborationHubImpl implements CollaborationHub {
         String modeId = mode.getModeId();
         CollaborationMode existing = modeMap.put(modeId, mode);
         if (existing != null) {
-            log.info("[CollaborationHub] Replaced existing mode: {} → {}", modeId,
+            log.info("[CollaborationHub] Replaced existing mode: {} - {}", modeId,
                     existing.getClass().getSimpleName());
         } else {
             log.info("[CollaborationHub] Registered new mode: {} (topology={})",
@@ -42,6 +60,12 @@ public class CollaborationHubImpl implements CollaborationHub {
         }
     }
 
+    /**
+     * 按模式 ID 查找协作模式。
+     *
+     * @param modeId 模式标识（如 "market"、"network"）
+     * @return 对应的 CollaborationMode，不存在时返回 empty
+     */
     @Override
     public Optional<CollaborationMode> getMode(String modeId) {
         if (modeId == null || modeId.isEmpty()) {
@@ -50,6 +74,9 @@ public class CollaborationHubImpl implements CollaborationHub {
         return Optional.ofNullable(modeMap.get(modeId));
     }
 
+    /**
+     * @return 所有已注册协作模式，按 modeId 排序
+     */
     @Override
     public List<CollaborationMode> listModes() {
         return modeMap.values().stream()
@@ -57,6 +84,13 @@ public class CollaborationHubImpl implements CollaborationHub {
                 .collect(Collectors.toUnmodifiableList());
     }
 
+    /**
+     * 查找与指定拓扑类型兼容的协作模式。
+     * 兼容规则：首选拓扑匹配，或者模式支持 HYBRID（通用）拓扑。
+     *
+     * @param topology 拓扑类型（STAR、MESH、HIERARCHICAL、HYBRID）
+     * @return 兼容模式列表
+     */
     @Override
     public List<CollaborationMode> findCompatible(TopologyType topology) {
         if (topology == null) {
@@ -69,10 +103,12 @@ public class CollaborationHubImpl implements CollaborationHub {
                 .collect(Collectors.toUnmodifiableList());
     }
 
+    /** @return 所有可用模式 ID 的不可变集合 */
     public Set<String> getAvailableModes() {
         return Collections.unmodifiableSet(modeMap.keySet());
     }
 
+    /** @return 已注册模式总数 */
     public int getModeCount() {
         return modeMap.size();
     }

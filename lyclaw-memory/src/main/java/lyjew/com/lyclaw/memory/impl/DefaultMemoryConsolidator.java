@@ -8,10 +8,27 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 默认记忆合并器，将短期记忆去重合并后提升为长期记忆。
+ *
+ * <p>核心流程：使用并查集 (Union-Find) 算法识别语义相似的短期记忆条目，
+ * 将相似条目合并为一个综合条目，然后根据重要性阈值决定是否提升到长期记忆层。</p>
+ *
+ * <p>合并策略：
+ * <ol>
+ *   <li>对每个条目的内容进行分词（中英文混合）</li>
+ *   <li>计算条目间的 Jaccard 相似度</li>
+ *   <li>使用并查集将相似度 >= 阈值 (0.6) 的条目分到同一组</li>
+ *   <li>每组选取最重要的条目作为代表，合并其他条目的内容</li>
+ *   <li>重要性 >= 阈值的条目提升为长期记忆</li>
+ * </ol>
+ * </p>
+ */
 @Slf4j
 @Component
 public class DefaultMemoryConsolidator implements MemoryConsolidator {
 
+    /** 关键词重叠阈值，用于判断两个条目是否属于同一语义组 */
     private static final double KEYWORD_OVERLAP_THRESHOLD = 0.6;
 
     private final MemorySystem memorySystem;
@@ -20,11 +37,20 @@ public class DefaultMemoryConsolidator implements MemoryConsolidator {
         this.memorySystem = memorySystem;
     }
 
+    /** 使用默认策略进行合并。 */
     @Override
     public ConsolidationReport consolidate(String userId, String sessionId) {
         return consolidate(userId, sessionId, MemoryConsolidationPolicy.builder().build());
     }
 
+    /**
+     * 使用指定策略执行记忆合并。
+     *
+     * @param userId    用户标识
+     * @param sessionId 会话标识
+     * @param policy    合并策略
+     * @return 包含合并统计信息的报告
+     */
     @Override
     public ConsolidationReport consolidate(String userId, String sessionId,
                                             MemoryConsolidationPolicy policy) {
@@ -135,9 +161,11 @@ public class DefaultMemoryConsolidator implements MemoryConsolidator {
                 .build();
     }
 
+    /** @return 是否支持 LLM 驱动的摘要生成，当前为 false */
     @Override
     public boolean supportsLlmDrivenSummary() { return false; }
 
+    /** 对文本进行分词，过滤短词和标点。 */
     private Set<String> tokenize(String text) {
         if (text == null || text.isBlank()) return Collections.emptySet();
         Set<String> tokens = new HashSet<>();
@@ -150,6 +178,7 @@ public class DefaultMemoryConsolidator implements MemoryConsolidator {
         return tokens;
     }
 
+    /** 计算两个集合的 Jaccard 相似度 = |交集| / |并集|。 */
     private double jaccardSimilarity(Set<String> set1, Set<String> set2) {
         if (set1.isEmpty() && set2.isEmpty()) return 1.0;
         if (set1.isEmpty() || set2.isEmpty()) return 0.0;
@@ -163,16 +192,19 @@ public class DefaultMemoryConsolidator implements MemoryConsolidator {
         return (double) intersection.size() / union.size();
     }
 
+    /** 截断文本到指定长度，超出部分用 "..." 替代。 */
     private String truncate(String text, int maxLen) {
         if (text == null) return "";
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
     }
 
+    /** 并查集的查找操作，带路径压缩。 */
     private int find(int[] parent, int x) {
         if (parent[x] != x) parent[x] = find(parent, parent[x]);
         return parent[x];
     }
 
+    /** 并查集的合并操作。 */
     private void union(int[] parent, int a, int b) {
         int ra = find(parent, a);
         int rb = find(parent, b);

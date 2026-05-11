@@ -13,20 +13,39 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * A2A (Agent-to-Agent) 网关实现，负责远程Agent的发现、任务发送、结果获取和本地Agent注册。
+ * <p>
+ * 使用虚拟线程处理异步操作，通过ConcurrentHashMap管理本地Agent、任务状态和任务产物的缓存。
+ * 当前为模拟实现，通过随机延时模拟远程调用。
+ * </p>
+ */
 @Slf4j
 @Component
 public class A2aGatewayImpl implements A2aGateway {
 
+    /** 本地注册的Agent卡片缓存，key为agentId/URL */
     private final Map<String, A2aAgentCard> localAgents = new ConcurrentHashMap<>();
+    /** 任务状态缓存，key为taskId，value为状态字符串 */
     private final Map<String, String> taskStatuses = new ConcurrentHashMap<>();
+    /** 任务产物缓存，外层key为taskId，内层key为artifactId */
     private final Map<String, Map<String, A2aArtifact>> taskArtifacts = new ConcurrentHashMap<>();
+    /** JSON序列化/反序列化工具 */
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** 虚拟线程执行器，每个任务一个虚拟线程 */
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
+    /**
+     * 获取Agent卡片，优先从本地注册的Agent中查找。
+     *
+     * @param agentUrl Agent的URL
+     * @return Agent卡片的CompletableFuture
+     */
     @Override
     public CompletableFuture<A2aAgentCard> getAgentCard(String agentUrl) {
         log.info("[A2aGateway] Fetching agent card: {}", agentUrl);
 
+        // 优先返回本地已注册的Agent
         A2aAgentCard local = localAgents.get(agentUrl);
         if (local != null) {
             return CompletableFuture.completedFuture(local);
@@ -55,6 +74,13 @@ public class A2aGatewayImpl implements A2aGateway {
         }, executor);
     }
 
+    /**
+     * 向远程Agent发送A2A任务。
+     *
+     * @param agentUrl Agent的URL
+     * @param task     A2A任务规范
+     * @return 包含执行结果的CompletableFuture
+     */
     @Override
     public CompletableFuture<AgentResult> sendTask(String agentUrl, A2aTaskSpec task) {
         log.info("[A2aGateway] Sending task to {}: {}", agentUrl,
@@ -84,6 +110,14 @@ public class A2aGatewayImpl implements A2aGateway {
         }, executor);
     }
 
+    /**
+     * 获取任务的产物(artifact)。
+     *
+     * @param agentUrl   Agent的URL
+     * @param taskId     任务ID
+     * @param artifactId 产物ID
+     * @return 产物的CompletableFuture
+     */
     @Override
     public CompletableFuture<A2aArtifact> getArtifact(String agentUrl, String taskId,
                                                        String artifactId) {
@@ -115,6 +149,13 @@ public class A2aGatewayImpl implements A2aGateway {
         }, executor);
     }
 
+    /**
+     * 取消指定任务。
+     *
+     * @param agentUrl Agent的URL
+     * @param taskId   任务ID
+     * @return 总是返回true
+     */
     @Override
     public boolean cancelTask(String agentUrl, String taskId) {
         log.info("[A2aGateway] Cancelling task {} on {}", taskId, agentUrl);
@@ -130,6 +171,11 @@ public class A2aGatewayImpl implements A2aGateway {
         return true;
     }
 
+    /**
+     * 注册本地Agent卡片。
+     *
+     * @param card Agent卡片
+     */
     @Override
     public void registerLocalAgent(A2aAgentCard card) {
         String agentId = card.getAgentId();
@@ -143,14 +189,27 @@ public class A2aGatewayImpl implements A2aGateway {
                 card.getCapabilities() != null ? card.getCapabilities().size() : 0);
     }
 
+    /** @return 所有本地Agent的不可变映射 */
     public Map<String, A2aAgentCard> listLocalAgents() {
         return Map.copyOf(localAgents);
     }
 
+    /**
+     * 获取任务状态。
+     *
+     * @param taskId 任务ID
+     * @return 任务状态字符串，未找到时返回"UNKNOWN"
+     */
     public String getTaskStatus(String taskId) {
         return taskStatuses.getOrDefault(taskId, "UNKNOWN");
     }
 
+    /**
+     * 缓存任务产物。
+     *
+     * @param taskId   任务ID
+     * @param artifact 产物对象
+     */
     public void cacheArtifact(String taskId, A2aArtifact artifact) {
         taskArtifacts.computeIfAbsent(taskId, k -> new ConcurrentHashMap<>())
                 .put(artifact.getArtifactId(), artifact);
