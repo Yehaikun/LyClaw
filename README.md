@@ -13,6 +13,22 @@
 
 ---
 
+## 预览
+
+### 系统架构
+
+![LyClaw 系统分层架构](mermaid-offline/a.png)
+
+> 8 层微服务架构：前端 → 网关 → 门面 → 编排 → 领域服务 → 适配器 → 核心接口 → 基础设施，Nacos 统一注册发现。
+
+### 聊天界面
+
+![LyClaw 聊天界面](mermaid-offline/show.png)
+
+> Vue 3 前端：SSE 流式响应、Markdown 实时渲染、Mermaid 图表、语法高亮、代码块一键复制。
+
+---
+
 ## 架构
 
 ```
