@@ -7,6 +7,4 @@ target/
 .DS_Store
 .mvn/
 LyClaw/configs/
-./docx/md.txt
-/docx/md.txt
 docx/
