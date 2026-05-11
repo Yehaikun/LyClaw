@@ -24,6 +24,9 @@ public class GatewayConfig {
                 .route("sessions-api", r -> r
                         .path("/api/sessions/**")
                         .uri("lb://lyclaw-orchestration-service"))
+                .route("orchestration-api", r -> r
+                        .path("/api/orchestration/**")
+                        .uri("lb://lyclaw-orchestration-service"))
                 .route("memory-api", r -> r
                         .path("/api/memory/**")
                         .uri("lb://lyclaw-memory-service"))

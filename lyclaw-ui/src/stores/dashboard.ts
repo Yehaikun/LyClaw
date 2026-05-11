@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { get } from '@/api/client'
-import type { ServiceHealth } from '@/types'
 
 export interface DashboardService {
   name: string
@@ -64,42 +63,25 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
   }
 
-  /** Check health of all registered services via the gateway's aggregated endpoint. */
+  /** Check health of each service by directly pinging its liveness endpoint. */
   async function checkHealth(): Promise<void> {
     const startTime = performance.now()
-
-    try {
-      const result = await get<Record<string, ServiceHealth>>(
-        '/api/dashboard/health',
-      )
-      const endTime = performance.now()
-      totalLatency.value = endTime - startTime
-
-      for (const svc of services.value) {
-        const entry = result[svc.name]
-        if (entry) {
-          svc.status = entry.healthy ? 'healthy' : 'unhealthy'
-          svc.uptime = entry.uptime
-          svc.latency = entry.latency
-          svc.details = entry.details
-        } else {
-          svc.status = 'unhealthy'
-          svc.uptime = undefined
-          svc.latency = undefined
-          svc.details = undefined
-        }
-      }
-    } catch {
-      const endTime = performance.now()
-      totalLatency.value = endTime - startTime
-
-      for (const svc of services.value) {
+    const checks = services.value.map(async (svc) => {
+      const svcStart = performance.now()
+      try {
+        const data = await get<{ status: string; service: string }>(
+          `/api/${svc.name}/health/liveness`,
+        )
+        svc.status = data.status === 'UP' ? 'healthy' : 'unhealthy'
+        svc.latency = performance.now() - svcStart
+      } catch {
         svc.status = 'unhealthy'
-        svc.uptime = undefined
-        svc.latency = undefined
-        svc.details = undefined
+        svc.latency = performance.now() - svcStart
       }
-    }
+    })
+
+    await Promise.allSettled(checks)
+    totalLatency.value = performance.now() - startTime
     lastCheck.value = Date.now()
   }
 

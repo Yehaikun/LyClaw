@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-@RestController
+@RestController("memoryHealthController")
 public class HealthController {
 
     private final String serviceName;
@@ -19,7 +19,7 @@ public class HealthController {
         this.serviceName = "memory-service";
     }
 
-    @GetMapping("/health/liveness")
+    @GetMapping("/api/memory/health/liveness")
     public Mono<Map<String, Object>> liveness() {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("status", "UP");
@@ -27,7 +27,7 @@ public class HealthController {
         return Mono.just(status);
     }
 
-    @GetMapping("/health/readiness")
+    @GetMapping("/api/memory/health/readiness")
     public Mono<Map<String, Object>> readiness() {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("status", "UP");
@@ -36,7 +36,7 @@ public class HealthController {
         return Mono.just(status);
     }
 
-    @GetMapping("/health")
+    @GetMapping("/api/memory/health")
     public Mono<Map<String, Object>> health() {
         String traceId = UUID.randomUUID().toString().replace("-", "");
         Map<String, Object> status = new LinkedHashMap<>();

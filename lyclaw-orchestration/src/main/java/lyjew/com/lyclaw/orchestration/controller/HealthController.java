@@ -10,13 +10,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-@RestController
+@RestController("orchestrationHealthController")
 public class HealthController {
 
     private final String serviceName = "orchestration-service";
     private final Instant startTime = Instant.now();
 
-    @GetMapping("/health/liveness")
+    @GetMapping("/api/orchestration/health/liveness")
     public Mono<Map<String, Object>> liveness() {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("status", "UP");
@@ -24,7 +24,7 @@ public class HealthController {
         return Mono.just(status);
     }
 
-    @GetMapping("/health/readiness")
+    @GetMapping("/api/orchestration/health/readiness")
     public Mono<Map<String, Object>> readiness() {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("status", "UP");
@@ -33,7 +33,7 @@ public class HealthController {
         return Mono.just(status);
     }
 
-    @GetMapping("/health")
+    @GetMapping("/api/orchestration/health")
     public Mono<Map<String, Object>> health() {
         String traceId = UUID.randomUUID().toString().replace("-", "");
         Map<String, Object> status = new LinkedHashMap<>();

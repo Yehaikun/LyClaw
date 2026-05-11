@@ -14,7 +14,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 
-@RestController
+@RestController("gatewayHealthController")
 public class HealthController {
 
     private static final Set<String> EXPECTED_SERVICES = Set.of(
@@ -83,6 +83,14 @@ public class HealthController {
         result.put("reflect", buildServiceStatus("reflect", registered));
         result.put("protocol", buildServiceStatus("protocol", registered));
         result.put("timestamp", System.currentTimeMillis());
+        return Mono.just(result);
+    }
+
+    @GetMapping("/api/gateway/health/liveness")
+    public Mono<Map<String, Object>> gatewayLiveness() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "UP");
+        result.put("service", "gateway-service");
         return Mono.just(result);
     }
 
