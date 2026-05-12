@@ -17,7 +17,14 @@ class DAGTaskPlannerTest {
 
     @BeforeEach
     void setUp() {
-        planner = new DAGTaskPlanner();
+        TaskDecomposer stubDecomposer = (desc, strategy) -> {
+            String prefix = "stub-" + strategy.name().toLowerCase().substring(0, 4);
+            return List.of(
+                    new TaskNode(prefix + "-1", "ANALYZE", "Analyze: " + desc, List.of(), List.of(), 30000),
+                    new TaskNode(prefix + "-2", "EXECUTE", "Execute: " + desc, List.of(), List.of(prefix + "-1"), 30000)
+            );
+        };
+        planner = new DAGTaskPlanner(stubDecomposer);
     }
 
     @Test

@@ -25,4 +25,11 @@ public interface AgentChannel {
      * @param agentId 发送方代理的唯一标识，用于从通道中读取该代理发出的消息
      */
     void receive(String agentId);
+
+    /**
+     * 向所有已注册的代理广播消息（排除发送者自身）。
+     *
+     * @param message 要广播的代理消息
+     */
+    void broadcast(AgentMessage message);
 }

@@ -9,6 +9,7 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.orchestration.Orchestrator;
 import lyjew.com.lyclaw.orchestration.dto.ChatRequest;
+import lyjew.com.lyclaw.storage.StorageFacade;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -18,7 +19,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Optional;
 
 /**
  * 编排服务 REST 控制器。
@@ -34,15 +35,16 @@ public class OrchestrationController {
     private final Orchestrator orchestrator;
     private final InterceptorChain interceptorChain;
     private final ChatFacade chatFacade;
-    /** 内存会话存储，键为 sessionId */
-    private final Map<String, Session> sessionStore = new ConcurrentHashMap<>();
+    private final StorageFacade storageFacade;
 
     public OrchestrationController(Orchestrator orchestrator,
                                    InterceptorChain interceptorChain,
-                                   ChatFacade chatFacade) {
+                                   ChatFacade chatFacade,
+                                   StorageFacade storageFacade) {
         this.orchestrator = orchestrator;
         this.interceptorChain = interceptorChain;
         this.chatFacade = chatFacade;
+        this.storageFacade = storageFacade;
     }
 
     /**
@@ -119,7 +121,7 @@ public class OrchestrationController {
                 .sessionId(sessionId)
                 .name("New Session")
                 .build();
-        sessionStore.put(sessionId, session);
+        storageFacade.save("sessions", sessionId, session);
         return session;
     }
 
@@ -132,11 +134,8 @@ public class OrchestrationController {
      */
     @GetMapping("/sessions/{sessionId}")
     public Session getSession(@PathVariable String sessionId) {
-        Session session = sessionStore.get(sessionId);
-        if (session == null) {
-            throw new NoSuchElementException("Session not found: " + sessionId);
-        }
-        return session;
+        return storageFacade.load("sessions", sessionId, Session.class)
+                .orElseThrow(() -> new NoSuchElementException("Session not found: " + sessionId));
     }
 
     /**
@@ -147,9 +146,10 @@ public class OrchestrationController {
      */
     @DeleteMapping("/sessions/{sessionId}")
     public Map<String, Object> deleteSession(@PathVariable String sessionId) {
-        Session removed = sessionStore.remove(sessionId);
+        boolean existed = storageFacade.load("sessions", sessionId, Session.class).isPresent();
+        storageFacade.delete("sessions", sessionId);
         Map<String, Object> result = new HashMap<>();
-        result.put("deleted", removed != null);
+        result.put("deleted", existed);
         result.put("sessionId", sessionId);
         return result;
     }
@@ -161,17 +161,18 @@ public class OrchestrationController {
      * @return 已存在或新创建的 Session
      */
     private Session resolveSession(String sessionId) {
-        // 如果传入了 sessionId 且在 store 中存在，直接返回
-        if (sessionId != null && sessionStore.containsKey(sessionId)) {
-            return sessionStore.get(sessionId);
+        if (sessionId != null) {
+            Optional<Session> existing = storageFacade.load("sessions", sessionId, Session.class);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
         }
-        // 否则创建新会话，保留客户端传入的 sessionId 或生成新的
         String newId = sessionId != null ? sessionId : UUID.randomUUID().toString();
         Session session = Session.builder()
                 .sessionId(newId)
                 .name("Auto Session")
                 .build();
-        sessionStore.put(newId, session);
+        storageFacade.save("sessions", newId, session);
         return session;
     }
 

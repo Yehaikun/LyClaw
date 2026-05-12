@@ -30,9 +30,6 @@
         <!-- L3 协议层 -->
         <module>lyclaw-protocol</module>
 
-        <!-- L2 适配器层 -->
-        <module>lyclaw-adapter</module>
-
         <!-- L4 四元核心层 -->
         <module>lyclaw-plan</module>
         <module>lyclaw-memory</module>
@@ -44,9 +41,6 @@
 
         <!-- L6 门面层 -->
         <module>lyclaw-facade</module>
-
-        <!-- 存储实现 -->
-        <module>lyclaw-storage</module>
 
         <!-- lyclaw-engine 功能已全部分发至各微服务，模块删除 -->
         <!-- lyclaw-web 已被 lyclaw-gateway 替代，模块删除 -->
@@ -117,17 +111,6 @@
                 <artifactId>lyclaw-autoconfigure</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-storage</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-adapter</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- Feign RPC 客户端 -->
             <dependency>
                 <groupId>lyjew.com</groupId>

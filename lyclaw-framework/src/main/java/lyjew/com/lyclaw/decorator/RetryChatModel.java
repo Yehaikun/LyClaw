@@ -40,6 +40,15 @@ public class RetryChatModel implements ChatModel {
         this.jitter = policy.jitter();
     }
 
+    public RetryChatModel(ChatModel delegate, int maxAttempts, long baseDelayMs,
+                           RetryPolicy.BackoffStrategy backoff, double jitter) {
+        this.delegate = delegate;
+        this.maxAttempts = maxAttempts;
+        this.baseDelayMs = baseDelayMs;
+        this.backoff = backoff;
+        this.jitter = jitter;
+    }
+
     @Override
     public String provider() {
         return delegate.provider();

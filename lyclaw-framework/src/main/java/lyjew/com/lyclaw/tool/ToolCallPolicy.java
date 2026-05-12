@@ -50,4 +50,15 @@ public interface ToolCallPolicy {
      * @return true 应该重试，false 不再重试
      */
     boolean shouldRetryOnError(ToolCall toolCall, Exception e, int retryCount);
+
+    /**
+     * 检查工具是否可以在当前上下文中执行。
+     *
+     * @param toolName 工具名称
+     * @param context  当前对话上下文
+     * @return true 表示允许执行
+     */
+    default boolean canExecute(String toolName, ChatContext context) {
+        return true;
+    }
 }

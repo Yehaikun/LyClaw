@@ -56,6 +56,7 @@ class ActionExecutorImplTest {
     @BeforeEach
     void setUp() {
         lenient().when(toolCallPolicy.canExecute(anyString(), anyInt(), anyString())).thenReturn(true);
+        lenient().when(toolCallPolicy.canExecute(anyString(), isNull())).thenReturn(true);
         lenient().when(toolSandbox.isHealthy()).thenReturn(true);
         executor = new ActionExecutorImpl(toolRegistry, skillRegistry,
                 toolSandbox, toolCallPolicy, skillExecutor);

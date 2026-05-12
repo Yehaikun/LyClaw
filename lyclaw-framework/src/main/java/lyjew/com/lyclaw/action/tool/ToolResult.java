@@ -12,10 +12,10 @@ import java.util.Map;
  *
  * <p>作为工具执行的返回载体，在旧版工具体系（已废弃）中使用。提供了
  * {@link #toFrameworkResult()}和{@link #fromFrameworkResult}两个转换方法，
- * 用于与新版框架的{@link lyjew.com.lyclaw.framework.tool.ToolResult}互转。
+ * 用于与新版框架的{@link lyjew.com.lyclaw.tool.ToolExecutionResult}互转。
  * 使用 Lombok {@code @Data}、{@code @Builder} 等注解简化构造。</p>
  *
- * @deprecated 请使用 {@link lyjew.com.lyclaw.framework.tool.ToolResult} 替代。
+ * @deprecated 请使用 {@link lyjew.com.lyclaw.tool.ToolExecutionResult} 替代。
  */
 @Data
 @NoArgsConstructor
@@ -41,8 +41,8 @@ public class ToolResult {
      *
      * @return 新版框架兼容的工具执行结果
      */
-    public lyjew.com.lyclaw.framework.tool.ToolResult toFrameworkResult() {
-        return new lyjew.com.lyclaw.framework.tool.ToolResult(
+    public lyjew.com.lyclaw.tool.ToolExecutionResult toFrameworkResult() {
+        return new lyjew.com.lyclaw.tool.ToolExecutionResult(
                 this.success,
                 this.output != null ? this.output : "",
                 this.errorMessage != null ? this.errorMessage : "",
@@ -59,7 +59,7 @@ public class ToolResult {
      * @return 当前旧版兼容的工具执行结果
      */
     public static ToolResult fromFrameworkResult(
-            lyjew.com.lyclaw.framework.tool.ToolResult framework) {
+            lyjew.com.lyclaw.tool.ToolExecutionResult framework) {
         return ToolResult.builder()
                 .toolName(framework.getToolName())
                 .success(framework.isSuccess())

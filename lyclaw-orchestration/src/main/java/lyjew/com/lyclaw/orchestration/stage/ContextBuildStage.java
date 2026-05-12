@@ -8,7 +8,7 @@ import lyjew.com.lyclaw.memory.MemoryQuery;
 import lyjew.com.lyclaw.memory.MemoryQueryResult;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import org.springframework.http.codec.ServerSentEvent;
-import lyjew.com.lyclaw.framework.annotation.PipelineStage;
+import lyjew.com.lyclaw.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 /**

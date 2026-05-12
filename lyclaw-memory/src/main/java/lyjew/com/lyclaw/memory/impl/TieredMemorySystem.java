@@ -1,6 +1,7 @@
 package lyjew.com.lyclaw.memory.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import lyjew.com.lyclaw.annotation.storage.MemoryStore;
 import lyjew.com.lyclaw.memory.*;
 import lyjew.com.lyclaw.memory.retriever.MemoryRetriever;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@MemoryStore(layerDefault = true)
 public class TieredMemorySystem implements MemorySystem {
 
     /** 感知层存储 */
@@ -327,11 +329,11 @@ public class TieredMemorySystem implements MemorySystem {
                 .build();
     }
 
-    /** 获取长期记忆层的不可变快照（包级访问，供 Janitor 使用）。 */
-    List<MemoryEntry> getLongTermEntries() { return List.copyOf(longTermStore.values()); }
+    @Override
+    public List<MemoryEntry> getLongTermEntries() { return List.copyOf(longTermStore.values()); }
 
-    /** 从长期记忆层移除指定条目（包级访问，供 Janitor 使用）。 */
-    void removeLongTermEntry(String entryId) { longTermStore.remove(entryId); }
+    @Override
+    public void removeLongTermEntry(String entryId) { longTermStore.remove(entryId); }
 
     /**
      * 检查条目元数据是否与过滤条件匹配（所有条件必须同时满足）。

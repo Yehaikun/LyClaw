@@ -3,7 +3,7 @@ package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 import lyjew.com.lyclaw.autoconfigure.facade.ConditionFilter;
 import lyjew.com.lyclaw.autoconfigure.processor.ToolAnnotationProcessor;
 import lyjew.com.lyclaw.context.ChatContext;
-import lyjew.com.lyclaw.framework.exception.ToolNotFoundException;
+import lyjew.com.lyclaw.exception.ToolNotFoundException;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;

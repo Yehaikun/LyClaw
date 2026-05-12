@@ -103,7 +103,7 @@ public class ChatModelPostProcessor implements BeanPostProcessor, Ordered {
         if (clazz.isAnnotationPresent(Fallback.class)) {
             Fallback fb = clazz.getAnnotation(Fallback.class);
             log.info("检测到 @Fallback 注解，chain={}", java.util.Arrays.toString(fb.chain()));
-            wrapped = new lyjew.com.lyclaw.decorator.FallbackChatModel(wrapped, fb);
+            wrapped = new lyjew.com.lyclaw.decorator.FallbackChatModel(wrapped, fb, registry);
         }
 
         // 检测 @RetryPolicy

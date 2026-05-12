@@ -1,7 +1,7 @@
 package lyjew.com.lyclaw.action.tool;
 
-import lyjew.com.lyclaw.framework.annotation.Tool;
-import lyjew.com.lyclaw.framework.annotation.Param;
+import lyjew.com.lyclaw.annotation.tool.Tool;
+import lyjew.com.lyclaw.annotation.tool.Param;
 
 /**
  * 数学表达式计算工具，使用递归下降解析器对表达式求值。

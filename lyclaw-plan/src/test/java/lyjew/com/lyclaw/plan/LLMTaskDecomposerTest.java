@@ -1,11 +1,13 @@
 package lyjew.com.lyclaw.plan;
 
+import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.plan.impl.LLMTaskDecomposer;
 import lyjew.com.lyclaw.task.DecompositionStrategy;
 import lyjew.com.lyclaw.task.TaskNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.List;
 
@@ -17,7 +19,8 @@ class LLMTaskDecomposerTest {
 
     @BeforeEach
     void setUp() {
-        decomposer = new LLMTaskDecomposer();
+        ChatFacade mockChatFacade = Mockito.mock(ChatFacade.class);
+        decomposer = new LLMTaskDecomposer(mockChatFacade);
     }
 
     @Test

@@ -55,7 +55,7 @@ class InMemoryVectorStoreTest {
     @DisplayName("Search with null query should return empty list")
     void searchNullQuery() {
         vectorStore.store("id1", new float[]{1.0f, 0.0f, 0.0f}, "p1");
-        List<VectorSearchResult> results = vectorStore.search(null, 10);
+        List<VectorSearchResult> results = vectorStore.search((float[]) null, 10);
         assertTrue(results.isEmpty());
     }
 

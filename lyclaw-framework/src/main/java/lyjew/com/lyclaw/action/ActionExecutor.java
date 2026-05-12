@@ -7,6 +7,7 @@ import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.task.TaskPlan;
 import reactor.core.publisher.Flux;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -46,4 +47,10 @@ public interface ActionExecutor {
      * @return 异步返回技能执行结果
      */
     CompletableFuture<SkillResult> executeSkill(String skillId, ChatContext context);
+
+    /** @return 所有已注册技能的摘要信息列表 */
+    List<Map<String, Object>> getRegisteredSkills();
+
+    /** @return 工具执行沙箱是否健康可用 */
+    boolean isSandboxHealthy();
 }

@@ -8,7 +8,6 @@ import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.ToolDefinition;
-import lyjew.com.lyclaw.provider.ModelProvider;
 import lyjew.com.lyclaw.tracing.TraceContext;
 
 import java.util.ArrayList;
@@ -22,7 +21,7 @@ import java.util.Map;
  * 该类是整个框架的请求处理中枢，在一次对话处理流程中携带以下关键信息：
  * 请求参数（ChatRequest）、会话状态（Session）、记忆内容（MemoryContent）、
  * 消息历史（Messages）、可用工具列表（ToolDefinition）、拦截器链（InterceptorChain）、
- * 模型提供者（ModelProvider）、追踪信息（TraceContext）以及可扩展的自定义属性。
+ * 聊天门面（ChatFacade）、追踪信息（TraceContext）以及可扩展的自定义属性。
  * 上下文在拦截器链、流水线阶段、工具调用等各组件之间流转和共享。
  */
 public class ChatContext {
@@ -39,10 +38,7 @@ public class ChatContext {
     private final List<ToolDefinition> toolDefinitions;
     /** 拦截器链，用于在请求处理前后执行横切逻辑 */
     private final InterceptorChain interceptorChain;
-    /** 模型提供者，封装了具体 AI 模型的调用接口 */
-    @Deprecated
-    private final ModelProvider modelProvider;
-    /** 新框架聊天门面，替代 ModelProvider */
+    /** 聊天门面，封装了具体 AI 模型的调用接口 */
     private final ChatFacade chatFacade;
     /** 对话处理结果，在流程末尾设置 */
     private ChatResult result;
@@ -71,7 +67,6 @@ public class ChatContext {
         this.messages = new ArrayList<>(session.getMessages());
         this.toolDefinitions = toolDefinitions;
         this.interceptorChain = interceptorChain;
-        this.modelProvider = null;
         this.chatFacade = chatFacade;
         this.tracing = new TraceContext();
     }
@@ -97,48 +92,7 @@ public class ChatContext {
         this.messages = new ArrayList<>(session.getMessages());
         this.toolDefinitions = toolDefinitions;
         this.interceptorChain = interceptorChain;
-        this.modelProvider = null;
         this.chatFacade = chatFacade;
-        this.tracing = new TraceContext(traceId);
-    }
-
-    /**
-     * @deprecated 使用 ChatFacade 构造函数替代
-     */
-    @Deprecated
-    public ChatContext(ChatRequest request, Session session,
-                       MemoryContent memory, List<ToolDefinition> toolDefinitions,
-                       InterceptorChain interceptorChain,
-                       ModelProvider modelProvider) {
-        this.request = request;
-        this.session = session;
-        this.memory = memory;
-        // 从会话中复制消息列表，避免修改原始会话数据
-        this.messages = new ArrayList<>(session.getMessages());
-        this.toolDefinitions = toolDefinitions;
-        this.interceptorChain = interceptorChain;
-        this.modelProvider = modelProvider;
-        this.chatFacade = null;
-        this.tracing = new TraceContext();
-    }
-
-    /**
-     * @deprecated 使用 ChatFacade 构造函数替代
-     */
-    @Deprecated
-    public ChatContext(ChatRequest request, Session session,
-                       MemoryContent memory, List<ToolDefinition> toolDefinitions,
-                       InterceptorChain interceptorChain,
-                       ModelProvider modelProvider, String traceId) {
-        this.request = request;
-        this.session = session;
-        this.memory = memory;
-        // 从会话中复制消息列表，避免修改原始会话数据
-        this.messages = new ArrayList<>(session.getMessages());
-        this.toolDefinitions = toolDefinitions;
-        this.interceptorChain = interceptorChain;
-        this.modelProvider = modelProvider;
-        this.chatFacade = null;
         this.tracing = new TraceContext(traceId);
     }
 
@@ -156,10 +110,7 @@ public class ChatContext {
 
     public InterceptorChain getInterceptorChain() { return interceptorChain; }
 
-    @Deprecated
-    public ModelProvider getModelProvider() { return modelProvider; }
-
-    /** @return 新框架聊天门面 */
+    /** @return 聊天门面 */
     public ChatFacade getChatFacade() { return chatFacade; }
 
     public ChatResult getResult() { return result; }

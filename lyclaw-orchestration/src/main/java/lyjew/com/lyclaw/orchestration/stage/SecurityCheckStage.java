@@ -8,7 +8,7 @@ import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.security.SecurityManager;
 import org.springframework.http.codec.ServerSentEvent;
-import lyjew.com.lyclaw.framework.annotation.PipelineStage;
+import lyjew.com.lyclaw.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 /**

@@ -93,6 +93,7 @@ public class PlanController {
 
         Map<String, Object> response = new HashMap<>();
         response.put("plan", plan);
+        response.put("nodes", plan.getNodes() != null ? plan.getNodes() : List.of());
         response.put("strategy", request.getStrategy() != null ? request.getStrategy() : "dag");
         response.put("nodeCount", plan.getNodes() != null ? plan.getNodes().size() : 0);
         response.put("estimatedTime", plan.getEstimatedCompletionTime());

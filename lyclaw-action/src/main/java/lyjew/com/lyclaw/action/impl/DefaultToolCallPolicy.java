@@ -93,6 +93,16 @@ public class DefaultToolCallPolicy implements ToolCallPolicy {
     }
 
     /**
+     * 检查工具是否可以在当前上下文中执行。
+     */
+    @Override
+    public boolean canExecute(String toolName, ChatContext context) {
+        String sessionId = context != null && context.getSession() != null
+                ? context.getSession().getSessionId() : "global";
+        return canExecute(toolName, 0, sessionId);
+    }
+
+    /**
      * 检查工具是否可以在当前会话中执行。
      *
      * <p>检查顺序：黑名单 > 白名单 > 调用频率限制</p>

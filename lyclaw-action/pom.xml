@@ -27,10 +27,6 @@
         </dependency>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-adapter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>lyjew.com</groupId>
             <artifactId>lyclaw-infra</artifactId>
         </dependency>
         <dependency>

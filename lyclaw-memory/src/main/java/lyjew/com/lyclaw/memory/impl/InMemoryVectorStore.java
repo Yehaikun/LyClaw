@@ -2,10 +2,12 @@ package lyjew.com.lyclaw.memory.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.memory.vector.VectorSearchResult;
+import lyjew.com.lyclaw.retrieval.SearchResult;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 基于内存的向量存储，使用 ConcurrentHashMap 实现线程安全的嵌入向量索引。
@@ -26,7 +28,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Component
-public class InMemoryVectorStore {
+@lyjew.com.lyclaw.annotation.storage.VectorStore(dimension = 0,
+        supportsMetadataFilter = true, supportsHybridSearch = true)
+public class InMemoryVectorStore implements lyjew.com.lyclaw.retrieval.VectorStore {
 
     /** 向量存储映射 */
     private final ConcurrentHashMap<String, float[]> embeddings = new ConcurrentHashMap<>();
@@ -141,6 +145,46 @@ public class InMemoryVectorStore {
 
     /** @return 指定 ID 对应的向量，不存在时返回 null */
     public float[] getEmbedding(String id) { return embeddings.get(id); }
+
+    // ==================== VectorStore SPI 实现 ====================
+
+    @Override
+    public void store(String id, List<Float> vector, Map<String, Object> metadata) {
+        if (id == null || vector == null) {
+            log.warn("Invalid store via VectorStore SPI: id={}, vector={}", id, vector);
+            return;
+        }
+        float[] array = new float[vector.size()];
+        for (int i = 0; i < vector.size(); i++) {
+            array[i] = vector.get(i);
+        }
+        String payload = metadata != null && metadata.containsKey("payload")
+                ? metadata.get("payload").toString() : null;
+        store(id, array, payload, metadata);
+    }
+
+    @Override
+    public List<SearchResult> search(List<Float> queryVector, int topK) {
+        if (queryVector == null || queryVector.isEmpty()) {
+            return Collections.emptyList();
+        }
+        float[] query = new float[queryVector.size()];
+        for (int i = 0; i < queryVector.size(); i++) {
+            query[i] = queryVector.get(i);
+        }
+        List<VectorSearchResult> hits = search(query, topK);
+        return hits.stream()
+                .map(h -> new SearchResult(h.getId(), h.getScore(),
+                        h.getMetadata() != null && h.getMetadata().containsKey("payload")
+                                ? h.getMetadata().get("payload").toString() : "",
+                        h.getMetadata()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public String getCollectionName() {
+        return "inmemory";
+    }
 
     /**
      * 计算两个向量之间的余弦相似度。

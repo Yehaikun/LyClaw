@@ -1,6 +1,12 @@
 package lyjew.com.lyclaw.autoconfigure.processor;
 
+import lyjew.com.lyclaw.annotation.chat.CircuitBreaker;
+import lyjew.com.lyclaw.annotation.chat.Fallback;
+import lyjew.com.lyclaw.annotation.chat.RetryPolicy;
 import lyjew.com.lyclaw.chat.*;
+import lyjew.com.lyclaw.decorator.CircuitBreakerChatModel;
+import lyjew.com.lyclaw.decorator.FallbackChatModel;
+import lyjew.com.lyclaw.decorator.RetryChatModel;
 import lyjew.com.lyclaw.model.ModelConfig;
 
 import org.slf4j.Logger;
@@ -102,17 +108,23 @@ public class OpenAiProtocolAutoConfigurator implements InitializingBean, Applica
         if (model == null) model = configKey + "-default";
         if (baseUrl == null) baseUrl = "https://api." + configKey + ".com";
 
-        // 构建 ModelConfig
         ModelConfig modelConfig = new ModelConfig();
         modelConfig.setBaseUrl(baseUrl);
         modelConfig.setApiKey(apiKey);
         modelConfig.setModel(model);
 
-        // 创建 OpenAiProtocolChatModel
-        lyjew.com.lyclaw.adapter.OpenAiProtocolChatModel chatModel =
-                new lyjew.com.lyclaw.adapter.OpenAiProtocolChatModel(configKey, modelConfig);
+        // 对于 deepseek 使用带弹性注解的 DeepSeekChatModel
+        ChatModel chatModel;
+        if ("deepseek".equalsIgnoreCase(configKey)) {
+            chatModel = new lyjew.com.lyclaw.adapter.DeepSeekChatModel(modelConfig);
+            log.info("使用 DeepSeekChatModel (带 @RetryPolicy/@Fallback/@CircuitBreaker)");
+        } else {
+            chatModel = new lyjew.com.lyclaw.adapter.OpenAiProtocolChatModel(configKey, modelConfig);
+        }
 
-        // 注册
+        // 应用弹性装饰器
+        chatModel = wrapWithResilience(chatModel);
+
         ModelCapabilities caps = ModelCapabilities.openAiDefaults();
         ChatModelMetadata metadata = ChatModelMetadata.fromAnnotation(
                 configKey, configKey, "配置自动创建: " + baseUrl,
@@ -122,5 +134,41 @@ public class OpenAiProtocolAutoConfigurator implements InitializingBean, Applica
         registry.register(configKey, model, chatModel, metadata);
         log.info("自动创建 OpenAI 协议 ChatModel: provider={}, model={}, baseUrl={}",
                 configKey, model, baseUrl);
+    }
+
+    private ChatModel wrapWithResilience(ChatModel raw) {
+        ChatModel wrapped = raw;
+        Class<?> clazz = raw.getClass();
+
+        // 检测类上的弹性注解（DeepSeekChatModel 有这些）
+        if (clazz.isAnnotationPresent(Fallback.class)) {
+            Fallback fb = clazz.getAnnotation(Fallback.class);
+            log.info("自动配置: 对 {} 应用 @Fallback chain={}", clazz.getSimpleName(),
+                    java.util.Arrays.toString(fb.chain()));
+            wrapped = new FallbackChatModel(wrapped, fb, registry);
+        }
+
+        if (clazz.isAnnotationPresent(RetryPolicy.class)) {
+            RetryPolicy rp = clazz.getAnnotation(RetryPolicy.class);
+            log.info("自动配置: 对 {} 应用 @RetryPolicy maxAttempts={}", clazz.getSimpleName(),
+                    rp.maxAttempts());
+            wrapped = new RetryChatModel(wrapped, rp);
+        }
+
+        if (clazz.isAnnotationPresent(CircuitBreaker.class)) {
+            CircuitBreaker cb = clazz.getAnnotation(CircuitBreaker.class);
+            log.info("自动配置: 对 {} 应用 @CircuitBreaker failureThreshold={}", clazz.getSimpleName(),
+                    cb.failureThreshold());
+            wrapped = new CircuitBreakerChatModel(wrapped, cb);
+        }
+
+        // 对于没有 @RetryPolicy 的普通模型，应用默认重试策略
+        if (!clazz.isAnnotationPresent(RetryPolicy.class)) {
+            log.info("自动配置: 对 {} 应用默认重试策略 (3次/指数退避/1s基准)", clazz.getSimpleName());
+            wrapped = new RetryChatModel(wrapped, 3, 1000,
+                    RetryPolicy.BackoffStrategy.EXPONENTIAL, 0.1);
+        }
+
+        return wrapped;
     }
 }

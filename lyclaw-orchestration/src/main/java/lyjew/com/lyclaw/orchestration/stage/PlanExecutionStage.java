@@ -11,7 +11,7 @@ import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.task.PlanRequest;
 import lyjew.com.lyclaw.task.TaskNode;
 import org.springframework.http.codec.ServerSentEvent;
-import lyjew.com.lyclaw.framework.annotation.PipelineStage;
+import lyjew.com.lyclaw.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 import java.util.*;

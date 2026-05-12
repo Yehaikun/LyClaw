@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.storage;
 
+import lyjew.com.lyclaw.annotation.storage.MemoryStore;
 import lyjew.com.lyclaw.annotation.storage.SessionStore;
 
 import java.util.*;
@@ -14,6 +15,7 @@ import java.util.stream.Collectors;
  */
 @lyjew.com.lyclaw.annotation.storage.StorageBackend(name = "inmemory", displayName = "内存存储", priority = 0)
 @SessionStore(layerPriority = 0, layerDefault = false)
+@MemoryStore(layerPriority = 0, layerDefault = false)
 public class InMemoryBackend implements StorageBackend {
 
     private final Map<String, Map<String, Object>> store = new ConcurrentHashMap<>();

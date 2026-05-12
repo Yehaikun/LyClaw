@@ -8,7 +8,7 @@ import lyjew.com.lyclaw.memory.PerceptionData;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import org.springframework.http.codec.ServerSentEvent;
-import lyjew.com.lyclaw.framework.annotation.PipelineStage;
+import lyjew.com.lyclaw.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
 import java.util.List;

@@ -157,17 +157,14 @@ public class ActionExecutorImpl implements ActionExecutor {
                 }
 
                 // 2. 策略检查
-                if (toolCallPolicy instanceof DefaultToolCallPolicy policy) {
-                    String sessionId = "global";
-                    if (!policy.canExecute(toolName, 0, sessionId)) {
-                        log.warn("策略禁止执行: toolName={}", toolName);
-                        return ToolResult.builder()
-                                .toolName(toolName)
-                                .success(false)
-                                .errorMessage("策略禁止执行工具: " + toolName)
-                                .durationMs(System.currentTimeMillis() - startTime)
-                                .build();
-                    }
+                if (!toolCallPolicy.canExecute(toolName, (ChatContext) null)) {
+                    log.warn("策略禁止执行: toolName={}", toolName);
+                    return ToolResult.builder()
+                            .toolName(toolName)
+                            .success(false)
+                            .errorMessage("策略禁止执行工具: " + toolName)
+                            .durationMs(System.currentTimeMillis() - startTime)
+                            .build();
                 }
 
                 // 3. 确定沙箱级别（默认 NONE）

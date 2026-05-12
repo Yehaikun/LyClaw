@@ -7,8 +7,9 @@ import lyjew.com.lyclaw.task.PlanGraph;
 import lyjew.com.lyclaw.task.ReflectionFeedback;
 import lyjew.com.lyclaw.task.SimpleTaskPlan;
 import lyjew.com.lyclaw.task.TaskNode;
+import lyjew.com.lyclaw.task.AbstractTaskPlanner;
+import lyjew.com.lyclaw.task.TaskDecomposer;
 import lyjew.com.lyclaw.task.TaskPlan;
-import lyjew.com.lyclaw.task.TaskPlanner;
 
 import org.springframework.stereotype.Service;
 
@@ -44,7 +45,13 @@ import java.util.regex.Pattern;
  * @see PlanGraph
  */
 @Service
-public class DAGTaskPlanner implements TaskPlanner {
+public class DAGTaskPlanner extends AbstractTaskPlanner {
+
+    private final TaskDecomposer taskDecomposer;
+
+    public DAGTaskPlanner(TaskDecomposer taskDecomposer) {
+        this.taskDecomposer = taskDecomposer;
+    }
 
     /** 简单任务的复杂度阈值（关键词命中数 <= 此值视为简单） */
     private static final int SIMPLE_THRESHOLD = 1;
@@ -180,7 +187,7 @@ public class DAGTaskPlanner implements TaskPlanner {
      *   <li><b>BY_DOMAIN</b>：按知识领域分组，同领域内串行、不同领域间并行</li>
      *   <li><b>BY_PHASE</b>：分析→设计→实现→验证 四阶段流水线</li>
      *   <li><b>PARALLEL_INDEPENDENT</b>：识别独立子任务并全部并行</li>
-     *   <li><b>LLM_DRIVEN / TREE</b>：回退到 LLMTaskDecomposer 或递归分解</li>
+     *   <li><b>LLM_DRIVEN / TREE</b>：回退到 TaskDecomposer 或递归分解</li>
      * </ul>
      * </p>
      *
@@ -652,12 +659,24 @@ public class DAGTaskPlanner implements TaskPlanner {
     }
 
     /**
-     * LLM 驱动分解：委托给 LLMTaskDecomposer（如果可用）。
+     * LLM 驱动分解：委托给 TaskDecomposer（如果可用）。
      * 当前回退为按阶段分解。
      */
     private PlanGraph decomposeLlmDriven(TaskNode rootTask) {
-        // LLM 驱动需要 ModelAdapter 注入，当前回退到按阶段分解
-        return decomposeByPhase(rootTask);
+        PlanGraph graph = new PlanGraph();
+        graph.addNode(rootTask);
+
+        List<TaskNode> subtasks = taskDecomposer.decompose(
+                rootTask.getDescription(), DecompositionStrategy.LLM_DRIVEN);
+        for (TaskNode sub : subtasks) {
+            graph.addNode(sub);
+            if (sub.getDependencies() != null) {
+                for (String dep : sub.getDependencies()) {
+                    graph.addEdge(dep, sub.getNodeId());
+                }
+            }
+        }
+        return graph;
     }
 
     /**

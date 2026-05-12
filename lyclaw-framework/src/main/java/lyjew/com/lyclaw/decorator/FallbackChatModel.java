@@ -2,6 +2,7 @@ package lyjew.com.lyclaw.decorator;
 
 import lyjew.com.lyclaw.annotation.chat.Fallback;
 import lyjew.com.lyclaw.chat.ChatModel;
+import lyjew.com.lyclaw.chat.ChatModelRegistry;
 import lyjew.com.lyclaw.chat.ModelCapabilities;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.ModelResponse;
@@ -28,10 +29,12 @@ public class FallbackChatModel implements ChatModel {
     private final ChatModel delegate;
     private final String[] chain;
     private final List<Class<? extends Throwable>> onExceptions;
+    private final ChatModelRegistry registry;
 
-    public FallbackChatModel(ChatModel delegate, Fallback policy) {
+    public FallbackChatModel(ChatModel delegate, Fallback policy, ChatModelRegistry registry) {
         this.delegate = delegate;
         this.chain = policy.chain();
+        this.registry = registry;
         try {
             this.onExceptions = parseExceptionClasses(policy.on());
         } catch (Exception e) {
@@ -69,11 +72,34 @@ public class FallbackChatModel implements ChatModel {
     }
 
     private Flux<ModelResponse> tryFallbackChain(ChatRequest request) {
-        // 降级链需要查 ChatModelRegistry 来获取备选模型
-        // 此处简化实现：仅记录降级请求，实际解析需要依赖注入 ChatModelRegistry
-        log.warn("降级链解析需要 ChatModelRegistry 依赖，当前版本在 ChatModelPostProcessor 中完成");
-        return Flux.error(new IllegalStateException(
-                "所有降级模型均不可用，chain=" + String.join(",", chain)));
+        return tryNextInChain(request, 0);
+    }
+
+    private Flux<ModelResponse> tryNextInChain(ChatRequest request, int index) {
+        if (index >= chain.length) {
+            log.error("降级链中所有模型均不可用: {}", String.join(",", chain));
+            return Flux.error(new IllegalStateException(
+                    "所有降级模型均不可用，chain=" + String.join(",", chain)));
+        }
+        String entry = chain[index].trim();
+        int colon = entry.indexOf(':');
+        if (colon <= 0) {
+            log.warn("降级链条目格式无效 (expected provider:model): {}", entry);
+            return tryNextInChain(request, index + 1);
+        }
+        String provider = entry.substring(0, colon);
+        String modelName = entry.substring(colon + 1);
+        ChatModel fallbackModel = registry.resolve(provider, modelName);
+        if (fallbackModel == null) {
+            log.warn("降级模型未找到: {}:{}，尝试下一个", provider, modelName);
+            return tryNextInChain(request, index + 1);
+        }
+        log.info("降级到 {}:{}", provider, modelName);
+        return fallbackModel.stream(request)
+                .onErrorResume(err -> {
+                    log.warn("降级模型 {}:{} 调用失败: {}", provider, modelName, err.getMessage());
+                    return tryNextInChain(request, index + 1);
+                });
     }
 
     @SuppressWarnings("unchecked")

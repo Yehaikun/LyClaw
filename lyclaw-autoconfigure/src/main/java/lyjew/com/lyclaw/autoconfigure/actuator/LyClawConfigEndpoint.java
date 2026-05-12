@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.autoconfigure.actuator;
 
-import lyjew.com.lyclaw.framework.config.LyClawProperties;
+import lyjew.com.lyclaw.config.LyClawProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
 import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;

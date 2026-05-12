@@ -11,7 +11,7 @@ import java.util.Map;
  * <p>支持配置全局默认 Provider/模型、路由开关、各 Provider 的模型配置（OpenAI 兼容协议 +
  * Anthropic/Ollama 等独立协议）、全局降级链和熔断配置。
  *
- * <p>不配任何配置时，回退到旧 LlmConfiguration 硬编码 DeepSeek 路径（向后兼容）。
+ * <p>必须配置至少一个模型方可使用 ChatFacade。
  *
  * <p>Spring Boot 的 @ConfigurationProperties 绑定由 autoconfigure 模块的
  * ChatAutoConfiguration 通过 @EnableConfigurationProperties 完成。

@@ -25,7 +25,7 @@ public class StorageProperties {
 
     /** 默认值——不配任何配置时行为与当前完全一致 */
     public StorageProperties() {
-        stores.put("session", "inmemory");
+        stores.put("session", "file");
         stores.put("entity", "file");
         stores.put("memory", "inmemory");
     }

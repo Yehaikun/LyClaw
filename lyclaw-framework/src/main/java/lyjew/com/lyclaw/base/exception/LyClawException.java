@@ -7,7 +7,7 @@ import lombok.Getter;
  *
  * <p>封装了错误码（code）与 HTTP 状态码（httpStatus），提供统一的异常信息结构。
  * 通过静态工厂方法{@link #internal}可快捷创建 HTTP 500 的内部错误异常。
- * 框架层异常{@link lyjew.com.lyclaw.framework.exception.FrameworkException}
+ * 框架层异常{@link lyjew.com.lyclaw.exception.FrameworkException}
  * 作为更具体的子类，在此基础上增加了详情映射等扩展能力。</p>
  */
 @Getter

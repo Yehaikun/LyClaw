@@ -7,6 +7,11 @@ import lyjew.com.lyclaw.filter.ContentFilter;
 import lyjew.com.lyclaw.filter.FilterResult;
 import lyjew.com.lyclaw.security.ApprovalResult;
 import lyjew.com.lyclaw.security.AuditLog;
+import lyjew.com.lyclaw.security.AuditLogger;
+import lyjew.com.lyclaw.security.AuthResult;
+import lyjew.com.lyclaw.security.AuthenticationManager;
+import lyjew.com.lyclaw.security.AuthorizationManager;
+import lyjew.com.lyclaw.security.GuardrailController;
 import lyjew.com.lyclaw.security.PermissionLevel;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.security.SecurityManager;
@@ -33,7 +38,8 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-public class EnhancedSecurityManager implements SecurityManager {
+public class EnhancedSecurityManager implements SecurityManager,
+        AuthenticationManager, AuthorizationManager, AuditLogger, GuardrailController {
 
     /** 输入内容过滤器链（CopyOnWriteArrayList 保证读多写少场景的线程安全） */
     private final List<ContentFilter> inputFilters = new CopyOnWriteArrayList<>();
@@ -78,6 +84,17 @@ public class EnhancedSecurityManager implements SecurityManager {
         toolPermissions.put("SendEmail", PermissionLevel.EXECUTE_SAFE);
         toolPermissions.put("CreateFile", PermissionLevel.EXECUTE_MODIFY);
         toolPermissions.put("RunScript", PermissionLevel.EXECUTE_DESTRUCTIVE);
+    }
+
+    // ======================== 认证 ========================
+
+    @Override
+    public AuthResult authenticate(ChatContext context) {
+        String userId = extractUserId(context);
+        if (userId == null || "unknown".equals(userId)) {
+            return AuthResult.failed("无法识别用户身份");
+        }
+        return AuthResult.success(userId);
     }
 
     // ======================== 防护栏链 ========================
@@ -275,6 +292,34 @@ public class EnhancedSecurityManager implements SecurityManager {
 
     // ======================== 审计日志 ========================
 
+    // --- AuditLogger SPI ---
+
+    @Override
+    public void log(String userId, String sessionId, String action, String target,
+                    PermissionLevel requiredLevel, boolean approved, String reason) {
+        writeAuditLog(userId, sessionId, action, target, requiredLevel, approved, reason);
+    }
+
+    @Override
+    public List<AuditLog> exportAll() { return exportAuditLog(); }
+
+    @Override
+    public List<AuditLog> exportByUser(String userId) { return exportAuditLogByUser(userId); }
+
+    @Override
+    public List<AuditLog> exportBySession(String sessionId) { return exportAuditLogBySession(sessionId); }
+
+    @Override
+    public List<AuditLog> exportByTimeRange(Instant from, Instant to) { return exportAuditLogByTimeRange(from, to); }
+
+    @Override
+    public int size() { return getAuditLogSize(); }
+
+    @Override
+    public void clear() { clearAuditLog(); }
+
+    // --- 原有审计日志方法 ---
+
     /** 导出所有审计日志 */
     public List<AuditLog> exportAuditLog() {
         synchronized (auditLog) { return List.copyOf(auditLog); }
@@ -315,11 +360,16 @@ public class EnhancedSecurityManager implements SecurityManager {
 
     // ======================== 私有辅助方法 ========================
 
-    /** 记录一条审计日志，并更新哈希链以防止篡改 */
+    /** 记录一条审计日志（从 ChatContext 提取用户/会话信息）。 */
     private void writeAuditLog(ChatContext context, String action, String target,
                                PermissionLevel required, boolean approved, String reason) {
-        String userId = extractUserId(context);
-        String sessionId = extractSessionId(context);
+        writeAuditLog(extractUserId(context), extractSessionId(context),
+                action, target, required, approved, reason);
+    }
+
+    /** 记录一条审计日志，并更新哈希链以防止篡改。 */
+    private void writeAuditLog(String userId, String sessionId, String action, String target,
+                               PermissionLevel required, boolean approved, String reason) {
         AuditLog entry = AuditLog.builder()
                 .logId(UUID.randomUUID().toString())
                 .userId(userId).sessionId(sessionId)

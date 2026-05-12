@@ -1,8 +1,8 @@
 package lyjew.com.lyclaw.action.tool;
 
-import lyjew.com.lyclaw.framework.annotation.Tool;
-import lyjew.com.lyclaw.framework.annotation.Param;
-import lyjew.com.lyclaw.framework.annotation.ToolCondition;
+import lyjew.com.lyclaw.annotation.tool.Tool;
+import lyjew.com.lyclaw.annotation.tool.Param;
+import lyjew.com.lyclaw.annotation.tool.ToolCondition;
 
 import java.net.URLEncoder;
 import java.net.http.HttpClient;

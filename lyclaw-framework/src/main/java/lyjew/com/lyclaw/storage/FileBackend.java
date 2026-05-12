@@ -58,13 +58,8 @@ public class FileBackend implements StorageBackend {
                 baseDir = Paths.get(System.getProperty("user.dir"), "data", "storage");
             }
         }
-        try {
-            Files.createDirectories(baseDir);
-            initialized = true;
-            log.info("FileBackend 初始化完成: {}", baseDir.toAbsolutePath());
-        } catch (IOException e) {
-            throw new StorageException("FILE_BACKEND_INIT_FAILED", "无法创建文件存储目录: " + baseDir, e);
-        }
+        initialized = true;
+        log.info("FileBackend 初始化完成: {}", baseDir.toAbsolutePath());
     }
 
     @Override

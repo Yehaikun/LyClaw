@@ -1,8 +1,17 @@
 package lyjew.com.lyclaw.plan.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lyjew.com.lyclaw.chat.ChatFacade;
+import lyjew.com.lyclaw.model.ChatRequest;
+import lyjew.com.lyclaw.model.Message;
+import lyjew.com.lyclaw.model.ModelResponse;
 import lyjew.com.lyclaw.task.DecompositionStrategy;
+import lyjew.com.lyclaw.task.TaskDecomposer;
 import lyjew.com.lyclaw.task.TaskNode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -17,7 +26,8 @@ import java.util.stream.Collectors;
 /**
  * LLM 驱动的任务分解器 —— 使用关键词分析和规则将复杂任务分解为结构化子任务。
  *
- * <p>当前为基于规则的实现，未来将集成 {@code ModelAdapter} 实现真正的 LLM 驱动分解。
+ * <p>当前为混合实现：LLM_DRIVEN 策略调用 ChatFacade 进行真正的 LLM 驱动分解，
+ * 其他策略使用规则引擎。规则引擎在 LLM 不可用时提供合理回退。</p>
  * 规则引擎通过以下维度分析任务描述：
  * <ul>
  *   <li><b>动作词检测</b>：识别 "创建/修改/删除/查询/部署/配置" 等操作动词</li>
@@ -48,10 +58,19 @@ import java.util.stream.Collectors;
  * @author LyClaw Team
  * @see DecompositionStrategy
  * @see TaskNode
- * @see lyjew.com.lyclaw.adapter.ModelAdapter
+ * @see lyjew.com.lyclaw.chat.ChatFacade
  */
 @Component
-public class LLMTaskDecomposer {
+public class LLMTaskDecomposer implements TaskDecomposer {
+
+    private static final Logger log = LoggerFactory.getLogger(LLMTaskDecomposer.class);
+
+    private final ChatFacade chatFacade;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public LLMTaskDecomposer(ChatFacade chatFacade) {
+        this.chatFacade = chatFacade;
+    }
 
     /** 动作词典 —— 关键词 → 子任务类型映射 */
     private static final Map<Pattern, String> ACTION_PATTERNS = new LinkedHashMap<>();
@@ -346,19 +365,146 @@ public class LLMTaskDecomposer {
     }
 
     /**
-     * LLM 驱动分解 —— 当前回退到按阶段分解。
+     * LLM 驱动分解 —— 调用 ChatFacade 让 LLM 自行决定最优子任务分解方案。
      *
-     * <p>未来将集成 ModelAdapter，构造 prompt 让 LLM 自行决定
-     * 最优的子任务分解方案，包括子任务描述、类型、依赖和工具需求。</p>
-     *
-     * @param taskDescription 任务描述
-     * @return 分解后的子任务列表
+     * <p>构造结构化 system prompt 要求 LLM 输出 JSON 格式的分解结果，
+     * 包含子任务描述、类型、依赖和工具需求。LLM 调用失败时回退到按阶段分解。</p>
      */
     private List<TaskNode> decomposeWithLLM(String taskDescription) {
-        // 未来：调用 ModelAdapter.chat() 发送结构化分解 prompt
-        // 当前回退到按阶段分解
-        return decomposeByPhase(taskDescription);
+        try {
+            ChatRequest request = ChatRequest.builder()
+                    .messages(List.of(Message.system(DECOMPOSITION_SYSTEM_PROMPT),
+                            Message.user(taskDescription)))
+                    .temperature(0.3)
+                    .maxTokens(2000)
+                    .stream(false)
+                    .build();
+            ModelResponse response = chatFacade.chat(request);
+            String json = response.getContent();
+            if (json == null || json.isBlank()) {
+                log.warn("LLM返回空内容，回退到规则分解");
+                return decomposeByPhase(taskDescription);
+            }
+            return parseTaskNodesFromJson(json, taskDescription);
+        } catch (Exception e) {
+            log.warn("LLM分解失败，回退到规则分解: {}", e.getMessage());
+            return decomposeByPhase(taskDescription);
+        }
     }
+
+    /**
+     * 从 LLM 返回的 JSON 中解析子任务列表。
+     *
+     * <p>LLM 输出格式：
+     * <pre>{@code
+     * {
+     *   "subtasks": [
+     *     {"id": "1", "type": "ANALYZE", "description": "...", "tools": ["web_search"], "dependencies": []},
+     *     {"id": "2", "type": "IMPLEMENT", "description": "...", "tools": ["file_write"], "dependencies": ["1"]}
+     *   ]
+     * }
+     * }</pre>
+     * 先提取 JSON 块（处理 LLM 可能包裹的 markdown 代码块），
+     * 第一遍创建所有 TaskNode，第二遍连接依赖。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private List<TaskNode> parseTaskNodesFromJson(String raw, String fallbackDesc) {
+        try {
+            String json = extractJsonBlock(raw);
+            Map<String, Object> root = objectMapper.readValue(json, Map.class);
+            List<Map<String, Object>> subtasks = (List<Map<String, Object>>) root.get("subtasks");
+            if (subtasks == null || subtasks.isEmpty()) {
+                log.warn("LLM返回的subtasks为空，回退到规则分解");
+                return decomposeByPhase(fallbackDesc);
+            }
+
+            String prefix = "llm-ai-" + UUID.randomUUID().toString().substring(0, 8);
+            List<TaskNode> nodes = new ArrayList<>();
+            Map<String, TaskNode> idMap = new LinkedHashMap<>();
+
+            for (Map<String, Object> st : subtasks) {
+                String id = str(st, "id", prefix + "-" + idMap.size());
+                String type = str(st, "type", "EXECUTE");
+                String desc = str(st, "description", fallbackDesc);
+                List<String> tools = list(st, "tools");
+                long timeout = num(st, "timeoutMs", 30_000L);
+
+                TaskNode node = new TaskNode(prefix + "-" + id, type, desc, tools,
+                        new ArrayList<>(), timeout);
+                nodes.add(node);
+                idMap.put(id, node);
+            }
+
+            for (Map<String, Object> st : subtasks) {
+                String id = str(st, "id", "");
+                TaskNode node = idMap.get(id);
+                if (node == null) continue;
+                List<String> deps = list(st, "dependencies");
+                for (String depId : deps) {
+                    TaskNode dep = idMap.get(depId);
+                    if (dep != null && !node.getDependencies().contains(depId)) {
+                        node.getDependencies().add(prefix + "-" + depId);
+                    }
+                }
+            }
+
+            log.info("LLM分解成功: {} 个子任务", nodes.size());
+            return nodes;
+        } catch (Exception e) {
+            log.warn("JSON解析失败，回退到规则分解: {}", e.getMessage());
+            return decomposeByPhase(fallbackDesc);
+        }
+    }
+
+    private String extractJsonBlock(String raw) {
+        int start = raw.indexOf('{');
+        int end = raw.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return raw.substring(start, end + 1);
+        }
+        return raw;
+    }
+
+    private String str(Map<String, Object> map, String key, String def) {
+        Object v = map.get(key);
+        return v instanceof String s ? s : def;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> list(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        if (v instanceof List<?> l) {
+            return l.stream().map(Object::toString).collect(Collectors.toList());
+        }
+        return List.of();
+    }
+
+    private long num(Map<String, Object> map, String key, long def) {
+        Object v = map.get(key);
+        if (v instanceof Number n) return n.longValue();
+        if (v instanceof String s) {
+            try { return Long.parseLong(s); } catch (NumberFormatException ignored) {}
+        }
+        return def;
+    }
+
+    private static final String DECOMPOSITION_SYSTEM_PROMPT =
+            "你是一个任务分解引擎。根据任务描述，将其拆解为子任务列表。" +
+            "仅输出合法的 JSON，格式如下：\n" +
+            "{\n" +
+            "  \"subtasks\": [\n" +
+            "    {\"id\": \"1\", \"type\": \"ANALYZE\", \"description\": \"...\", " +
+            "\"tools\": [\"web_search\"], \"dependencies\": []},\n" +
+            "    {\"id\": \"2\", \"type\": \"IMPLEMENT\", \"description\": \"...\", " +
+            "\"tools\": [\"code_executor\"], \"dependencies\": [\"1\"]}\n" +
+            "  ]\n" +
+            "}\n" +
+            "可用类型: ANALYZE, DESIGN, IMPLEMENT, TEST, DOCUMENT, CREATE, MODIFY, DELETE, " +
+            "QUERY, DEPLOY, CONFIGURE, MIGRATE, INTEGRATE。\n" +
+            "可用工具: web_search, file_read, file_write, code_executor, knowledge_search, " +
+            "shell_executor, database_query。\n" +
+            "dependencies 填写依赖的子任务 id 列表（无依赖填空数组）。" +
+            "确保每个 id 唯一，dependencies 只引用存在的 id。";
 
     /**
      * 树形分解：递归构建 2 层深的子树。

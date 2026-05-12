@@ -121,4 +121,18 @@ public interface MemorySystem {
      * @return 包含各层条目数量、token 总量、平均重要度等指标的 {@link MemoryStats}
      */
     MemoryStats getStats();
+
+    /**
+     * 获取所有长期记忆条目的不可变快照。
+     *
+     * @return 长期记忆条目列表
+     */
+    List<MemoryEntry> getLongTermEntries();
+
+    /**
+     * 从长期记忆层移除指定条目。
+     *
+     * @param entryId 待移除的条目 ID
+     */
+    void removeLongTermEntry(String entryId);
 }

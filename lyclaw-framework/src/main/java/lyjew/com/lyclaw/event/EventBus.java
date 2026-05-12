@@ -49,4 +49,13 @@ public interface EventBus {
      * 通常用于测试清理或系统重置场景。
      */
     void clear();
+
+    /**
+     * 异步发布事件，不阻塞调用方。
+     *
+     * @param event 要发布的事件对象
+     */
+    default void publishAsync(Event event) {
+        publish(event);
+    }
 }

@@ -1,8 +1,8 @@
 package lyjew.com.lyclaw.action.tool;
 
 import lyjew.com.lyclaw.action.util.CommandExecutor;
-import lyjew.com.lyclaw.framework.annotation.Tool;
-import lyjew.com.lyclaw.framework.annotation.Param;
+import lyjew.com.lyclaw.annotation.tool.Tool;
+import lyjew.com.lyclaw.annotation.tool.Param;
 
 /**
  * 系统命令执行工具，在子进程中通过 {@code sh -c} 执行 Shell 命令。
