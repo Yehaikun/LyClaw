@@ -62,9 +62,9 @@ public class FallbackChatModel implements ChatModel {
         return delegate.stream(request)
                 .onErrorResume(error -> {
                     if (shouldFallback(error)) {
-                        log.warn("{} 调用失败，触发降级链: {}",
+                        log.warn("{} 调用失败，触发降级链: {}，错误: {}",
                                 provider(), String.join(" -> ", chain),
-                                error instanceof Exception ? ((Exception) error).getMessage() : error.toString());
+                                error.getMessage(), error);
                         return tryFallbackChain(request);
                     }
                     return Flux.error(error);

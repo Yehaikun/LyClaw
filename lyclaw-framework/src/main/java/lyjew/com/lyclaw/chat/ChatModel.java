@@ -112,7 +112,7 @@ public interface ChatModel {
         }
     }
 
-    /** 工具调用合并逻辑：同 index 的追加 arguments，不同 index 的新增 */
+    /** 工具调用合并逻辑：同 index/id 的追加 arguments，无 ID 的追加到最后一条 */
     private void mergeToolCall(java.util.List<ModelResponse.ToolCallRequest> merged,
                                ModelResponse.ToolCallRequest incoming) {
         if (incoming.getId() != null) {
@@ -124,7 +124,13 @@ public interface ChatModel {
                     return;
                 }
             }
+            merged.add(incoming);
+        } else if (!merged.isEmpty() && incoming.getArguments() != null) {
+            // 无 ID 的 chunk 追加到最后一条已存在的 tool call
+            ModelResponse.ToolCallRequest last = merged.get(merged.size() - 1);
+            last.appendArguments(incoming.getArguments());
+        } else if (incoming.getArguments() != null || incoming.getName() != null) {
+            merged.add(incoming);
         }
-        merged.add(incoming);
     }
 }

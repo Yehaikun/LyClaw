@@ -114,11 +114,16 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
             Map<String, Object> msgMap = new LinkedHashMap<>();
             msgMap.put("role", msg.getRole());
             msgMap.put("content", msg.getContent() != null ? msg.getContent() : "");
+            if (msg.getThinking() != null && !msg.getThinking().isEmpty()) {
+                msgMap.put("reasoning_content", msg.getThinking());
+            }
             if (msg.getToolCalls() != null && !msg.getToolCalls().isEmpty()) {
                 List<Map<String, Object>> toolCalls = new ArrayList<>();
                 for (ToolCall tc : msg.getToolCalls()) {
+                    String callId = tc.getToolCallId() != null ? tc.getToolCallId()
+                            : (tc.getId() != null ? tc.getId() : "");
                     toolCalls.add(Map.of(
-                            "id", tc.getId() != null ? tc.getId() : "",
+                            "id", callId,
                             "type", "function",
                             "function", Map.of(
                                     "name", tc.getName() != null ? tc.getName() : "",
@@ -172,17 +177,22 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
     @Override
     @SuppressWarnings("unchecked")
     protected Flux<String> sendNativeRequest(Object nativeRequest) {
+        log.debug("OpenAI request body: {}", nativeRequest);
         return webClient.post()
                 .uri(ENDPOINT)
                 .bodyValue(nativeRequest)
                 .retrieve()
                 .onStatus(status -> status.isError(), response ->
                         response.bodyToMono(String.class)
-                                .flatMap(body -> Mono.error(ModelException.withRawResponse(
-                                        response.statusCode().value(),
-                                        "OpenAI API 错误: " + body, body))))
+                                .flatMap(body -> {
+                                    log.error("OpenAI API error: status={} body={}", response.statusCode().value(), body);
+                                    return Mono.error(ModelException.withRawResponse(
+                                            response.statusCode().value(),
+                                            "OpenAI API 错误: " + body, body));
+                                }))
                 .bodyToFlux(String.class)
-                .timeout(Duration.ofSeconds(300));
+                .timeout(Duration.ofSeconds(300))
+                .doOnError(e -> log.error("OpenAI request error: {}", e.getMessage(), e));
     }
 
     @Override
@@ -208,25 +218,29 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
             String finishReason = choice.has("finish_reason") && !choice.get("finish_reason").isNull()
                     ? choice.get("finish_reason").asText() : null;
 
+            // 兼容流式(delta)和非流式(message)两种响应格式
             JsonNode delta = choice.get("delta");
+            JsonNode message = choice.get("message");
+            JsonNode source = delta != null ? delta : message;
+
             String content = "";
             String thinking = "";
             List<ModelResponse.ToolCallRequest> toolCalls = null;
 
-            if (delta != null) {
-                if (delta.has("content") && !delta.get("content").isNull()) {
-                    content = delta.get("content").asText();
+            if (source != null) {
+                if (source.has("content") && !source.get("content").isNull()) {
+                    content = source.get("content").asText();
                 }
 
                 // thinking 内容提取
-                if (delta.has("reasoning_content") && !delta.get("reasoning_content").isNull()) {
-                    thinking = delta.get("reasoning_content").asText();
+                if (source.has("reasoning_content") && !source.get("reasoning_content").isNull()) {
+                    thinking = source.get("reasoning_content").asText();
                 }
 
-                // tool_calls 增量拼接
-                if (delta.has("tool_calls") && !delta.get("tool_calls").isNull()) {
+                // tool_calls
+                if (source.has("tool_calls") && !source.get("tool_calls").isNull()) {
                     toolCalls = new ArrayList<>();
-                    for (JsonNode tc : delta.get("tool_calls")) {
+                    for (JsonNode tc : source.get("tool_calls")) {
                         ModelResponse.ToolCallRequest tcr = new ModelResponse.ToolCallRequest();
                         if (tc.has("id") && !tc.get("id").isNull()) {
                             tcr.setId(tc.get("id").asText());

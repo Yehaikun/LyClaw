@@ -23,17 +23,18 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Auto-configuration for the {@link ToolRegistry} and its related
  * discovery / filtering beans.
+ *
+ * <p>The {@code toolRegistry} bean is only created when no other
+ * {@link ToolRegistry} implementation (e.g. {@code DefaultToolRegistry})
+ * is already present in the context — this avoids duplicate registries.</p>
  */
 @AutoConfiguration
 @ConditionalOnClass(ToolRegistry.class)
 public class ToolAutoConfiguration {
 
     /**
-     * 注册默认的ToolRegistry Bean。
-     * 仅在上下文中不存在ToolRegistry时创建，允许用户自定义覆盖。
-     * 内部使用ConcurrentHashMap管理工具实例。
-     *
-     * @return 默认的工具注册表实例
+     * Fallback {@link ToolRegistry} — only created when the action module's
+     * {@code DefaultToolRegistry} is not available (services outside the action scope).
      */
     @Bean
     @ConditionalOnMissingBean
@@ -42,39 +43,25 @@ public class ToolAutoConfiguration {
             private final Map<String, Tool> tools = new ConcurrentHashMap<>();
 
             @Override
-            public void register(Tool tool) {
-                tools.put(tool.getName(), tool);
-            }
+            public void register(Tool tool) { tools.put(tool.getName(), tool); }
 
             @Override
-            public Tool get(String name) {
-                return tools.get(name);
-            }
+            public Tool get(String name) { return tools.get(name); }
 
             @Override
             public List<ToolDefinition> getAllDefinitions() {
-                return tools.values().stream()
-                        .map(Tool::getDefinition)
-                        .toList();
+                return tools.values().stream().map(Tool::getDefinition).toList();
             }
 
             @Override
             public ToolResult execute(ToolCall call, ChatContext ctx) {
                 Tool tool = tools.get(call.getName());
-                if (tool == null) {
-                    throw new ToolNotFoundException("Tool not found: " + call.getName());
-                }
+                if (tool == null) throw new ToolNotFoundException("Tool not found: " + call.getName());
                 return tool.execute(call, ctx);
             }
         };
     }
 
-    /**
-     * 注册工具注解处理器，用于扫描和注册{@code @Tool}注解标记的方法。
-     *
-     * @param registry 工具注册表
-     * @return 工具注解处理器实例
-     */
     @Bean
     @ConditionalOnMissingBean
     public ToolAnnotationProcessor toolAnnotationProcessor(ToolRegistry registry) {

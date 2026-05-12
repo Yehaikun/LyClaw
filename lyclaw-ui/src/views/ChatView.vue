@@ -18,6 +18,19 @@ const settingsStore = useSettingsStore()
 
 const inputText = ref('')
 const messageListRef = ref<HTMLElement | null>(null)
+const userScrolledUp = ref(false)
+
+const SCROLL_BOTTOM_THRESHOLD = 80
+
+function isNearBottom(): boolean {
+  if (!messageListRef.value) return true
+  const el = messageListRef.value
+  return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_BOTTOM_THRESHOLD
+}
+
+function onMessageListScroll() {
+  userScrolledUp.value = !isNearBottom()
+}
 
 const hasMessages = computed(() => chatStore.messages.length > 0)
 
@@ -99,22 +112,37 @@ function handleModelChange(model: string) {
   chatStore.setModel(model, getProviderForModel(model))
 }
 
-function scrollToBottom() {
+function scrollToBottom(force = false) {
   nextTick(() => {
-    if (messageListRef.value && settingsStore.autoScroll) {
-      messageListRef.value.scrollTop = messageListRef.value.scrollHeight
-    }
+    if (!messageListRef.value) return
+    if (!settingsStore.autoScroll) return
+    if (!force && userScrolledUp.value) return
+    messageListRef.value.scrollTop = messageListRef.value.scrollHeight
   })
 }
 
 watch(
   () => chatStore.messages.length,
-  () => scrollToBottom(),
+  () => {
+    userScrolledUp.value = false
+    scrollToBottom(true)
+  },
 )
 
 watch(
   () => chatStore.currentStreamingText,
   () => scrollToBottom(),
+)
+
+watch(
+  () => chatStore.isStreaming,
+  (streaming) => {
+    if (!streaming) {
+      // Streaming just finished — final scroll to bottom
+      userScrolledUp.value = false
+      scrollToBottom(true)
+    }
+  },
 )
 </script>
 
@@ -150,7 +178,7 @@ watch(
 
     <!-- Messages view -->
     <template v-if="hasMessages || chatStore.isStreaming">
-      <div ref="messageListRef" class="message-list">
+      <div ref="messageListRef" class="message-list" @scroll="onMessageListScroll">
         <MessageBubble
           v-for="(msg, index) in allMessages"
           :key="index"
@@ -279,7 +307,7 @@ watch(
   flex: 1;
   overflow-y: auto;
   padding: var(--spacing-md) 0;
-  scroll-behavior: smooth;
+  /* scroll-behavior removed: smooth causes jitter during SSE streaming */
 }
 
 .message-list::-webkit-scrollbar {

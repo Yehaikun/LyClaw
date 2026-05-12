@@ -30,8 +30,10 @@ import plaintext from 'highlight.js/lib/languages/plaintext'
 import properties from 'highlight.js/lib/languages/properties'
 import makefile from 'highlight.js/lib/languages/makefile'
 import mermaid from 'mermaid'
+import katex from 'katex'
 import '@/assets/styles/markdown.css'
 import 'highlight.js/styles/github.css'
+import 'katex/dist/katex.min.css'
 
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('js', javascript)
@@ -72,6 +74,7 @@ mermaid.initialize({
   startOnLoad: false,
   theme: 'default',
   securityLevel: 'loose',
+  suppressErrorRendering: true,
 })
 
 marked.use({
@@ -89,10 +92,97 @@ const purifyConfig: any = {
 
 const props = defineProps<{
   content: string
+  isStreaming?: boolean
 }>()
 
 const rootRef = ref<HTMLElement | null>(null)
 const renderedHtml = ref('')
+
+// ── LaTeX 渲染 ──────────────────────────────────────────────
+
+let katexPlaceholderId = 0
+
+function renderLatex(text: string): string {
+  katexPlaceholderId = 0
+  const placeholders: Map<string, string> = new Map()
+
+  // 保护 display math：$$...$$ 和 \[...\]
+  let result = text.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula: string) => {
+    const id = `KATEX_BLOCK_${katexPlaceholderId++}`
+    try {
+      const html = katex.renderToString(formula.trim(), {
+        displayMode: true,
+        throwOnError: false,
+        trust: true,
+      })
+      placeholders.set(id, html)
+    } catch {
+      placeholders.set(id, `<code class="katex-error">${escapeHtml(formula)}</code>`)
+    }
+    return id
+  })
+
+  result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula: string) => {
+    const id = `KATEX_BLOCK_${katexPlaceholderId++}`
+    try {
+      const html = katex.renderToString(formula.trim(), {
+        displayMode: true,
+        throwOnError: false,
+        trust: true,
+      })
+      placeholders.set(id, html)
+    } catch {
+      placeholders.set(id, `<code class="katex-error">${escapeHtml(formula)}</code>`)
+    }
+    return id
+  })
+
+  // 保护 inline math：$...$ 和 \(...\)
+  result = result.replace(/\$([^\s$][^$]*?)\$/g, (_match, formula: string) => {
+    const id = `KATEX_INLINE_${katexPlaceholderId++}`
+    try {
+      const html = katex.renderToString(formula.trim(), {
+        displayMode: false,
+        throwOnError: false,
+        trust: true,
+      })
+      placeholders.set(id, html)
+    } catch {
+      placeholders.set(id, `<code class="katex-error">${escapeHtml(formula)}</code>`)
+    }
+    return id
+  })
+
+  result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_match, formula: string) => {
+    const id = `KATEX_INLINE_${katexPlaceholderId++}`
+    try {
+      const html = katex.renderToString(formula.trim(), {
+        displayMode: false,
+        throwOnError: false,
+        trust: true,
+      })
+      placeholders.set(id, html)
+    } catch {
+      placeholders.set(id, `<code class="katex-error">${escapeHtml(formula)}</code>`)
+    }
+    return id
+  })
+
+  // 还原占位符
+  for (const [id, html] of placeholders) {
+    result = result.replace(id, html)
+  }
+
+  return result
+}
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+// ── 代码块增强 ──────────────────────────────────────────────
 
 function extractLang(block: Element): string | null {
   const cls = block.className
@@ -106,12 +196,31 @@ function enhanceCodeBlocks() {
   pres.forEach((pre) => {
     if (pre.parentElement?.classList.contains('code-block-wrapper')) return
     if (pre.parentElement?.classList.contains('mermaid-wrapper')) return
+    if (pre.parentElement?.classList.contains('mermaid-error')) return
     const code = pre.querySelector('code')
     if (!code) return
 
     const lang = code instanceof HTMLElement && code.className
       ? extractLang(code)
       : null
+
+    if (lang === 'mermaid') {
+      const wrapper = document.createElement('div')
+      wrapper.className = 'code-block-wrapper'
+
+      const header = document.createElement('div')
+      header.className = 'code-block-header'
+
+      const langLabel = document.createElement('span')
+      langLabel.className = 'code-block-lang'
+      langLabel.textContent = 'mermaid'
+
+      header.appendChild(langLabel)
+      wrapper.appendChild(header)
+      pre.parentNode!.insertBefore(wrapper, pre)
+      wrapper.appendChild(pre)
+      return
+    }
 
     hljs.highlightElement(code as HTMLElement)
 
@@ -159,6 +268,11 @@ function wrapTables() {
   })
 }
 
+// ── Mermaid 图表 ────────────────────────────────────────────
+
+// 缓存已渲染的 SVG，避免每次 DOM 更新都重新调用 mermaid.render()
+const mermaidSvgCache = new Map<string, string>()
+
 async function enhanceMermaidBlocks() {
   if (!rootRef.value) return
   const pres = rootRef.value.querySelectorAll('pre')
@@ -166,6 +280,7 @@ async function enhanceMermaidBlocks() {
 
   pres.forEach((pre) => {
     if (pre.parentElement?.classList.contains('mermaid-wrapper')) return
+    if (pre.parentElement?.classList.contains('mermaid-error')) return
     const code = pre.querySelector('code')
     if (!code) return
 
@@ -176,52 +291,97 @@ async function enhanceMermaidBlocks() {
     if (lang !== 'mermaid') return
 
     const mermaidCode = code.textContent || ''
+    const cacheKey = mermaidCode.trim()
+
+    const cachedSvg = mermaidSvgCache.get(cacheKey)
+    if (cachedSvg) {
+      replacePreWithSvg(pre, cachedSvg)
+      return
+    }
+
     const id = 'mermaid-' + Math.random().toString(36).slice(2, 10)
 
     const task = mermaid.render(id, mermaidCode).then(({ svg }) => {
-      const wrapper = document.createElement('div')
-      wrapper.className = 'mermaid-wrapper'
-
-      const toolbar = document.createElement('div')
-      toolbar.className = 'mermaid-toolbar'
-
-      const label = document.createElement('span')
-      label.className = 'mermaid-label'
-      label.textContent = 'mermaid'
-
-      const downloadSvgBtn = document.createElement('button')
-      downloadSvgBtn.className = 'mermaid-download-btn'
-      downloadSvgBtn.textContent = 'SVG'
-      downloadSvgBtn.title = '下载 SVG'
-      downloadSvgBtn.onclick = () => downloadSvg(svg)
-
-      const downloadPngBtn = document.createElement('button')
-      downloadPngBtn.className = 'mermaid-download-btn'
-      downloadPngBtn.textContent = 'PNG'
-      downloadPngBtn.title = '下载 PNG'
-      downloadPngBtn.onclick = () => downloadPng(svg)
-
-      toolbar.appendChild(label)
-      toolbar.appendChild(downloadSvgBtn)
-      toolbar.appendChild(downloadPngBtn)
-
-      const svgContainer = document.createElement('div')
-      svgContainer.className = 'mermaid-svg'
-      svgContainer.innerHTML = svg
-
-      wrapper.appendChild(toolbar)
-      wrapper.appendChild(svgContainer)
-      pre.parentNode!.insertBefore(wrapper, pre)
-      pre.remove()
+      mermaidSvgCache.set(cacheKey, svg)
+      replacePreWithSvg(pre, svg)
     }).catch((err: Error) => {
       console.warn('Mermaid render failed:', err.message)
-      // Keep the original code block on error
+      // 降级：保留 code-block-wrapper，标记为错误状态
+      let outerWrapper: HTMLElement | null = null
+      let parent: Node | null = pre.parentNode
+      while (parent && parent instanceof HTMLElement) {
+        if (parent.classList.contains('code-block-wrapper')) {
+          outerWrapper = parent
+          break
+        }
+        parent = parent.parentNode
+      }
+      if (outerWrapper) {
+        outerWrapper.classList.add('mermaid-error')
+        const langLabel = outerWrapper.querySelector('.code-block-lang')
+        if (langLabel) {
+          langLabel.textContent = 'mermaid (parse error)'
+        }
+      }
     })
 
     tasks.push(task)
   })
 
   await Promise.all(tasks)
+}
+
+function replacePreWithSvg(pre: HTMLPreElement, svg: string) {
+  let outerWrapper: HTMLElement | null = null
+  let parent: Node | null = pre.parentNode
+  while (parent && parent instanceof HTMLElement) {
+    if (parent.classList.contains('code-block-wrapper')) {
+      outerWrapper = parent
+      break
+    }
+    parent = parent.parentNode
+  }
+
+  const wrapper = document.createElement('div')
+  wrapper.className = 'mermaid-wrapper'
+
+  const toolbar = document.createElement('div')
+  toolbar.className = 'mermaid-toolbar'
+
+  const label = document.createElement('span')
+  label.className = 'mermaid-label'
+  label.textContent = 'mermaid'
+
+  const downloadSvgBtn = document.createElement('button')
+  downloadSvgBtn.className = 'mermaid-download-btn'
+  downloadSvgBtn.textContent = 'SVG'
+  downloadSvgBtn.title = '下载 SVG'
+  downloadSvgBtn.onclick = () => downloadSvg(svg)
+
+  const downloadPngBtn = document.createElement('button')
+  downloadPngBtn.className = 'mermaid-download-btn'
+  downloadPngBtn.textContent = 'PNG'
+  downloadPngBtn.title = '下载 PNG'
+  downloadPngBtn.onclick = () => downloadPng(svg)
+
+  toolbar.appendChild(label)
+  toolbar.appendChild(downloadSvgBtn)
+  toolbar.appendChild(downloadPngBtn)
+
+  const svgContainer = document.createElement('div')
+  svgContainer.className = 'mermaid-svg'
+  svgContainer.innerHTML = svg
+
+  wrapper.appendChild(toolbar)
+  wrapper.appendChild(svgContainer)
+
+  if (outerWrapper) {
+    outerWrapper.parentNode!.insertBefore(wrapper, outerWrapper)
+    outerWrapper.remove()
+  } else {
+    pre.parentNode!.insertBefore(wrapper, pre)
+    pre.remove()
+  }
 }
 
 function downloadSvg(svg: string) {
@@ -264,6 +424,8 @@ function downloadPng(svg: string) {
   img.src = url
 }
 
+// ── 编排 ────────────────────────────────────────────────────
+
 function enhanceAll() {
   enhanceCodeBlocks()
   enhanceMermaidBlocks()
@@ -272,7 +434,8 @@ function enhanceAll() {
 
 function renderMarkdown(text: string): string {
   if (!text) return ''
-  const raw = marked.parse(text) as string
+  const withLatex = renderLatex(text)
+  const raw = marked.parse(withLatex) as string
   return DOMPurify.sanitize(raw, purifyConfig) as unknown as string
 }
 
@@ -283,6 +446,15 @@ watch(
     nextTick(() => enhanceAll())
   },
   { immediate: true },
+)
+
+watch(
+  () => props.isStreaming,
+  (streaming) => {
+    if (!streaming) {
+      nextTick(() => enhanceAll())
+    }
+  },
 )
 </script>
 

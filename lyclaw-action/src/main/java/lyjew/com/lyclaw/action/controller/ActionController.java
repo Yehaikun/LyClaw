@@ -6,6 +6,7 @@ import lyjew.com.lyclaw.action.ToolExecuteRequest;
 import lyjew.com.lyclaw.action.impl.ActionExecutorImpl;
 import lyjew.com.lyclaw.action.impl.DefaultToolRegistry;
 import lyjew.com.lyclaw.action.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolRegistry;
 import lyjew.com.lyclaw.dto.SkillResult;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.security.SandboxLevel;
@@ -40,7 +41,7 @@ public class ActionController {
 
     private final ActionExecutor actionExecutor;
     private final ActionExecutorImpl actionExecutorImpl;
-    private final DefaultToolRegistry toolRegistry;
+    private final ToolRegistry toolRegistry;
     private final SkillRegistry skillRegistry;
 
     /**
@@ -48,7 +49,7 @@ public class ActionController {
      */
     public ActionController(ActionExecutor actionExecutor,
                             ActionExecutorImpl actionExecutorImpl,
-                            DefaultToolRegistry toolRegistry,
+                            ToolRegistry toolRegistry,
                             SkillRegistry skillRegistry) {
         this.actionExecutor = actionExecutor;
         this.actionExecutorImpl = actionExecutorImpl;
@@ -137,9 +138,12 @@ public class ActionController {
      */
     @GetMapping("/tools/stats")
     public Mono<Map<String, Object>> getToolStats() {
-        return Mono.just(Map.of(
-                "totalCount", toolRegistry.size(),
-                "categoryStats", toolRegistry.getCategoryStats()
-        ));
+        if (toolRegistry instanceof DefaultToolRegistry reg) {
+            return Mono.just(Map.of(
+                    "totalCount", reg.size(),
+                    "categoryStats", reg.getCategoryStats()
+            ));
+        }
+        return Mono.just(Map.of("totalCount", 0, "categoryStats", Map.of()));
     }
 }

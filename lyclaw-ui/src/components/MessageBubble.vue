@@ -35,7 +35,7 @@ const showStreamingCursor = computed(
         </div>
 
         <div class="message-content">
-          <MarkdownRenderer :content="message.content" />
+          <MarkdownRenderer :content="message.content" :is-streaming="isStreaming" />
           <span v-if="showStreamingCursor" class="streaming-cursor">▊</span>
         </div>
 

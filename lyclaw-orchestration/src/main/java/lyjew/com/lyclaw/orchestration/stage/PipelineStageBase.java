@@ -100,6 +100,8 @@ public abstract class PipelineStageBase implements ReactivePipelineStage {
         return lyjew.com.lyclaw.model.ChatRequest.builder()
                 .messages(messages)
                 .stream(true)
+                .tools(original.getTools())
+                .toolChoice(original.getToolChoice() != null ? original.getToolChoice() : "auto")
                 .build();
     }
 

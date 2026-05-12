@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  * 支持通过 {@link #registerMcpTool} 便捷地创建 MCP 适配工具。</p>
  */
 @Slf4j
-@Component("actionDefaultToolRegistry")
+@Component
 public class DefaultToolRegistry implements ToolRegistry {
 
     /** 工具存储，以工具名为键 */

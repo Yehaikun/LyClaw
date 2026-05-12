@@ -35,6 +35,9 @@ public class Message extends BaseDTO {
     /** 工具调用 ID，用于将 tool 消息关联到对应的 tool_calls */
     private String toolCallId;
 
+    /** 思考/推理内容，用于 DeepSeek 等 reasoning 模型（reasoning_content） */
+    private String thinking;
+
     /**
      * 创建用户消息。
      *
