@@ -1,3 +1,49 @@
+<!--
+  SettingsView：设置页面视图，提供LyClaw应用的全局配置管理界面。
+
+  五大设置区域（从上至下排列）：
+
+  1. 外观设置（Appearance）：
+     - Font Size：全局字体大小选择（Small 14px / Medium 16px / Large 18px）
+     - Code Font Size：代码块字体大小选择（12px / 14px / 16px）
+     - Show Line Numbers：代码块是否显示行号（toggle开关）
+     - Compact Mode：紧凑模式开关，减少视觉间距（toggle开关）
+
+  2. 模型设置（Model Settings）：
+     - Default Model：通过ModelSelector组件选择默认AI模型
+     - Max Tokens：单次响应的最大token数限制（1-32768数值输入）
+     - Temperature：模型创造性参数（0-2滑块 + 实时数值提示）
+     - Top P：模型采样核概率参数（0-1滑块 + 实时数值提示）
+
+  3. API设置（API Settings）：
+     - API Base URL：后端API基础地址（可留空使用同源地址）
+     - Max Retries：请求失败时的最大重试次数（0-20）
+     - Retry Delay：重试间隔毫秒数（0-30000，步长500ms）
+     - Sandbox Level：代码执行沙箱安全级别（NONE / BASIC / ADVANCED / FULL）
+
+  4. 聊天设置（Chat Settings）：
+     - Send on Enter：是否按Enter键直接发送消息（否则Enter换行）
+     - Auto Scroll：流式输出时是否自动跟随滚动到底部
+     - Developer Mode：开发模式开关（可能影响调试信息展示）
+
+  5. 关于（About）：
+     - LyClaw v2.0.0 版本信息
+     - 产品描述："AI 调度引擎 · 多智能体协作平台"
+     - 默认模型信息展示
+
+  数据持久化：
+  - 所有设置通过SettingsStore管理，使用v-model或事件绑定双向同步
+  - SettingsStore内部通过watch自动将变更持久化到localStorage
+  - 页面刷新或重新打开后设置自动恢复
+
+  交互控件类型：
+  - select下拉框：Font Size、Code Font Size、Sandbox Level
+  - toggle开关（纯CSS实现）：Show Line Numbers、Compact Mode、Send on Enter、Auto Scroll、Developer Mode
+  - range滑块：Temperature、Top P（带实时数值提示）
+  - number数字输入：Max Tokens、Max Retries、Retry Delay
+  - text文本输入：API Base URL
+  - ModelSelector组件：Default Model选择
+-->
 <script setup lang="ts">
 import { ref } from 'vue'
 import {
@@ -12,6 +58,7 @@ import ModelSelector from '@/components/ModelSelector.vue'
 
 const settings = useSettingsStore()
 
+/** 可选模型列表：用于Default Model设置项中ModelSelector的候选模型 */
 const availableModels = [
   'deepseek-4-pro',
   'deepseek-v3',
@@ -20,18 +67,21 @@ const availableModels = [
   'gpt-4o',
 ]
 
+/** 字体大小选项：Small/Medium/Large对应14px/16px/18px */
 const fontSizeOptions = [
   { value: 14, label: 'Small (14px)' },
   { value: 16, label: 'Medium (16px)' },
   { value: 18, label: 'Large (18px)' },
 ]
 
+/** 代码字体大小选项：影响代码块和等宽字体文本的显示 */
 const codeFontSizeOptions = [
   { value: 12, label: '12px' },
   { value: 14, label: '14px' },
   { value: 16, label: '16px' },
 ]
 
+/** 沙箱安全级别选项：控制代码执行的隔离程度 */
 const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
 </script>
 
@@ -40,7 +90,7 @@ const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
     <h1 class="settings-title">Settings</h1>
 
     <div class="settings-sections">
-      <!-- Appearance -->
+      <!-- 外观设置 -->
       <section class="settings-card">
         <div class="section-header">
           <Palette :size="20" class="section-icon" />
@@ -106,7 +156,7 @@ const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
         </div>
       </section>
 
-      <!-- Model Settings -->
+      <!-- 模型设置 -->
       <section class="settings-card">
         <div class="section-header">
           <Cpu :size="20" class="section-icon" />
@@ -166,7 +216,7 @@ const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
         </div>
       </section>
 
-      <!-- API Settings -->
+      <!-- API 设置 -->
       <section class="settings-card">
         <div class="section-header">
           <Globe :size="20" class="section-icon" />
@@ -227,7 +277,7 @@ const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
         </div>
       </section>
 
-      <!-- Chat Settings -->
+      <!-- 聊天设置 -->
       <section class="settings-card">
         <div class="section-header">
           <MessageSquare :size="20" class="section-icon" />
@@ -271,7 +321,7 @@ const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
         </div>
       </section>
 
-      <!-- About -->
+      <!-- 关于 -->
       <section class="settings-card about-card">
         <div class="section-header">
           <Info :size="20" class="section-icon" />
@@ -432,7 +482,7 @@ const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
   cursor: pointer;
 }
 
-/* Toggle switch */
+/* 开关切换组件（纯CSS实现，无JavaScript依赖） */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -479,7 +529,7 @@ const sandboxLevels = ['NONE', 'BASIC', 'ADVANCED', 'FULL']
   transform: translateX(20px);
 }
 
-/* About section */
+/* 关于区域：居中展示版本和产品信息 */
 .about-content {
   text-align: center;
   padding: var(--spacing-md) 0;

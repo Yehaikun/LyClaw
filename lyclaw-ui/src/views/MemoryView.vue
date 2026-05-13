@@ -1,3 +1,60 @@
+<!--
+  MemoryView：记忆系统管理视图，提供四层记忆架构的可视化浏览、语义检索和手动记录功能。
+
+  页面包含4个功能区域：
+
+  1. 记忆统计栏（stats-section）：
+     展示四层记忆的当前存储数量：
+
+     - 感知层（SENSORY：青色指示条）：perceptionCount条，原始输入数据的临时缓存
+     - 短期记忆（SHORT_TERM：主题色指示条）：shortTermCount条，近期会话上下文
+     - 长期记忆（LONG_TERM：绿色指示条）：longTermCount条，经过提炼和归档的持久记忆
+     - 实体记忆（ENTITY：琥珀色指示条）：entityCount条，用户、项目等实体关联信息
+
+     底部统计行：总Token数 + 平均重要性百分比
+
+  2. 记忆检索区域（search-section）：
+     - 搜索栏：Search图标 + 文本输入框 + "检索"按钮（支持Enter键触发）
+     - 搜索选项：
+       · Top-K滑块：控制返回结果数量（1-50），实时显示当前值
+       · 记忆层筛选：4个chip按钮切换选中状态，默认全选
+       · 更多筛选按钮：展开/收起记忆类别筛选（7种类别chip按钮）
+     - 检索API调用参数：
+       · alpha(0.4)=语义相似度权重, beta(0.3)=重要性权重, gamma(0.2)=时新性权重, delta(0.1)=访问频率权重
+       · layerFilter：未全选时传递选中层数组，全选时传undefined
+       · categoryFilter：未选任何类别时传undefined，否则传递选中类别数组
+
+     结果展示（三种状态）：
+     - 加载状态：Loader2旋转动画 + "检索中..."
+     - 有结果：结果计数 + 记忆条目卡片列表
+     - 无结果（已搜索）：Database图标 + "未找到记忆条目"
+     - 未搜索（初始）：Search图标 + "输入关键词开始检索记忆"
+
+     每张记忆卡片展示：
+     - 卡片头部：层级徽章（彩色边框）+ 类别徽章 + 创建日期 + 访问次数
+     - 记忆内容：截断显示最多200字符
+     - 重要性条：标签 + 进度条（颜色编码）+ 百分比值
+     - 标签列表（若有）：pill badge展示
+
+  3. 手动记录区域（ingest-section）：
+     - 切换按钮：显示/隐藏记录表单
+     - 记录表单：
+       · textarea：输入要记录的内容
+       · 角色选择：User/Assistant/System三个radio按钮（pill样式+激活高亮）
+       · "记录"按钮：调用memoryStore.ingestMemory提交数据
+     - 提交后自动清空内容并折叠表单
+
+  四层记忆架构说明：
+  - SENSORY（感知层）：缓存最近的原始对话数据，未经处理
+  - SHORT_TERM（短期记忆）：当前会话或近期会话的上下文摘要
+  - LONG_TERM（长期记忆）：经过提炼、重要性评估和长期保存的结构化知识
+  - ENTITY（实体记忆）：与特定用户、项目、主题关联的实体级信息
+
+  重要性颜色编码（importanceColor）：
+  - ≥0.7（高重要性）：主题色（var(--color-primary)）
+  - 0.4-0.7（中等）：琥珀色（var(--color-accent-amber)）
+  - <0.4（低重要性）：柔和灰色（var(--color-muted-soft)）
+-->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import {
@@ -23,18 +80,27 @@ import { MemoryLayerType, MemoryCategory } from '@/types'
 
 const memoryStore = useMemoryStore()
 
-// Search state
+// ---- 检索状态 ----
+/** 搜索关键词输入 */
 const searchText = ref('')
+/** 返回结果数量限制（1-50，滑块控制） */
 const topK = ref(10)
+/** 当前选中的记忆层（默认全选4层） */
 const selectedLayers = ref<MemoryLayerType[]>([MemoryLayerType.SENSORY, MemoryLayerType.SHORT_TERM, MemoryLayerType.LONG_TERM, MemoryLayerType.ENTITY])
+/** 当前选中的记忆类别（空数组表示不限类别） */
 const selectedCategories = ref<MemoryCategory[]>([])
+/** 是否展开高级筛选面板（类别筛选） */
 const showAdvancedFilters = ref(false)
 
-// Ingest panel state
+// ---- 手动记录状态 ----
+/** 是否显示记录面板 */
 const showIngestPanel = ref(false)
+/** 记录内容输入 */
 const ingestContent = ref('')
+/** 记录的角色类型（user/assistant/system） */
 const ingestRole = ref<'user' | 'assistant' | 'system'>('user')
 
+/** 四层记忆的展示配置：值、中文标签、颜色标识 */
 const layerOptions: { value: MemoryLayerType; label: string; color: string }[] = [
   { value: MemoryLayerType.SENSORY, label: '感知层', color: 'var(--color-accent-teal)' },
   { value: MemoryLayerType.SHORT_TERM, label: '短期记忆', color: 'var(--color-primary)' },
@@ -42,6 +108,7 @@ const layerOptions: { value: MemoryLayerType; label: string; color: string }[] =
   { value: MemoryLayerType.ENTITY, label: '实体记忆', color: 'var(--color-accent-amber)' },
 ]
 
+/** 7种记忆类别的中文标签配置 */
 const categoryOptions: { value: MemoryCategory; label: string }[] = [
   { value: MemoryCategory.FACT, label: '事实' },
   { value: MemoryCategory.PREFERENCE, label: '偏好' },
@@ -52,6 +119,7 @@ const categoryOptions: { value: MemoryCategory; label: string }[] = [
   { value: MemoryCategory.GOAL, label: '目标' },
 ]
 
+/** 各层记忆条数映射（从memoryStore.stats提取） */
 const layerCountMap = computed(() => {
   const s = memoryStore.stats
   return {
@@ -62,6 +130,7 @@ const layerCountMap = computed(() => {
   }
 })
 
+/** 记忆层到颜色的快速查找映射 */
 const layerColorMap: Record<MemoryLayerType, string> = {
   SENSORY: 'var(--color-accent-teal)',
   SHORT_TERM: 'var(--color-primary)',
@@ -69,6 +138,12 @@ const layerColorMap: Record<MemoryLayerType, string> = {
   ENTITY: 'var(--color-accent-amber)',
 }
 
+/**
+ * 切换记忆层的选中状态：从selectedLayers数组中添加或移除指定层。
+ * 用户点击chip按钮时触发。
+ *
+ * @param layer 要切换的记忆层类型
+ */
 function toggleLayer(layer: MemoryLayerType) {
   const idx = selectedLayers.value.indexOf(layer)
   if (idx >= 0) {
@@ -78,6 +153,11 @@ function toggleLayer(layer: MemoryLayerType) {
   }
 }
 
+/**
+ * 切换记忆类别的选中状态：从selectedCategories数组中添加或移除指定类别。
+ *
+ * @param cat 要切换的记忆类别
+ */
 function toggleCategory(cat: MemoryCategory) {
   const idx = selectedCategories.value.indexOf(cat)
   if (idx >= 0) {
@@ -87,6 +167,17 @@ function toggleCategory(cat: MemoryCategory) {
   }
 }
 
+/**
+ * 执行记忆检索：构造MemoryQuery参数并调用memoryStore.retrieveMemory。
+ *
+ * 参数配置说明：
+ * - alpha(0.4)：语义相似度权重（基于嵌入向量的内容匹配）
+ * - beta(0.3)：重要性权重（高重要性记忆优先返回）
+ * - gamma(0.2)：时新性权重（最近创建的记录优先）
+ * - delta(0.1)：访问频率权重（常被检索的条目优先）
+ * - layerFilter：4层全选时传undefined让后端自行判断，否则传入选中值
+ * - categoryFilter：空数组时传undefined表示不限制类别
+ */
 async function handleSearch() {
   const query: MemoryQuery = {
     queryText: searchText.value || undefined,
@@ -101,6 +192,10 @@ async function handleSearch() {
   await memoryStore.retrieveMemory(query)
 }
 
+/**
+ * 手动记录记忆：构造PerceptionData并提交到memoryStore.ingestMemory。
+ * 提交成功后清空输入内容并折叠表单。
+ */
 async function handleIngest() {
   if (!ingestContent.value.trim()) return
   const data: PerceptionData = {
@@ -115,6 +210,13 @@ async function handleIngest() {
   showIngestPanel.value = false
 }
 
+/**
+ * 格式化ISO日期字符串为中文友好格式。
+ * 如 "1月15日 14:30"
+ *
+ * @param iso ISO格式的日期时间字符串
+ * @returns 格式化的中文日期时间
+ */
 function formatDate(iso: string): string {
   try {
     const d = new Date(iso)
@@ -126,24 +228,45 @@ function formatDate(iso: string): string {
   }
 }
 
+/**
+ * 截断文本到指定最大长度，超出部分添加"..."后缀。
+ *
+ * @param text 原始文本
+ * @param max 最大字符数
+ * @returns 截断后的文本
+ */
 function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + '...' : text
 }
 
+/**
+ * 重要性数值到颜色CSS变量的映射。
+ * ≥0.7→主题色、≥0.4→琥珀色、<0.4→灰色
+ *
+ * @param val 重要性值（0-1之间）
+ * @returns CSS颜色变量
+ */
 function importanceColor(val: number): string {
   if (val >= 0.7) return 'var(--color-primary)'
   if (val >= 0.4) return 'var(--color-accent-amber)'
   return 'var(--color-muted-soft)'
 }
 
+/** 从memoryStore获取的检索结果列表 */
 const entries = computed(() => memoryStore.queryResults ?? [])
+/** 是否已经执行过至少一次搜索 */
 const hasSearched = ref(false)
 
+/**
+ * 执行搜索的前置包装：设置hasSearched标志并调用handleSearch。
+ * 用于区分"尚未搜索"和"已搜索但无结果"两种空状态显示。
+ */
 async function doSearch() {
   hasSearched.value = true
   await handleSearch()
 }
 
+/** 组件挂载时获取记忆统计信息（各层条数、总Token数等） */
 onMounted(() => {
   memoryStore.fetchStats()
 })
@@ -151,7 +274,7 @@ onMounted(() => {
 
 <template>
   <div class="memory-page">
-    <!-- Page Header -->
+    <!-- 页面头部 -->
     <header class="page-header">
       <div class="page-header-title-row">
         <h1 class="page-title">记忆系统</h1>
@@ -160,7 +283,7 @@ onMounted(() => {
       <p class="page-subtitle">四层记忆架构 · 语义检索 · 自动清理</p>
     </header>
 
-    <!-- Section 1: Memory Stats Bar -->
+    <!-- 区域1：记忆统计栏 -->
     <section class="stats-section">
       <div class="stats-grid">
         <div
@@ -187,7 +310,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Section 2: Memory Search -->
+    <!-- 区域2：记忆检索 -->
     <section class="search-section">
       <h2 class="section-title">
         <Search :size="20" />
@@ -257,13 +380,13 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Loading State -->
+      <!-- 加载状态 -->
       <div v-if="memoryStore.isRetrieving" class="loading-state">
         <Loader2 :size="24" class="spin" />
         <span>检索中...</span>
       </div>
 
-      <!-- Results -->
+      <!-- 有结果的搜索结果列表 -->
       <div v-else-if="hasSearched && entries.length > 0" class="results-list">
         <div class="results-header">
           <span>找到 {{ entries.length }} 条结果</span>
@@ -308,20 +431,20 @@ onMounted(() => {
         </article>
       </div>
 
-      <!-- Empty State -->
+      <!-- 无结果（已搜索但无匹配） -->
       <div v-else-if="hasSearched && !memoryStore.isRetrieving" class="empty-state">
         <Database :size="32" />
         <span>未找到记忆条目</span>
       </div>
 
-      <!-- Initial State -->
+      <!-- 未搜索（初始状态） -->
       <div v-else class="empty-state initial-state">
         <Search :size="32" />
         <span>输入关键词开始检索记忆</span>
       </div>
     </section>
 
-    <!-- Section 3: Ingest Panel -->
+    <!-- 区域3：手动记录面板 -->
     <section class="ingest-section">
       <div class="ingest-header">
         <h2 class="section-title">
@@ -381,7 +504,7 @@ onMounted(() => {
   gap: var(--spacing-xxl);
 }
 
-/* ---- Page Header ---- */
+/* ---- 页面头部 ---- */
 .page-header {
   display: flex;
   flex-direction: column;
@@ -411,7 +534,7 @@ onMounted(() => {
   color: var(--color-muted);
 }
 
-/* ---- Badges ---- */
+/* ---- 徽章 ---- */
 .badge-coral {
   display: inline-flex;
   align-items: center;
@@ -440,7 +563,7 @@ onMounted(() => {
   border: 1px solid var(--color-hairline);
 }
 
-/* ---- Stats Section ---- */
+/* ---- 统计区域 ---- */
 .stats-section {
   display: flex;
   flex-direction: column;
@@ -518,7 +641,7 @@ onMounted(() => {
   font-family: var(--font-sans);
 }
 
-/* ---- Section Title ---- */
+/* ---- 区域标题 ---- */
 .section-title {
   display: flex;
   align-items: center;
@@ -531,7 +654,7 @@ onMounted(() => {
   margin-bottom: var(--spacing-md);
 }
 
-/* ---- Search Section ---- */
+/* ---- 检索区域 ---- */
 .search-section {
   display: flex;
   flex-direction: column;
@@ -649,7 +772,7 @@ onMounted(() => {
   background: var(--btn-ghost-bg-hover);
 }
 
-/* ---- Search Options ---- */
+/* ---- 搜索选项 ---- */
 .search-options {
   display: flex;
   flex-direction: column;
@@ -716,7 +839,7 @@ onMounted(() => {
   border-top: 1px solid var(--color-hairline);
 }
 
-/* ---- Loading State ---- */
+/* ---- 加载状态 ---- */
 .loading-state {
   display: flex;
   align-items: center;
@@ -735,7 +858,7 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* ---- Memory Cards ---- */
+/* ---- 记忆卡片 ---- */
 .results-list {
   display: flex;
   flex-direction: column;
@@ -858,7 +981,7 @@ onMounted(() => {
   padding: 1px 8px;
 }
 
-/* ---- Empty State ---- */
+/* ---- 空状态 ---- */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -875,7 +998,7 @@ onMounted(() => {
   border-radius: var(--rounded-lg);
 }
 
-/* ---- Ingest Section ---- */
+/* ---- 手动记录区域 ---- */
 .ingest-section {
   display: flex;
   flex-direction: column;
@@ -955,6 +1078,4 @@ onMounted(() => {
 .radio-label input {
   display: none;
 }
-
-/* Hide the Eye icon import issue — we use inline SVG via lucide */
 </style>

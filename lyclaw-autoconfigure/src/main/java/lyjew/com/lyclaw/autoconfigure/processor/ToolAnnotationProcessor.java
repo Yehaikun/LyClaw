@@ -12,7 +12,7 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 
 import java.lang.reflect.Method;
 import java.util.*;
-
+import java.lang.annotation.Annotation;
 /**
  * {@link BeanPostProcessor} that discovers {@code @Tool}-annotated beans and
  * registers them with the {@link ToolRegistry}.
@@ -80,7 +80,7 @@ public class ToolAnnotationProcessor implements BeanPostProcessor {
                         bean, name, desc, readonly, def, execMethod);
                 toolRegistry.register(adapter);
                 registeredClasses.add(classKey);
-                log.info("Registered annotated tool '{}' (class: {})", name, clazz.getSimpleName());
+                log.info("注册工具成功！ '{}' (class: {})", name, clazz.getSimpleName());
             } else if (bean instanceof Tool tool) {
                 // Old-style tool (implements Tool without @Tool annotation)
                 toolRegistry.register(tool);
@@ -191,7 +191,8 @@ public class ToolAnnotationProcessor implements BeanPostProcessor {
     // --- reflection helpers (avoid compile dependency on framework annotations) ---
 
     private Object findAnnotation(Object obj, String simpleName) {
-        java.lang.annotation.Annotation[] anns;
+        Annotation[] anns;
+        //获取类上的完整注解
         if (obj instanceof Class<?> c) {
             anns = c.getAnnotations();
         } else if (obj instanceof Method m) {

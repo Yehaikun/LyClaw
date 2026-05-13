@@ -1,14 +1,15 @@
 package lyjew.com.lyclaw.autoconfigure.processor;
 
+import lyjew.com.lyclaw.autoconfigure.ordering.TopologySort;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 
 import java.util.*;
-
 /**
  * {@link BeanPostProcessor} 实现，自动发现实现了 {@link ReactivePipelineStage} 接口
  * 的 Spring Bean，并解析 {@code @PipelineStage} 注解的排序约束（after/before）。
@@ -16,7 +17,7 @@ import java.util.*;
  * <p>对每个发现的响应式阶段 Bean，提取其注解中的 name、after、before 约束信息，
  * 供后续拓扑排序使用。</p>
  */
-public class PipelineStageProcessor implements BeanPostProcessor {
+public class PipelineStageProcessor implements BeanPostProcessor, SmartInitializingSingleton {
 
     private static final Logger log = LoggerFactory.getLogger(PipelineStageProcessor.class);
 
@@ -47,7 +48,7 @@ public class PipelineStageProcessor implements BeanPostProcessor {
                         beforeConstraints.put(key, before);
                     }
                 }
-                log.debug("Discovered reactive pipeline stage: {} (order={})",
+                log.info("正在注册 pipeline stage: {} (order={})",
                         reactiveStage.getStageName(), reactiveStage.getOrder());
             }
         } catch (Exception e) {
@@ -55,12 +56,77 @@ public class PipelineStageProcessor implements BeanPostProcessor {
         }
         return bean;
     }
-
+    @Override
+    public void afterSingletonsInstantiated() {
+        log.info("============================================");
+        log.info("  PipelineStageProcessor 管道阶段扫描完成");
+        log.info("  共发现 {} 个阶段", discoveredReactiveStages.size());
+        for (int i = 0; i < discoveredReactiveStages.size(); i++) {
+            ReactivePipelineStage s = discoveredReactiveStages.get(i);
+            log.info("    {}. [{}] order={}", i + 1, s.getStageName(), s.getOrder());
+        }
+        log.info("============================================");
+    }
     /** @return 按声明顺序排序后的阶段列表 */
     public List<ReactivePipelineStage> getSortedStages() {
-        List<ReactivePipelineStage> sorted = new ArrayList<>(discoveredReactiveStages);
-        sorted.sort(Comparator.comparingInt(ReactivePipelineStage::getOrder));
-        return sorted;
+        return TopologySort.sort(
+                new ArrayList<>(discoveredReactiveStages),
+                stage -> {
+                    // dependencyResolver: 返回 stage 的所有依赖项（必须在它之前执行的 stage）
+                    List<ReactivePipelineStage> deps = new ArrayList<>();
+                    String key = stageName(stage);
+
+                    // 1) after 约束：stage 声明了 after=X → X 必须在 stage 之前
+                    Class<?>[] after = afterConstraints.get(key);
+                    if (after != null) {
+                        for (Class<?> c : after) {
+                            ReactivePipelineStage dep = findByClass(c);
+                            if (dep != null) deps.add(dep);
+                        }
+                    }
+
+                    // 2) before 约束的反向：如果另一个 stage Y 声明 before=X（X=当前stage），
+                    //    说明 Y 必须在当前 stage 之前执行 → Y 是 dependency
+                    for (var entry : beforeConstraints.entrySet()) {
+                        for (Class<?> c : entry.getValue()) {
+                            if (c.isAssignableFrom(stage.getClass())) {
+                                ReactivePipelineStage dep = findByName(entry.getKey());
+                                if (dep != null) deps.add(dep);
+                            }
+                        }
+                    }
+                    return deps;
+                }
+        );
+    }
+
+
+
+
+    // 辅助方法：按 Class 从 discoveredReactiveStages 查找实例
+    private ReactivePipelineStage findByClass(Class<?> clazz) {
+        return discoveredReactiveStages.stream()
+                .filter(s -> clazz.isAssignableFrom(s.getClass()))
+                .findFirst().orElse(null);
+    }
+
+    // 辅助方法：按名称查找
+    private ReactivePipelineStage findByName(String name) {
+        return discoveredReactiveStages.stream()
+                .filter(s -> s.getStageName().equals(name)
+                        || s.getClass().getSimpleName().equals(name))
+                .findFirst().orElse(null);
+    }
+
+    private String stageName(ReactivePipelineStage stage) {
+        Object stageAnn = findAnnotation(stage.getClass(), "PipelineStage");
+        if (stageAnn != null) {
+            String name = getAttr(stageAnn, "name", "");
+            if (name != null && !name.isEmpty()) {
+                return name;
+            }
+        }
+        return stage.getClass().getSimpleName();
     }
 
     /** @return 只读的阶段列表 */

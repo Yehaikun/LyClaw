@@ -1,3 +1,49 @@
+<!--
+  DashboardView：服务健康监控仪表盘视图，展示LyClaw微服务集群中7个服务的实时运行状态。
+
+  页面结构（三个主要区域）：
+
+  1. 页面头部（page-header）：
+     - 左侧：标题"服务健康" + 副标题"LyClaw 微服务集群状态监控"
+     - 右侧操作区：
+       · 自动刷新徽章（auto-refresh-badge）：点击切换自动轮询状态，绿色边框表示启用
+       · 手动刷新按钮（refresh-btn）：立即触发一次健康检查，轮询中禁用
+       · 统计信息区：上次检查时间 + 总延迟（带颜色编码）
+
+  2. 服务卡片网格（services-grid）：
+     7个微服务的深色风格状态卡片，每张卡片展示：
+
+     - 卡片顶部（card-top：可点击展开/折叠详情）：
+       · 服务图标（根据服务名称映射不同图标：gateway→Shield, orchestration→GitBranch, memory→Brain, plan→Search, action→Wrench, reflect→Users, protocol→Server）
+       · 服务名称 + 端口号
+       · 延迟指示灯（latency-indicator）：圆点颜色表示快/中/慢
+       · 状态圆点 + 状态文字（正常/异常/未知）+ 展开箭头
+
+     - 信息条（card-info-strip）：
+       · 运行时间芯片：Clock图标 + 格式化时间
+       · 响应延迟芯片：Gauge图标 + 延迟毫秒数（颜色编码）
+
+     - 展开详情（card-details：点击展开后显示）：
+       · 端口、状态、延迟、运行时间、最后检查时间、端点URL
+
+  3. 服务图标映射（serviceIconMap）：
+     按serviceName查找对应的Lucide图标组件，每个微服务有专属视觉标识。
+
+  轮询机制：
+  - onMounted时启动自动轮询（10秒间隔，通过dashboardStore.startPolling）
+  - onUnmounted时停止轮询（dashboardStore.stopPolling）
+  - 自动刷新状态由dashboardStore.autoRefresh控制，可手动暂停/恢复
+
+  延迟颜色编码：
+  - 快速（latency-fast：绿色）：< 100ms
+  - 中等（latency-medium：琥珀色）：100ms ≤ latency < 500ms
+  - 慢速（latency-slow：红色）：≥ 500ms
+
+  时间格式化：
+  - formatUptime：秒数→人类可读格式（<60s显示秒、<24h显示时分、>24h显示天时）
+  - formatCheckTime：时间戳→中文本地化时间格式（HH:mm:ss）
+  - formatLatency：延迟毫秒数→带单位显示字符串
+-->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
@@ -17,6 +63,7 @@ import { useDashboardStore } from '@/stores/dashboard'
 
 const dashboardStore = useDashboardStore()
 
+/** 当前展开详情的服务名称，null表示所有卡片折叠 */
 const expandedService = ref<string | null>(null)
 
 const services = computed(() => dashboardStore.services)
@@ -25,6 +72,7 @@ const polling = computed(() => dashboardStore.isPolling)
 const autoRefresh = computed(() => dashboardStore.autoRefresh)
 const totalLatency = computed(() => dashboardStore.totalLatency)
 
+/** 服务名称到Lucide图标的映射表，为每个微服务分配专属图标 */
 const serviceIconMap: Record<string, ReturnType<typeof Server>> = {
   gateway: Shield,
   orchestration: GitBranch,
@@ -35,10 +83,23 @@ const serviceIconMap: Record<string, ReturnType<typeof Server>> = {
   protocol: Server,
 }
 
+/**
+ * 根据服务名称获取对应的图标组件。
+ * 从serviceIconMap中查找，未找到时返回undefined（模板中需要处理）。
+ *
+ * @param serviceName 服务名称字符串（如"gateway"、"memory"等）
+ * @returns 对应的Lucide图标组件或undefined
+ */
 function getIcon(serviceName: string) {
   return serviceIconMap[serviceName]
 }
 
+/**
+ * 切换服务卡片的展开/折叠状态。
+ * 点击已展开的卡片→折叠（设为null）；点击其他卡片→展开该卡片。
+ *
+ * @param serviceName 要切换的服务名称
+ */
 function toggleExpand(serviceName: string) {
   if (expandedService.value === serviceName) {
     expandedService.value = null
@@ -47,26 +108,49 @@ function toggleExpand(serviceName: string) {
   }
 }
 
+/** 手动触发健康检查：调用dashboardStore.checkHealth()立即查询所有服务状态 */
 function handleRefresh() {
   dashboardStore.checkHealth()
 }
 
+/** 切换自动刷新开关：调用dashboardStore.toggleAutoRefresh()启动或暂停轮询 */
 function handleToggleAutoRefresh() {
   dashboardStore.toggleAutoRefresh()
 }
 
+/**
+ * 服务状态文本映射：将英文状态字符串转为中文显示。
+ * healthy→正常, unhealthy→异常, 其他→未知
+ *
+ * @param status 英文状态字符串
+ * @returns 中文状态描述
+ */
 function statusText(status: string): string {
   if (status === 'healthy') return '正常'
   if (status === 'unhealthy') return '异常'
   return '未知'
 }
 
+/**
+ * 服务状态CSS类映射。
+ * healthy→status-healthy（蓝色/绿色）, unhealthy→status-unhealthy（红色）, 其他→status-unknown（灰色）
+ *
+ * @param status 英文状态字符串
+ * @returns CSS类名
+ */
 function statusClass(status: string): string {
   if (status === 'healthy') return 'status-healthy'
   if (status === 'unhealthy') return 'status-unhealthy'
   return 'status-unknown'
 }
 
+/**
+ * 延迟CSS类映射：根据毫秒数分类显示颜色。
+ * <100ms→latency-fast（绿色快）, <500ms→latency-medium（琥珀色中）, ≥500ms→latency-slow（红色慢）
+ *
+ * @param latency 延迟毫秒数，可能为undefined（未获取）
+ * @returns CSS类名
+ */
 function latencyClass(latency: number | undefined): string {
   if (latency == null) return ''
   if (latency < 100) return 'latency-fast'
@@ -74,11 +158,24 @@ function latencyClass(latency: number | undefined): string {
   return 'latency-slow'
 }
 
+/**
+ * 格式化延迟显示：数字添加"ms"后缀，null/undefined显示"--"。
+ *
+ * @param latency 延迟毫秒数
+ * @returns 格式化字符串如"42ms"或"--"
+ */
 function formatLatency(latency: number | undefined): string {
   if (latency == null) return '--'
   return `${Math.round(latency)}ms`
 }
 
+/**
+ * 格式化运行时间：秒数转换为人类可读的天/时/分/秒格式。
+ * >24h显示"Xd Yh"，>0h显示"Xh Ym"，>0m显示"Xm"，否则显示秒。
+ *
+ * @param seconds 运行时间秒数，可能为undefined或0
+ * @returns 格式化时间字符串
+ */
 function formatUptime(seconds: number | undefined): string {
   if (seconds == null || seconds === 0) return '--'
   const hours = Math.floor(seconds / 3600)
@@ -92,16 +189,30 @@ function formatUptime(seconds: number | undefined): string {
   return `${Math.round(seconds)}s`
 }
 
+/**
+ * 格式化检查时间戳为中文时间字符串。
+ *
+ * @param timestamp 毫秒级Unix时间戳，可能为null
+ * @returns 格式化的时间字符串如"14:30:25"或"--"
+ */
 function formatCheckTime(timestamp: number | null): string {
   if (timestamp == null) return '--'
   const d = new Date(timestamp)
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+/**
+ * 组件挂载：启动自动健康检查轮询（10秒间隔）。
+ * 页面可见期间持续监控服务状态，页面关闭后自动停止。
+ */
 onMounted(() => {
   dashboardStore.startPolling(10000)
 })
 
+/**
+ * 组件卸载：停止自动轮询以释放定时器资源。
+ * 防止离开仪表盘页面后继续发送不必要的健康检查请求。
+ */
 onUnmounted(() => {
   dashboardStore.stopPolling()
 })
@@ -164,7 +275,7 @@ onUnmounted(() => {
             <span
               v-if="svc.latency != null"
               :class="['latency-indicator', latencyClass(svc.latency)]"
-              :title="`Latency: ${formatLatency(svc.latency)}`"
+              :title="`延迟: ${formatLatency(svc.latency)}`"
             />
             <span :class="['status-dot', statusClass(svc.status)]" />
             <span :class="['status-label', statusClass(svc.status)]">
@@ -174,7 +285,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Inline info strip -->
+        <!-- 信息条：快速查看运行时间和延迟 -->
         <div class="card-info-strip">
           <span v-if="svc.uptime != null" class="info-chip" title="运行时间">
             <Clock :size="12" />
@@ -186,7 +297,7 @@ onUnmounted(() => {
           </span>
         </div>
 
-        <!-- Expand details -->
+        <!-- 展开详情：完整的服务状态信息 -->
         <div v-if="expandedService === svc.name" class="card-details">
           <dl class="detail-list">
             <div class="detail-item">
@@ -374,14 +485,14 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-/* ---- Services Grid ---- */
+/* ---- 服务卡片网格 ---- */
 .services-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--spacing-lg);
 }
 
-/* ---- Service Card (Dark product-mockup) ---- */
+/* ---- 服务卡片（深色产品风格） ---- */
 .service-card {
   background: var(--color-surface-dark);
   border-radius: var(--card-radius);
@@ -464,7 +575,7 @@ onUnmounted(() => {
   background: var(--color-muted-soft);
 }
 
-/* ---- Latency Indicator ---- */
+/* ---- 延迟指示灯 ---- */
 .latency-indicator {
   width: 8px;
   height: 8px;
@@ -489,7 +600,7 @@ onUnmounted(() => {
   box-shadow: 0 0 4px rgba(198, 69, 69, 0.4);
 }
 
-/* ---- Card Info Strip ---- */
+/* ---- 卡片信息条 ---- */
 .card-info-strip {
   display: flex;
   align-items: center;
@@ -554,7 +665,7 @@ onUnmounted(() => {
   transform: rotate(180deg);
 }
 
-/* ---- Card Details ---- */
+/* ---- 卡片展开详情 ---- */
 .card-details {
   margin-top: var(--spacing-md);
   padding-top: var(--spacing-md);

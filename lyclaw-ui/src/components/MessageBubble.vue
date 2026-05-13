@@ -1,3 +1,49 @@
+<!--
+  MessageBubble：对话消息气泡组件，渲染单条聊天消息（用户消息或助手回复）。
+
+  每条消息气泡包含以下视觉元素：
+
+  1. 角色头像（message-role-icon）：
+     - 用户消息：显示"U"字母，主题色背景
+     - 助手消息：显示"L"（LyClaw首字母），深色背景
+     - 32px圆形头像，使用pill圆角
+
+  2. 消息头部（message-header）：
+     - 角色名称："You"（用户）或"LyClaw"（助手）
+     - 模型标识（message-model-badge）：仅助手消息显示模型名称
+       · 用户消息中的模型标识使用半透明白色
+       · 助手消息中的模型标识使用灰色背景
+
+  3. 消息内容（message-content）：
+     - 通过MarkdownRenderer组件渲染消息的Markdown文本
+     - 支持代码高亮、Mermaid图表、KaTeX数学公式、表格等丰富内容
+     - 流式输出时传递isStreaming属性，控制渐进式渲染
+
+  4. 流式输出光标（streaming-cursor）：
+     - 闪烁的"▊"字符，仅在当前消息正在流式输出时显示
+     - 使用CSS step-end动画实现闪烁效果
+     - 颜色为主题色，提示用户回复正在生成中
+
+  5. 工具调用卡片（message-tool-calls）：
+     - 当消息包含toolCalls时，在内容下方展示ToolCallCard列表
+     - 每个工具调用以可折叠卡片形式展示
+
+  布局差异：
+  - 用户消息（message-user）：
+    · 气泡右对齐（justify-content: flex-end）
+    · 头像在右侧（order: 1）
+    · 消息体有主题色背景和圆角
+    · 文字颜色为白色
+  - 助手消息（message-assistant）：
+    · 气泡左对齐（默认）
+    · 头像在左侧
+    · 消息体透明背景，无额外内边距
+
+  Props：
+  - message: Message — 要渲染的消息对象
+  - isLast: boolean — 是否为最后一条消息（影响流式光标显示判断）
+  - isStreaming: boolean — 当前消息是否正在流式输出中
+-->
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Message } from '@/types'
@@ -10,7 +56,14 @@ const props = defineProps<{
   isStreaming: boolean
 }>()
 
+/** 是否为用户消息（role === 'user'） */
 const isUser = computed(() => props.message.role === 'user')
+
+/**
+ * 是否显示流式输出光标。
+ * 条件：当前正在流式输出 + 是最后一条消息 + 不是用户消息。
+ * 光标仅显示在正在被流式填充的assistant消息末尾。
+ */
 const showStreamingCursor = computed(
   () => props.isStreaming && props.isLast && !isUser.value,
 )

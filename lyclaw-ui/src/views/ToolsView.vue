@@ -1,3 +1,48 @@
+<!--
+  ToolsView：工具与技能管理页面视图，提供工具注册表浏览、工具执行测试和技能调用的完整界面。
+
+  页面采用标签切换结构，包含两个主要标签页：
+
+  1. 工具标签页（Tools：activeTab === 'tools'）：
+     - 工具卡片网格：展示所有已注册的工具定义
+     - 每张卡片显示：工具名称（displayName或name）、描述、来源徽章（Built-in/MCP/A2A）、服务名称、超时时间
+     - 点击卡片打开详情侧面板（detail-panel）
+     - 无工具时显示"暂无可用工具"提示
+
+  2. 技能标签页（Skills：activeTab === 'skills'）：
+     - 技能卡片网格：展示所有已注册的技能
+     - 每张卡片显示：技能名称（skillId）、描述
+     - 内联执行按钮：直接在卡片中触发技能执行
+     - 执行结果内联展示在对应卡片底部（成功绿色背景/失败红色背景）
+
+  工具详情侧面板（Slide-over Panel：Teleport到body）：
+  - 面板头部：工具名称 + 关闭按钮（X图标）
+  - 面板主体：
+    · 工具描述文本
+    · 元数据行：来源徽章、服务名称、超时时间
+    · 参数编辑区：textarea让用户输入JSON格式的调用参数
+    · 执行按钮（execute-btn-panel）：带loading状态
+    · 执行结果区：成功/失败状态标签 + 耗时 + 输出/错误信息
+
+  数据来源策略（优先实时数据，回退到硬编码示例）：
+  - tools：优先使用toolStore.tools，长度>0时显示；否则使用sampleTools硬编码数据
+  - skills：优先使用toolStore.skills映射为SkillDisplay格式；否则使用sampleSkills硬编码数据
+
+  来源徽章颜色编码（sourceClass）：
+  - MCP → 青色背景（source-mcp）
+  - A2A → 琥珀色背景（source-a2a）
+  - Built-in或其他 → 蓝色背景（source-builtin）
+
+  执行错误处理：
+  - JSON参数格式错误 → 立即设置toolResult为错误状态，不发起请求
+  - API调用失败 → catch块中构造失败ToolResult，显示错误消息
+  - 执行中的按钮显示Loader2旋转动画，disabled防止重复点击
+
+  当前局限性：
+  - 工具列表和技能列表依赖后端API正确返回，否则回退到硬编码示例
+  - 技能执行时无参数传递（executeSkill仅传递skillId）
+  - 侧面板关闭后再打开不保留之前的参数输入和结果
+-->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { Play, X, Loader2, Wrench, Zap, ChevronRight } from 'lucide-vue-next'
@@ -5,7 +50,8 @@ import { useToolStore } from '@/stores/tool'
 import { executeTool, executeSkill } from '@/api/action'
 import type { ToolDefinition, ToolResult, SkillResult } from '@/types'
 
-// ---- Hardcoded fallback data ----
+// ---- 硬编码回退数据 ----
+/** 当后端未返回工具列表时的示例工具数据 */
 const sampleTools: ToolDefinition[] = [
   {
     name: 'calculator',
@@ -63,12 +109,14 @@ const sampleTools: ToolDefinition[] = [
   },
 ]
 
+/** 技能在界面中的展示格式接口 */
 interface SkillDisplay {
   skillId: string
   name: string
   description: string
 }
 
+/** 当后端未返回技能列表时的示例技能数据 */
 const sampleSkills: SkillDisplay[] = [
   { skillId: 'code-review', name: '代码审查', description: '审查代码质量并给出改进建议' },
   { skillId: 'doc-generator', name: '文档生成', description: '根据代码自动生成文档' },
@@ -76,21 +124,36 @@ const sampleSkills: SkillDisplay[] = [
   { skillId: 'data-analyzer', name: '数据分析', description: '分析数据集并生成报告' },
 ]
 
-// ---- State ----
+// ---- 状态管理 ----
 const toolStore = useToolStore()
 
+/** 当前激活的标签页：tools（工具）或skills（技能） */
 const activeTab = ref<'tools' | 'skills'>('tools')
+/** 当前选中的工具（打开侧面板查看详情） */
 const selectedTool = ref<ToolDefinition | null>(null)
+/** 工具参数JSON编辑器的输入文本 */
 const argsText = ref('{}')
+/** 正在执行中的工具名称（非null时禁用执行按钮并显示loading） */
 const executingTool = ref<string | null>(null)
+/** 正在执行中的技能ID（非null时禁用执行按钮并显示loading） */
 const executingSkill = ref<string | null>(null)
+/** 工具执行结果（显示在侧面板底部） */
 const toolResult = ref<ToolResult | null>(null)
+/** 技能执行结果（显示在技能卡片底部） */
 const skillResult = ref<SkillResult | null>(null)
 
+/**
+ * 工具列表：优先使用ToolStore的实时数据，回退到硬编码示例。
+ * 确保即使后端不可用时界面也有可展示的内容。
+ */
 const tools = computed<ToolDefinition[]>(() => {
   return toolStore.tools.length > 0 ? toolStore.tools : sampleTools
 })
 
+/**
+ * 技能列表：优先使用ToolStore的实时数据映射，回退到硬编码示例。
+ * ToolStore中的技能数据格式与SkillDisplay不同，需要做字段映射。
+ */
 const skills = computed<SkillDisplay[]>(() => {
   if (toolStore.skills.length > 0) {
     return toolStore.skills.map((s) => ({
@@ -102,9 +165,16 @@ const skills = computed<SkillDisplay[]>(() => {
   return sampleSkills
 })
 
+/** 是否正在加载工具或技能数据 */
 const loading = computed(() => toolStore.isLoadingTools || toolStore.isLoadingSkills)
 
-// Source badge color
+/**
+ * 工具来源CSS类映射：为不同的来源类型应用不同颜色。
+ * MCP→青色(source-mcp)、A2A→琥珀色(source-a2a)、内置→蓝色(source-builtin)
+ *
+ * @param source 工具来源标识字符串
+ * @returns CSS类名
+ */
 function sourceClass(source: string): string {
   switch (source) {
     case 'MCP':
@@ -116,23 +186,48 @@ function sourceClass(source: string): string {
   }
 }
 
+/**
+ * 格式化超时时间为人类可读字符串。
+ * ≥1000ms显示"Xs"，否则显示"Xms"
+ *
+ * @param ms 超时毫秒数
+ * @returns 格式化字符串如"10s"或"500ms"
+ */
 function formatTimeout(ms: number): string {
   if (ms >= 1000) return `${ms / 1000}s`
   return `${ms}ms`
 }
 
-// ---- Tool detail panel ----
+// ---- 工具详情面板操作 ----
+
+/**
+ * 打开工具详情侧面板：设置selectedTool、重置参数输入和结果。
+ *
+ * @param tool 要查看详情的工具定义
+ */
 function openToolDetail(tool: ToolDefinition) {
   selectedTool.value = tool
   argsText.value = '{}'
   toolResult.value = null
 }
 
+/** 关闭工具详情侧面板：清空selectedTool和结果 */
 function closeToolDetail() {
   selectedTool.value = null
   toolResult.value = null
 }
 
+/**
+ * 执行工具调用：解析用户输入的JSON参数并调用executeTool API。
+ *
+ * 流程：
+ * 1. 解析argsText为JSON对象（失败则立即返回toolResult错误）
+ * 2. 设置executingTool为工具名（禁用按钮）
+ * 3. 调用executeTool API
+ * 4. 成功 → 设置toolResult为API返回结果
+ * 5. 失败 → 构造失败的ToolResult对象
+ * 6. finally → 清除executingTool状态
+ */
 async function handleExecuteTool() {
   if (!selectedTool.value) return
   let parsedArgs: Record<string, unknown> = {}
@@ -170,6 +265,11 @@ async function handleExecuteTool() {
   }
 }
 
+/**
+ * 执行技能调用：调用executeSkill API传递技能ID。
+ *
+ * @param skillId 要执行的技能标识
+ */
 async function handleExecuteSkill(skillId: string) {
   executingSkill.value = skillId
   skillResult.value = null
@@ -190,6 +290,7 @@ async function handleExecuteSkill(skillId: string) {
   }
 }
 
+/** 组件挂载时从服务器获取工具和技能列表 */
 onMounted(() => {
   toolStore.fetchTools()
   toolStore.fetchSkills()
@@ -202,7 +303,7 @@ onMounted(() => {
       <h1 class="page-title">工具与技能</h1>
     </header>
 
-    <!-- Tab Bar -->
+    <!-- 标签栏：工具/技能切换 -->
     <nav class="tab-bar">
       <button
         :class="['tab-btn', { active: activeTab === 'tools' }]"
@@ -220,13 +321,13 @@ onMounted(() => {
       </button>
     </nav>
 
-    <!-- Loading -->
+    <!-- 加载状态 -->
     <div v-if="loading" class="loading-state">
       <Loader2 :size="24" class="loading-icon" />
       <span>加载中...</span>
     </div>
 
-    <!-- Tools Grid -->
+    <!-- 工具卡片网格 -->
     <section v-else-if="activeTab === 'tools'" class="cards-grid">
       <article
         v-for="tool in tools"
@@ -255,7 +356,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Skills Grid -->
+    <!-- 技能卡片网格 -->
     <section v-else class="cards-grid">
       <article
         v-for="skill in skills"
@@ -280,7 +381,7 @@ onMounted(() => {
             </button>
           </div>
 
-          <!-- Inline skill result -->
+          <!-- 内联技能执行结果 -->
           <div
             v-if="skillResult && skillResult.skillId === skill.skillId"
             :class="['inline-result', skillResult.success ? 'result-success' : 'result-error']"
@@ -305,7 +406,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Tool Detail Slide-over Panel -->
+    <!-- 工具详情侧面板（Teleport到body避免样式隔离问题） -->
     <Teleport to="body">
       <div
         v-if="selectedTool"
@@ -331,7 +432,7 @@ onMounted(() => {
               <span class="meta-text">超时 {{ formatTimeout(selectedTool.timeout) }}</span>
             </div>
 
-            <!-- Parameters -->
+            <!-- 参数编辑器（JSON格式） -->
             <div class="params-section">
               <h4 class="section-label">参数 (JSON)</h4>
               <textarea
@@ -342,7 +443,7 @@ onMounted(() => {
               />
             </div>
 
-            <!-- Execute Button -->
+            <!-- 执行按钮 -->
             <button
               class="execute-btn-panel"
               :disabled="executingTool === selectedTool.name"
@@ -357,7 +458,7 @@ onMounted(() => {
               执行
             </button>
 
-            <!-- Result -->
+            <!-- 执行结果显示 -->
             <div
               v-if="toolResult"
               :class="['panel-result', toolResult.success ? 'result-success' : 'result-error']"
@@ -405,7 +506,7 @@ onMounted(() => {
   margin: 0;
 }
 
-/* ---- Tab Bar ---- */
+/* ---- 标签栏 ---- */
 .tab-bar {
   display: flex;
   gap: var(--spacing-xs);
@@ -440,7 +541,7 @@ onMounted(() => {
   border-bottom-color: var(--color-primary);
 }
 
-/* ---- Loading ---- */
+/* ---- 加载状态 ---- */
 .loading-state {
   display: flex;
   align-items: center;
@@ -460,14 +561,14 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* ---- Cards Grid ---- */
+/* ---- 卡片网格 ---- */
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--spacing-lg);
 }
 
-/* ---- ToolCard / SkillCard (Connector-tile) ---- */
+/* ---- 工具卡片 / 技能卡片（连接器磁贴风格） ---- */
 .tool-card,
 .skill-card {
   background: var(--color-canvas);
@@ -569,7 +670,7 @@ onMounted(() => {
   margin-left: auto;
 }
 
-/* ---- Skill card actions ---- */
+/* ---- 技能卡片操作区 ---- */
 .skill-card-actions {
   display: flex;
   align-items: center;
@@ -612,7 +713,7 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* ---- Inline Result ---- */
+/* ---- 内联执行结果 ---- */
 .inline-result {
   padding: var(--spacing-sm);
   border-radius: var(--rounded-sm);
@@ -660,7 +761,7 @@ onMounted(() => {
   overflow-y: auto;
 }
 
-/* ---- Empty ---- */
+/* ---- 空状态 ---- */
 .empty-hint {
   grid-column: 1 / -1;
   text-align: center;
@@ -670,7 +771,7 @@ onMounted(() => {
   color: var(--color-muted-soft);
 }
 
-/* ---- Overlay & Detail Panel ---- */
+/* ---- 遮罩层与侧面板 ---- */
 .overlay {
   position: fixed;
   inset: 0;

@@ -1,3 +1,25 @@
+<!--
+  TraceIdBadge：分布式追踪ID展示组件，显示截短的追踪标识并提供一键复制功能。
+
+  使用场景：
+  - 错误提示栏中：当聊天请求失败时，在错误信息旁显示追踪ID，
+    用户可复制此ID反馈给开发者用于后端日志关联查找
+  - 消息元数据区域：在调试模式下可显示每条消息的追踪信息
+
+  交互设计：
+  1. 默认展示：显示"Trace:"标签 + 截短至8字符的追踪ID + 复制图标
+  2. 鼠标悬停：通过title属性展示完整追踪ID
+  3. 点击复制：将完整追踪ID写入剪贴板，图标切换为Check确认状态
+  4. 2秒后：复制图标自动恢复为Copy图标
+
+  技术细节：
+  - 使用navigator.clipboard.writeText API进行剪贴板操作
+  - 复制失败时静默处理（Clipboard API可能因权限问题不可用）
+  - copied状态通过setTimeout自动恢复，提供视觉反馈
+
+  Props：
+  - traceId: string — 完整的分布式追踪标识（UUID或类似格式）
+-->
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Copy, Check } from 'lucide-vue-next'
@@ -7,17 +29,26 @@ const props = defineProps<{
   traceId: string
 }>()
 
+/** 复制状态标志：true时显示Check图标，2秒后自动恢复 */
 const copied = ref(false)
 
+/** 截短至前8个字符的追踪ID，用于紧凑展示 */
 const shortId = computed(() => props.traceId.slice(0, 8))
 
+/**
+ * 复制完整追踪ID到系统剪贴板。
+ *
+ * 成功时设置copied为true，2秒后自动恢复为false。
+ * 失败时静默处理（某些环境下clipboard API可能不可用，
+ * 如非HTTPS环境或用户拒绝了剪贴板权限）。
+ */
 async function copy() {
   try {
     await navigator.clipboard.writeText(props.traceId)
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
   } catch {
-    // Clipboard API may not be available
+    // Clipboard API可能不可用（如非HTTPS环境），静默处理
   }
 }
 </script>

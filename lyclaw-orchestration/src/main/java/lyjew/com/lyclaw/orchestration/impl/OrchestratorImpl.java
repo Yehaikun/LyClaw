@@ -1,13 +1,13 @@
 package lyjew.com.lyclaw.orchestration.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import lyjew.com.lyclaw.autoconfigure.processor.PipelineStageProcessor;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.orchestration.AgentEvent;
 import lyjew.com.lyclaw.orchestration.OrchestrationContext;
 import lyjew.com.lyclaw.orchestration.Orchestrator;
-import lyjew.com.lyclaw.orchestration.pipeline.PipelineBuilder;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
-import lyjew.com.lyclaw.pipeline.ReactivePipeline;
+import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import org.slf4j.MDC;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
@@ -29,15 +29,15 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class OrchestratorImpl implements Orchestrator {
 
-    private final PipelineBuilder pipelineBuilder;
+    private final PipelineStageProcessor pipelineStageProcessor;
 
     /** 协作取消标记，键为 collaborationId */
     private final ConcurrentHashMap<String, Boolean> cancellationFlags = new ConcurrentHashMap<>();
     /** 协作进度追踪，键为 collaborationId */
     private final ConcurrentHashMap<String, Double> progressTracker = new ConcurrentHashMap<>();
 
-    public OrchestratorImpl(PipelineBuilder pipelineBuilder) {
-        this.pipelineBuilder = pipelineBuilder;
+    public OrchestratorImpl(PipelineStageProcessor pipelineStageProcessor) {
+        this.pipelineStageProcessor = pipelineStageProcessor;
     }
 
     /**
@@ -62,10 +62,15 @@ public class OrchestratorImpl implements Orchestrator {
             context.setAttribute("pipelineContext", pipelineCtx);
 
             // 构建响应式管线
-            ReactivePipeline pipeline = pipelineBuilder.buildReactive();
-            return pipeline.execute(context, pipelineCtx)
+            List<ReactivePipelineStage> stages = pipelineStageProcessor.getSortedStages();
+            Flux<ServerSentEvent<String>> pipelineFlux = Flux.empty();
+            for (ReactivePipelineStage stage : stages) {
+                pipelineFlux = pipelineFlux.concatWith(
+                        Flux.defer(() -> stage.execute(context, pipelineCtx))
+                );
+            }
+            return pipelineFlux
                     .onErrorResume(err -> {
-                        // 管线异常处理：记录失败阶段，返回错误和 done 事件
                         String failedStage = pipelineCtx.getCurrentStage().get();
                         context.getTracing().endStage(failedStage);
                         log.error("[Orchestrator] Pipeline error at stage {}: {}",
@@ -78,8 +83,8 @@ public class OrchestratorImpl implements Orchestrator {
                                 sseEvent("done", "{\"status\":\"error\"}")
                         );
                     })
-                    .doFinally(signalType -> MDC.remove("traceId"));  // 清理 MDC
-        }).subscribeOn(Schedulers.boundedElastic());  // 切换到弹性线程池执行
+                    .doFinally(signalType -> MDC.remove("traceId"));
+        }).subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

@@ -38,7 +38,7 @@ public class DefaultToolRegistry implements ToolRegistry {
                 register(tool);
             }
         }
-        log.info("初始化完成，已注册 {} 个工具", tools.size());
+        log.info("初始化完成，未来会基于注解注册工具，请看这条日志下面注册工具的消息", tools.size());
     }
 
     /**

@@ -14,7 +14,7 @@ import lyjew.com.lyclaw.annotation.tool.Param;
  * <p>退出码 0 表示成功，非 0 时返回退出码和错误输出。</p>
  */
 @Tool(name = "command",
-      description = "在沙箱环境中执行系统命令",
+      description = "在本机环境中执行系统命令，主意不要执行危险命令",
       readonly = false,
       group = "builtin")
 public class AnnotatedCommandTool {

@@ -1,3 +1,59 @@
+<!--
+  AgentView：Agent协作页面视图，展示多智能体协作网络的状态、拓扑结构和A2A发现功能。
+
+  页面包含4个功能区域：
+
+  1. Agent状态卡片（agents-section）：
+     - 6个微服务代理的状态卡片（深色主题），每个展示：
+       · 头像图标 + Agent名称 + agentId
+       · 状态圆点（在线=绿色、离线=红色）
+       · 描述文本
+       · 能力标签（cap-badge-dark）：TEXT_GEN、TOOL_USE、PLANNING等
+       · 底部元数据：版本号、状态文字、URL（溢出省略）
+     - 离线Agent卡片降低不透明度（opacity: 0.6）
+
+  2. 协作拓扑图（graph-section）：
+     基于SVG的星型拓扑可视化：
+
+     - 中央Orchestrator节点（center-circle）：主题色填充，半径36px
+     - 5个外围Agent节点（perimeter-nodes）：圆形排列，半径28px
+       · 在线节点显示绿色，离线节点显示灰色
+       · 每个节点显示名称前3个字符（如"Mem"、"Pla"）
+     - 连接线（conn-line）：从中心到各外围节点的虚线，hover时变实线加粗
+     - 图例（graph-legend）：列表展示所有Agent的名称和描述
+       · hover图例项时高亮对应的连接线和节点
+
+     交互状态（hoveredAgent）：
+     - hover图例项或外围节点 → 连接线高亮 + 对应节点放大
+     - mouseleave → 恢复默认状态
+
+  3. A2A发现（discovery-section）：
+     - 输入框：输入Agent端点URL，Enter键或点击按钮触发发现
+     - "发现 Agent"按钮：调用getAgentCard()获取远程Agent信息
+     - 发现失败时自动降级为模拟卡片（Fallback to generated card）
+     - 发现的Agent以绿色边框卡片展示在discoved-list中
+
+  4. 能力说明（capabilities-section）：
+     8种Agent能力的图标+标签+描述卡片网格：
+
+     - TEXT_GEN（Code图标）：文本生成与对话
+     - TOOL_USE（Terminal图标）：工具调用与编排
+     - CODE_EXEC（Code图标）：代码执行与沙箱
+     - RAG（BookOpen图标）：检索增强生成
+     - COMPUTER_USE（MousePointerClick图标）：计算机远程操作
+     - PLANNING（Brain图标）：任务规划与分解
+     - REFLECTION（Lightbulb图标）：反思与自评估
+     - MEMORY_MANAGEMENT（Cpu图标）：记忆存储与管理
+
+  当前局限性：
+  - Agent数据为硬编码的sampleAgents而非动态获取
+  - 发现功能部分模拟（错误时使用mockCard降级）
+  - 协作拓扑图使用固定的圆形布局算法，不支持动态节点
+
+  拓扑布局算法（agentPosition）：
+  - 使用圆形排列：每个节点角度 = (2π × index) / total - π/2（从顶部开始）
+  - 中心坐标(200, 200)，半径150px，适配400×400 viewBox
+-->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import {
@@ -29,7 +85,8 @@ import { getAgentCard } from '@/api/protocol'
 import type { AgentCard, AgentCapability } from '@/types'
 import { AgentCapability as CapEnum } from '@/types'
 
-// ---- Hardcoded sample agents ----
+// ---- 硬编码示例Agent ----
+/** 示例Agent的本地数据结构，用于页面展示和拓扑图渲染 */
 interface SampleAgent {
   agentId: string
   name: string
@@ -40,6 +97,7 @@ interface SampleAgent {
   status: 'online' | 'offline' | 'unknown'
 }
 
+/** 6个预配置的微服务代理：Orchestrator + 5个外围服务 */
 const sampleAgents: SampleAgent[] = [
   {
     agentId: 'orchestrator-01',
@@ -97,6 +155,7 @@ const sampleAgents: SampleAgent[] = [
   },
 ]
 
+/** 8种Agent能力的元数据：值、标签、中文描述、图标标识 */
 const capabilityInfo: { value: AgentCapability; label: string; description: string; icon: string }[] = [
   { value: CapEnum.TEXT_GEN, label: 'Text Gen', description: '文本生成与对话', icon: 'text' },
   { value: CapEnum.TOOL_USE, label: 'Tool Use', description: '工具调用与编排', icon: 'tool' },
@@ -108,15 +167,26 @@ const capabilityInfo: { value: AgentCapability; label: string; description: stri
   { value: CapEnum.MEMORY_MANAGEMENT, label: 'Memory Mgmt', description: '记忆存储与管理', icon: 'memory' },
 ]
 
-// ---- Discovery state ----
+// ---- A2A发现状态 ----
+/** A2A发现端点URL输入值 */
 const discoveryUrl = ref('')
+/** 已发现的Agent卡片列表 */
 const discoveredAgents = ref<AgentCard[]>([])
+/** 是否正在执行发现请求 */
 const discovering = ref(false)
+/** 发现请求的错误信息 */
 const discoverError = ref<string | null>(null)
 
-// ---- Hover state for graph ----
+// ---- 拓扑图hover状态 ----
+/** 当前hover的Agent ID，用于高亮连接线和节点 */
 const hoveredAgent = ref<string | null>(null)
 
+/**
+ * Agent状态颜色映射：online→绿色、offline→红色、其他→灰色。
+ *
+ * @param status Agent状态字符串
+ * @returns CSS颜色变量或颜色值
+ */
 function statusColor(status: string): string {
   switch (status) {
     case 'online': return 'var(--color-success)'
@@ -125,6 +195,12 @@ function statusColor(status: string): string {
   }
 }
 
+/**
+ * Agent状态中文文本映射。
+ *
+ * @param status Agent状态字符串
+ * @returns 中文状态描述
+ */
 function statusLabel(status: string): string {
   switch (status) {
     case 'online': return '在线'
@@ -133,16 +209,34 @@ function statusLabel(status: string): string {
   }
 }
 
+/**
+ * 获取能力对应的图标标识字符串。
+ * 从capabilityInfo中查找匹配的capability记录并返回其icon字段。
+ *
+ * @param cap AgentCapability枚举值
+ * @returns 图标标识字符串（如"code"、"tool"、"plan"等），未找到返回"text"
+ */
 function getCapIcon(cap: AgentCapability): string {
   const info = capabilityInfo.find(c => c.value === cap)
   return info?.icon || 'text'
 }
 
-// Collaboration graph layout — circular arrangement
+// 协作拓扑图布局参数：圆形排列
+/** 拓扑图圆形排列的半径（SVG坐标单位） */
 const graphRadius = 150
+/** 拓扑图中心的X坐标 */
 const centerX = 200
+/** 拓扑图中心的Y坐标 */
 const centerY = 200
 
+/**
+ * 计算外围Agent在圆形布局中的位置坐标。
+ * 使用正圆等分算法：每个节点均匀分布在圆周上，起始角度-π/2（顶部12点方向）。
+ *
+ * @param index 节点在列表中的索引
+ * @param total 节点总数
+ * @returns SVG坐标{x, y}
+ */
 function agentPosition(index: number, total: number): { x: number; y: number } {
   const angle = (2 * Math.PI * index) / total - Math.PI / 2
   return {
@@ -151,9 +245,13 @@ function agentPosition(index: number, total: number): { x: number; y: number } {
   }
 }
 
+/** 排除中央Orchestrator后的外围Agent列表（用于拓扑图布局） */
 const perimeterAgents = computed(() => sampleAgents.filter(a => a.agentId !== 'orchestrator-01'))
 
-// This is used in template for graph visualization
+/**
+ * 外围Agent位置数组：将每个Agent映射为其在SVG圆形布局中的坐标。
+ * 供模板中的v-for渲染SVG节点和连接线使用。
+ */
 const getPerimeterPositions = computed(() => {
   const agents = perimeterAgents.value
   const total = agents.length
@@ -163,6 +261,19 @@ const getPerimeterPositions = computed(() => {
   })
 })
 
+/**
+ * 执行A2A Agent发现：通过输入的端点URL发现远程Agent。
+ *
+ * 流程：
+ * 1. 调用getAgentCard()尝试获取远程Agent的卡片信息
+ * 2. 成功 → 将返回的AgentCard添加到discoveredAgents列表
+ * 3. 失败 → 显示错误信息 + 生成模拟Agent卡片（Fallback方案）
+ *
+ * 模拟卡片的生成逻辑（当前实现）：
+ * - agentId格式："discovered-" + Date.now()
+ * - capabilities固定为[TEXT_GEN]
+ * - 元数据包含发现时间戳和端点URL
+ */
 async function handleDiscover() {
   if (!discoveryUrl.value.trim()) return
   discovering.value = true
@@ -175,7 +286,7 @@ async function handleDiscover() {
   } catch (e) {
     discoverError.value = (e as Error).message
 
-    // Fallback: simulate discovery with a generated card
+    // 降级：使用生成的模拟卡片模拟发现结果
     const mockCard: AgentCard = {
       agentId: 'discovered-' + Date.now(),
       name: 'Discovered Agent',
@@ -193,13 +304,13 @@ async function handleDiscover() {
 }
 
 onMounted(() => {
-  // Could attempt live discovery here in the future
+  // 未来可在此处实现实时Agent发现功能
 })
 </script>
 
 <template>
   <div class="agent-page">
-    <!-- Page Header -->
+    <!-- 页面头部 -->
     <header class="page-header">
       <div class="page-header-title-row">
         <h1 class="page-title">Agent 协作</h1>
@@ -208,7 +319,7 @@ onMounted(() => {
       <p class="page-subtitle">多智能体协作网络 · A2A 协议 · 任务分发</p>
     </header>
 
-    <!-- Section 1: Agent Status Cards -->
+    <!-- 区域1：Agent状态卡片 -->
     <section class="agents-section">
       <h2 class="section-title">
         <Network :size="20" />
@@ -258,16 +369,16 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Section 2: Collaboration Graph -->
+    <!-- 区域2：协作拓扑图 -->
     <section class="graph-section">
       <h2 class="section-title">
         <GitGraph :size="20" />
         协作拓扑
       </h2>
       <div class="graph-container">
-        <!-- SVG graph -->
+        <!-- SVG拓扑图：星型结构 -->
         <svg viewBox="0 0 400 400" class="collab-svg">
-          <!-- Connection lines from center to perimeter -->
+          <!-- 中心到外围的连接线 -->
           <line
             v-for="(pos, idx) in getPerimeterPositions"
             :key="'line-' + idx"
@@ -279,14 +390,14 @@ onMounted(() => {
             :class="{ active: hoveredAgent === pos.agentId }"
           />
 
-          <!-- Center orchestrator node -->
+          <!-- 中央Orchestrator节点 -->
           <g class="center-node">
             <circle :cx="centerX" :cy="centerY" r="36" class="center-circle" :class="{ active: hoveredAgent === 'orchestrator-01' }" />
             <text :x="centerX" :y="centerY - 4" text-anchor="middle" class="center-text-top">Orch</text>
             <text :x="centerX" :y="centerY + 14" text-anchor="middle" class="center-text-sub">调度</text>
           </g>
 
-          <!-- Perimeter agent nodes -->
+          <!-- 外围Agent节点（圆形排列） -->
           <g
             v-for="(pos, idx) in getPerimeterPositions"
             :key="'node-' + idx"
@@ -310,7 +421,7 @@ onMounted(() => {
           </g>
         </svg>
 
-        <!-- Agent list below graph -->
+        <!-- 拓扑图图例列表 -->
         <div class="graph-legend">
           <div
             v-for="agent in sampleAgents"
@@ -331,7 +442,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Section 3: A2A Discovery -->
+    <!-- 区域3：A2A发现 -->
     <section class="discovery-section">
       <h2 class="section-title">
         <Globe :size="20" />
@@ -359,13 +470,13 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- Discover error -->
+      <!-- 发现错误提示 -->
       <div v-if="discoverError" class="discover-error">
         <AlertCircle :size="14" />
         {{ discoverError }}
       </div>
 
-      <!-- Discovered agents -->
+      <!-- 已发现的Agent卡片列表 -->
       <div v-if="discoveredAgents.length > 0" class="discovered-list">
         <div
           v-for="card in discoveredAgents"
@@ -391,7 +502,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- Section 4: Capability Legend -->
+    <!-- 区域4：能力说明 -->
     <section class="capabilities-section">
       <h2 class="section-title">
         <Zap :size="20" />
@@ -433,7 +544,7 @@ onMounted(() => {
   gap: var(--spacing-xxl);
 }
 
-/* ---- Page Header ---- */
+/* ---- 页面头部 ---- */
 .page-header {
   display: flex;
   flex-direction: column;
@@ -463,7 +574,7 @@ onMounted(() => {
   color: var(--color-muted);
 }
 
-/* ---- Badges ---- */
+/* ---- 徽章 ---- */
 .badge-coral {
   display: inline-flex;
   align-items: center;
@@ -492,7 +603,7 @@ onMounted(() => {
   border: 1px solid var(--color-hairline);
 }
 
-/* ---- Section Title ---- */
+/* ---- 区域标题 ---- */
 .section-title {
   display: flex;
   align-items: center;
@@ -512,7 +623,7 @@ onMounted(() => {
   margin-left: auto;
 }
 
-/* ---- Agent Cards Grid ---- */
+/* ---- Agent卡片网格 ---- */
 .agents-section {
   display: flex;
   flex-direction: column;
@@ -524,7 +635,7 @@ onMounted(() => {
   gap: var(--spacing-md);
 }
 
-/* ---- Agent Card Dark ---- */
+/* ---- Agent深色卡片 ---- */
 .agent-card-dark {
   display: flex;
   flex-direction: column;
@@ -654,7 +765,7 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-/* ---- Collaboration Graph ---- */
+/* ---- 协作拓扑图 ---- */
 .graph-section {
   display: flex;
   flex-direction: column;
@@ -743,7 +854,7 @@ onMounted(() => {
   pointer-events: none;
 }
 
-/* ---- Graph Legend ---- */
+/* ---- 拓扑图图例 ---- */
 .graph-legend {
   display: flex;
   flex-direction: column;
@@ -792,7 +903,7 @@ onMounted(() => {
   color: var(--color-muted);
 }
 
-/* ---- Discovery Section ---- */
+/* ---- A2A发现区域 ---- */
 .discovery-section {
   display: flex;
   flex-direction: column;
@@ -882,7 +993,7 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
-/* ---- Discovered Cards ---- */
+/* ---- 发现的Agent卡片 ---- */
 .discovered-list {
   display: flex;
   flex-direction: column;
@@ -952,7 +1063,7 @@ onMounted(() => {
   padding: 1px 6px;
 }
 
-/* ---- Capabilities Grid ---- */
+/* ---- 能力说明网格 ---- */
 .capabilities-section {
   display: flex;
   flex-direction: column;

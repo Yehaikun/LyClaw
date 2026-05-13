@@ -1,3 +1,42 @@
+<!--
+  ChatView：聊天主视图，LyClaw应用的核心交互页面，负责编排整个对话流程。
+
+  视图根据对话状态展示三种不同界面：
+
+  1. 欢迎状态（WelcomeHero：无消息且无流式输出）：
+     - 展示"与 LyClaw 对话"标题和快捷提示卡片
+     - 用户可通过ModelSelector切换模型
+     - 点击快捷提示或手动输入发送第一条消息后切换为聊天视图
+
+  2. 聊天状态（消息列表 + 输入框：有消息或流式输出中）：
+     - 消息列表（messageList）：滚动展示历史MessageBubble组件
+     - 思考状态气泡（thinking-bubble）：流式输出刚开始、尚未产生文本时显示三个跳动圆点 + "思考中..."
+     - 临时流式气泡（tempStreamingMessage）：流式输出中实时显示正在累积的文本内容
+     - 错误栏（error-bar）：显示错误信息和TraceId，提供Retry/Dismiss操作
+
+  3. 消息输入栏（MessageInput：始终可见）：
+     - 固定在页面底部，用户可随时输入和发送消息
+     - 流式输出中发送按钮变为停止按钮
+
+  滚动控制机制：
+  - isNearBottom()：计算滚动位置是否接近底部（阈值80px）
+  - userScrolledUp：用户手动上滚时设为true，阻止自动滚动
+  - 新消息到达（messages长度变化）→ 强制滚到底并重置userScrolledUp
+  - 流式输出更新（currentStreamingText变化）→ 仅在接近底部时跟随滚动
+  - 流式输出结束（isStreaming false）→ 最终强制滚到底
+
+  会话生命周期：
+  - onMounted：检测URL查询参数?session=xxx加载已有会话
+  - ensureSession：无会话时创建新会话并绑定到ChatStore
+  - watch route.query.session：用户点击侧栏最近会话时重新加载对应对话
+
+  Props：无（通过stores和route获取全部状态）
+
+  Stores依赖：
+  - chatStore：消息列表、流式状态、当前模型、错误信息
+  - sessionStore：会话CRUD、当前会话绑定
+  - settingsStore：autoScroll设置控制是否自动滚动
+-->
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
@@ -15,28 +54,53 @@ const chatStore = useChatStore()
 const sessionStore = useSessionStore()
 const settingsStore = useSettingsStore()
 
+/** v-model绑定的输入框文本 */
 const inputText = ref('')
+/** 消息列表容器的DOM引用，用于滚动控制 */
 const messageListRef = ref<HTMLElement | null>(null)
+/** 用户是否手动向上滚动离开底部：为true时暂停自动滚动 */
 const userScrolledUp = ref(false)
 
+/** 判定"接近底部"的距离阈值（像素），在此范围内视为用户在底部 */
 const SCROLL_BOTTOM_THRESHOLD = 80
 
+/**
+ * 判断消息列表是否滚动到接近底部。
+ * 计算公式：scrollHeight - scrollTop - clientHeight < 阈值
+ * 当内容总高度减去已滚动距离减去可视高度小于阈值时认为在底部附近。
+ *
+ * @returns true表示用户接近或正在底部
+ */
 function isNearBottom(): boolean {
   if (!messageListRef.value) return true
   const el = messageListRef.value
   return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_BOTTOM_THRESHOLD
 }
 
+/**
+ * 消息列表滚动事件处理：检测用户是否手动上滚离开了底部。
+ * 用户上滚后自动滚动暂停，直到新消息到达或用户手动滚回底部。
+ */
 function onMessageListScroll() {
   userScrolledUp.value = !isNearBottom()
 }
 
+/** 是否有任何消息（用户消息或助手回复） */
 const hasMessages = computed(() => chatStore.messages.length > 0)
 
+/**
+ * 是否处于"思考中"状态：正在流式输出但尚未产生任何可见文本。
+ * 此时显示三个跳动圆点动画提示用户AI正在处理请求。
+ */
 const isThinking = computed(() =>
   chatStore.isStreaming && !chatStore.currentStreamingText
 )
 
+/**
+ * 流式输出中的临时消息对象：实时拼装当前累积的流式文本为Message格式。
+ * 用于在消息列表底部显示实时更新的助手回复气泡。
+ * 返回null表示当前无流式输出或流式未产生文本。
+ */
 const tempStreamingMessage = computed<Message | null>(() => {
   if (chatStore.isStreaming && chatStore.currentStreamingText) {
     return {
@@ -48,10 +112,15 @@ const tempStreamingMessage = computed<Message | null>(() => {
   return null
 })
 
+/** 完整的消息列表（不含流式临时消息，临时消息单独渲染） */
 const allMessages = computed<Message[]>(() => {
   return chatStore.messages
 })
 
+/**
+ * 消息列表的动态内联样式：流式输出时为底部留出额外空间（15vh视口高度），
+ * 让用户可以看到输入框上方的上下文，防止流式文本被输入框遮挡。
+ */
 const messageListStyle = computed(() => {
   if (chatStore.isStreaming) {
     return { paddingBottom: '15vh' }
@@ -59,17 +128,27 @@ const messageListStyle = computed(() => {
   return {}
 })
 
+/**
+ * 确保当前存在活跃会话：无会话时自动创建并绑定。
+ * 在onMounted中调用，保证进入聊天页面时始终有会话上下文。
+ * 创建失败静默处理，不阻塞聊天功能。
+ */
 async function ensureSession() {
   if (!sessionStore.currentSessionId) {
     try {
       const session = await sessionStore.createSession()
       chatStore.setSessionId(session.sessionId)
     } catch {
-      // Session creation failed — proceed without
+      // 会话创建失败 — 不阻塞，允许无会话继续使用
     }
   }
 }
 
+/**
+ * 组件挂载生命周期：检测URL查询参数恢复会话或创建新会话。
+ * - 有?session=xxx参数 → 加载指定会话的历史消息
+ * - 无参数 → 调用ensureSession创建新会话
+ */
 onMounted(() => {
   const sessionId = route.query.session as string | undefined
   if (sessionId) {
@@ -79,6 +158,11 @@ onMounted(() => {
   ensureSession()
 })
 
+/**
+ * 监听URL查询参数中的session变化：用户点击侧栏最近会话时响应。
+ * 检测到session变化 → 选择新会话 → 清空当前聊天 → 加载新会话历史。
+ * 不清空输入框文本，用户可能想在切换前发送。
+ */
 watch(() => route.query.session, (newId) => {
   if (newId && typeof newId === 'string' && newId !== sessionStore.currentSessionId) {
     sessionStore.selectSession(newId)
@@ -87,22 +171,46 @@ watch(() => route.query.session, (newId) => {
   }
 })
 
+/**
+ * 发送消息的处理函数：将用户输入的文本传递给ChatStore.sendMessage。
+ * MessageInput组件emit('send', text)触发此函数。
+ *
+ * @param text 用户输入的原始文本（已由MessageInput.trim处理）
+ */
 function handleSend(text: string) {
   chatStore.sendMessage(text, chatStore.currentSessionId ?? undefined)
 }
 
+/** 停止流式输出：用户点击停止按钮时调用ChatStore.stopGeneration */
 function handleStop() {
   chatStore.stopGeneration()
 }
 
+/** 重试最后一条失败的消息：用户点击错误栏Retry按钮时触发 */
 function handleRetry() {
   chatStore.retry()
 }
 
+/**
+ * 快捷提示选择：将WelcomeHero的预设提示文本填入输入框。
+ * 用户可点击欢迎页的快捷卡片快速开始对话。
+ *
+ * @param text 快捷提示词文本
+ */
 function handleSelectPrompt(text: string) {
   inputText.value = text
 }
 
+/**
+ * 滚动消息列表到底部。
+ *
+ * 条件逻辑：
+ * - force=true：忽略所有限制强制滚到底（新消息到达、流式结束）
+ * - force=false：仅当autoScroll开启且用户未手动上滚时才滚动
+ * - 使用nextTick确保DOM更新后再计算scrollHeight
+ *
+ * @param force 是否强制滚动（无视用户上滚状态）
+ */
 function scrollToBottom(force = false) {
   nextTick(() => {
     if (!messageListRef.value) return
@@ -112,6 +220,10 @@ function scrollToBottom(force = false) {
   })
 }
 
+/**
+ * 监听消息数量变化：新消息到达时强制滚动到底部。
+ * 重置userScrolledUp标志以确保新消息可见。
+ */
 watch(
   () => chatStore.messages.length,
   () => {
@@ -120,16 +232,24 @@ watch(
   },
 )
 
+/**
+ * 监听流式文本更新：仅当用户接近底部时才跟随滚动。
+ * 如果用户正在阅读历史消息（已上滚），流式更新不打扰当前阅读位置。
+ */
 watch(
   () => chatStore.currentStreamingText,
   () => scrollToBottom(),
 )
 
+/**
+ * 监听流式输出状态变化：流式结束时（true→false）强制滚动到底部。
+ * 确保最终完整的助手回复完全可见。
+ */
 watch(
   () => chatStore.isStreaming,
   (streaming) => {
     if (!streaming) {
-      // Streaming just finished — final scroll to bottom
+      // 流式输出刚结束 — 最终滚动到底部确保完整回复可见
       userScrolledUp.value = false
       scrollToBottom(true)
     }
@@ -139,13 +259,13 @@ watch(
 
 <template>
   <div class="chat-view">
-    <!-- Empty state: WelcomeHero -->
+    <!-- 空状态：欢迎页（无消息且无流式输出） -->
     <WelcomeHero
       v-if="!hasMessages && !chatStore.isStreaming"
       @select-prompt="handleSelectPrompt"
     />
 
-    <!-- Messages view -->
+    <!-- 消息视图（有消息或流式输出中） -->
     <template v-if="hasMessages || chatStore.isStreaming">
       <div ref="messageListRef" class="message-list" :style="messageListStyle" @scroll="onMessageListScroll">
         <MessageBubble
@@ -156,7 +276,7 @@ watch(
           :is-streaming="false"
         />
 
-        <!-- Thinking bubble -->
+        <!-- 思考气泡：流式输出中但尚未产生文本时显示跳动圆点动画 -->
         <div v-if="isThinking" class="thinking-bubble">
           <div class="thinking-bubble-inner">
             <div class="message-role-icon thinking-avatar">
@@ -177,7 +297,7 @@ watch(
           </div>
         </div>
 
-        <!-- Streaming temporary bubble -->
+        <!-- 流式临时气泡：显示实时累积的流式输出文本 -->
         <MessageBubble
           v-if="tempStreamingMessage"
           :message="tempStreamingMessage"
@@ -186,7 +306,7 @@ watch(
         />
       </div>
 
-      <!-- Error bar -->
+      <!-- 错误栏：显示错误信息、TraceId和操作按钮（Retry/Dismiss） -->
       <div v-if="chatStore.error" class="error-bar">
         <div class="error-bar-content">
           <span class="error-text">{{ chatStore.error }}</span>
@@ -203,7 +323,7 @@ watch(
 
     </template>
 
-    <!-- Input (always visible) -->
+    <!-- 输入栏：始终在底部可见，用户可以随时输入 -->
     <MessageInput
       v-model="inputText"
       :is-streaming="chatStore.isStreaming"
@@ -228,7 +348,7 @@ watch(
   overflow-y: auto;
   padding: var(--spacing-md) 0;
   transition: padding-bottom 0.4s ease;
-  /* scroll-behavior removed: smooth causes jitter during SSE streaming */
+  /* scroll-behavior移除：smooth在SSE流式滚动中会导致抖动 */
 }
 
 .message-list::-webkit-scrollbar {
@@ -315,7 +435,7 @@ watch(
   color: var(--color-body);
 }
 
-/* ---- Thinking bubble ---- */
+/* ---- 思考状态气泡：三个跳动圆点 + "思考中..."文字 ---- */
 .thinking-bubble {
   padding: var(--spacing-md) var(--spacing-xl);
 }

@@ -1,3 +1,34 @@
+<!--
+  ToolCallCard：工具调用展示卡片，以可折叠的卡片形式展示LLM工具调用的详细信息。
+
+  使用场景：
+  - 嵌入在assistant消息气泡中，当LLM的回复涉及工具调用时展示
+  - 卡片默认折叠，显示工具名称和状态图标（成功/失败/执行中）
+  - 点击展开后显示完整参数、执行结果和错误信息
+
+  卡片状态指示：
+  - 已完成（hasResult=true）：显示CheckCircle或XCircle图标
+    · resultSuccess为true → 绿色CheckCircle（执行成功）
+    · resultSuccess为false → 红色XCircle（执行失败）
+  - 执行中（hasResult=false）：显示旋转的Loader图标（pending状态）
+
+  展开内容（折叠时隐藏）：
+  1. Description区域（若有描述）：工具调用的自然语言说明
+  2. Arguments区域：格式化的JSON参数字符串，等宽字体展示
+  3. Result区域（若有结果）：工具执行的返回内容
+     · 成功结果左侧有绿色左边框
+     · 失败结果左侧有红色左边框
+     · 结果头部有OK/Error状态标签
+
+  技术细节：
+  - resultSuccess通过尝试JSON.parse解析result字段判断：
+    · 若解析出的对象包含success:false或存在error字段 → 判定失败
+    · 解析失败或对象格式不匹配 → 默认判定成功
+  - formattedArgs同样通过JSON.parse+JSON.stringify格式化展示
+
+  Props：
+  - toolCall: ToolCall — 工具调用对象，包含name、arguments、description和result
+-->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ChevronDown, Wrench, CheckCircle, XCircle, Loader } from 'lucide-vue-next'
@@ -7,18 +38,30 @@ const props = defineProps<{
   toolCall: ToolCall
 }>()
 
+/** 卡片是否展开显示详情 */
 const isExpanded = ref(false)
 
+/** 切换卡片的展开/折叠状态 */
 function toggleExpand() {
   isExpanded.value = !isExpanded.value
 }
 
+/** 是否有执行结果：result不为undefined表示工具已执行完毕 */
 const hasResult = computed(() => props.toolCall.result !== undefined)
 
+/**
+ * 判断工具执行结果是否为成功状态。
+ *
+ * 判断逻辑：
+ * 1. result为null/undefined → 返回null（尚未执行）
+ * 2. 尝试将result解析为JSON对象
+ * 3. 检查parsed.success !== false且parsed.error === undefined → 成功
+ * 4. JSON解析失败 → 默认视为成功（纯文本结果）
+ */
 const resultSuccess = computed(() => {
   if (!props.toolCall.result) return null
   try {
-    // Try to parse result as JSON to check for success flag
+    // 尝试将result解析为JSON以检查success标志
     const parsed = JSON.parse(props.toolCall.result)
     if (typeof parsed === 'object' && parsed !== null) {
       return parsed.success !== false && parsed.error === undefined
@@ -29,6 +72,12 @@ const resultSuccess = computed(() => {
   }
 })
 
+/**
+ * 格式化参数JSON字符串为缩进2空格的美化格式。
+ *
+ * 若arguments本身是合法JSON字符串则美化输出，
+ * 否则直接返回原始字符串（可能不是JSON格式）。
+ */
 const formattedArgs = computed(() => {
   if (!props.toolCall.arguments) return ''
   try {

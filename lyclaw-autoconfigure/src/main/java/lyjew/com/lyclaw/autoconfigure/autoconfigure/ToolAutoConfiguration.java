@@ -2,68 +2,28 @@ package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.autoconfigure.facade.ConditionFilter;
 import lyjew.com.lyclaw.autoconfigure.processor.ToolAnnotationProcessor;
-import lyjew.com.lyclaw.context.ChatContext;
-import lyjew.com.lyclaw.exception.ToolNotFoundException;
-import lyjew.com.lyclaw.model.ToolCall;
-import lyjew.com.lyclaw.model.ToolDefinition;
-import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolRegistry;
-import lyjew.com.lyclaw.tool.ToolResult;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
 
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
- * Auto-configuration for the {@link ToolRegistry} and its related
- * discovery / filtering beans.
+ * 工具相关自动配置，负责注册 {@link ToolAnnotationProcessor} 和 {@link ConditionFilter}。
  *
- * <p>The {@code toolRegistry} bean is only created when no other
- * {@link ToolRegistry} implementation (e.g. {@code DefaultToolRegistry})
- * is already present in the context — this avoids duplicate registries.</p>
+ * <p>不再创建匿名 {@link ToolRegistry} 回退 bean，
+ * 统一由 action 模块的 {@code DefaultToolRegistry} 提供唯一注册表。</p>
  */
 @AutoConfiguration
 @ConditionalOnClass(ToolRegistry.class)
 public class ToolAutoConfiguration {
 
-    /**
-     * Fallback {@link ToolRegistry} — only created when the action module's
-     * {@code DefaultToolRegistry} is not available (services outside the action scope).
-     */
     @Bean
     @ConditionalOnMissingBean
-    public ToolRegistry toolRegistry() {
-        return new ToolRegistry() {
-            private final Map<String, Tool> tools = new ConcurrentHashMap<>();
-
-            @Override
-            public void register(Tool tool) { tools.put(tool.getName(), tool); }
-
-            @Override
-            public Tool get(String name) { return tools.get(name); }
-
-            @Override
-            public List<ToolDefinition> getAllDefinitions() {
-                return tools.values().stream().map(Tool::getDefinition).toList();
-            }
-
-            @Override
-            public ToolResult execute(ToolCall call, ChatContext ctx) {
-                Tool tool = tools.get(call.getName());
-                if (tool == null) throw new ToolNotFoundException("Tool not found: " + call.getName());
-                return tool.execute(call, ctx);
-            }
-        };
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
+    @ConditionalOnBean(ToolRegistry.class)
     public ToolAnnotationProcessor toolAnnotationProcessor(ToolRegistry registry) {
         return new ToolAnnotationProcessor(registry);
     }

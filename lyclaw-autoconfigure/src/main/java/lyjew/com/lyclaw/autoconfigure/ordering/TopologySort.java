@@ -1,7 +1,7 @@
 package lyjew.com.lyclaw.autoconfigure.ordering;
 
 import java.util.*;
-
+import java.util.function.Function;
 /**
  * 拓扑排序工具类。
  *
@@ -39,7 +39,7 @@ public class TopologySort {
      * @throws IllegalStateException 检测到循环依赖时抛出
      */
     public static <T> List<T> sort(Collection<T> items,
-                                    java.util.function.Function<T, Collection<T>> dependencyResolver) {
+                                    Function<T, Collection<T>> dependencyResolver) {
         // 存储每个节点的入度（有多少节点依赖它之前必须先完成）
         Map<T, Integer> inDegree = new HashMap<>();
         // 邻接表：存储每个节点的后继节点列表

@@ -1,3 +1,60 @@
+<!--
+  PlanView：任务规划页面视图，提供智能任务分解计划的生成、DAG可视化和进度追踪功能。
+
+  页面包含4个功能区域：
+
+  1. 计划生成器（generator-section）：
+     - textarea：用户输入任务意图描述（如"分析项目代码结构"）
+     - 策略选择下拉框：4种分解策略
+       · DAG（有向无环图）：支持复杂依赖关系的图分解
+       · CoT（思维链）：逐步推理式线性分解
+       · ReAct（推理行动）：推理-行动交替的循环分解
+       · Hierarchical（层级分解）：递归拆分为子任务树
+     - "生成计划"按钮：带loading状态的提交按钮（Ctrl+Enter快捷键）
+     - 调用generatePlan API发送PlanRequest（含userIntent、strategy、context）
+
+     API响应处理：
+     - 成功且有nodes数组 → 使用返回的planNodes/criticalPath/estimatedTimeMs等数据
+     - 成功但无nodes → 降级使用本地sampleNodes示例数据（useFallbackPlan）
+     - API调用失败 → 降级使用本地示例数据并模拟42%进度
+
+  2. DAG任务图（dag-section：仅在生成后显示）：
+     - DAG头部元数据：
+       · 节点总数、预估时间（格式化显示）、最大并发数、策略名称徽章
+     - 拓扑层级布局（dag-container）：
+       · 使用拓扑排序将节点分配到不同层级列（L0、L1、L2...）
+       · 每层显示该层级的所有TaskNode卡片（垂直排列）
+       · 卡片展示：
+         - node-id（等宽字体）+ 节点类型徽章（EXECUTE=执行/CHECK=校验/DECISION=决策/MERGE=合并）
+         - 节点描述文本
+         - 所需工具列表（Zap图标 + 逗号分隔的工具名）
+         - 超时时间
+         - 依赖标签（dep-tag）：显示前驱节点ID
+       · 关键路径节点（critical-node）：左侧主题色4px边框高亮
+       · 当前执行节点（current-node）：主题色box-shadow发光效果
+     - DAG图例（dag-legend）：4个圆点说明（主色=关键路径/青色=校验/琥珀色=决策/绿色=合并）
+
+  3. 执行进度（progress-section）：
+     - 进度条：主题色填充 + 百分比数字（动画过渡0.6s缓出指数曲线）
+     - 状态文本：
+       · 正在执行中：Activity图标（脉冲动画）+ 当前步骤描述
+       · 等待执行：CheckCircle2图标 + "计划已生成，等待执行"
+
+  4. 可用分解策略列表（strategies-section）：
+     - 从listStrategies API获取的策略网格（失败时降级为8种硬编码策略）
+     - 每张策略卡片：ListTree图标 + 策略名称（等宽字体）+ 中文描述
+
+  拓扑层级算法（nodeLevels / maxLevel）：
+  - 递归计算每个节点的层级：节点层级 = max(所有依赖节点的层级) + 1
+  - 无依赖的节点层级为0（顶层L0）
+  - 使用Map缓存避免重复计算
+  - 模板中v-for遍历level 0到maxLevel渲染各层级列
+
+  当前局限性：
+  - 后端API返回数据格式不完全确定，需要try-catch降级处理
+  - 进度追踪为模拟数据（useFallbackPlan中固定42%），非真实执行状态
+  - DAG图仅展示拓扑结构，不支持交互式拖拽或编辑
+-->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import {
@@ -23,9 +80,12 @@ import {
 import { generatePlan, listStrategies } from '@/api/plan'
 import type { PlanRequest, TaskNode } from '@/types'
 
-// ---- State ----
+// ---- 状态 ----
+/** 用户输入的任务意图描述 */
 const userIntent = ref('')
+/** 当前选中的分解策略标识 */
 const selectedStrategy = ref('dag')
+/** 4种可选策略的本地配置 */
 const strategyOptions = [
   { value: 'dag', label: 'DAG 有向无环图' },
   { value: 'cot', label: 'CoT 思维链' },
@@ -33,27 +93,41 @@ const strategyOptions = [
   { value: 'hierarchical', label: '层级分解' },
 ]
 
+/** 从后端API获取的可用策略列表（失败时降级为硬编码策略） */
 const availableStrategies = ref<{ name: string; description: string }[]>([])
 
-// Plan data
+// ---- 计划数据 ----
+/** 生成的计划任务节点列表 */
 const planNodes = ref<TaskNode[]>([])
+/** 关键路径节点ID序列 */
 const planCriticalPath = ref<string[]>([])
+/** 预估总执行时间（毫秒） */
 const planEstimatedTime = ref(0)
+/** 最大并行度（可同时执行的节点数） */
 const planMaxParallelism = ref(1)
+/** 使用的分解策略名称 */
 const planStrategyUsed = ref('')
+/** 计划唯一标识 */
 const planId = ref<string | null>(null)
 
-// Progress
+// ---- 进度状态 ----
+/** 执行进度百分比（0-100） */
 const planProgress = ref(0)
+/** 当前正在执行的步骤ID */
 const currentStep = ref('')
+/** 进度状态描述文本 */
 const progressStatus = ref('')
 
-// UI state
+// ---- UI状态 ----
+/** 是否正在生成计划（loading状态） */
 const loading = ref(false)
+/** 错误消息（非null时显示错误提示） */
 const errorMsg = ref<string | null>(null)
+/** 是否已经生成过计划（控制DAG和进度区域显示） */
 const hasGenerated = ref(false)
 
-// ---- Sample fallback data ----
+// ---- 示例回退数据 ----
+/** 当后端API不可用时的6个示例任务节点 */
 const sampleNodes: TaskNode[] = [
   {
     nodeId: 'node-1',
@@ -104,11 +178,15 @@ const sampleNodes: TaskNode[] = [
     timeoutMs: 5000,
   },
 ]
+/** 示例关键路径 */
 const sampleCriticalPath = ['node-1', 'node-2', 'node-3', 'node-4', 'node-6']
+/** 示例预估时间（毫秒） */
 const sampleEstimatedTime = 35000
+/** 示例最大并行度 */
 const sampleMaxParallelism = 2
 
-// ---- Computed ----
+// ---- 计算属性 ----
+/** 节点类型到CSS颜色的映射 */
 const typeColorMap: Record<string, string> = {
   EXECUTE: 'var(--color-primary)',
   CHECK: 'var(--color-accent-teal)',
@@ -116,6 +194,7 @@ const typeColorMap: Record<string, string> = {
   MERGE: 'var(--color-success)',
 }
 
+/** 节点类型到中文标签的映射 */
 const typeLabelMap: Record<string, string> = {
   EXECUTE: '执行',
   CHECK: '校验',
@@ -129,7 +208,15 @@ const displayEstimatedTime = computed(() => planEstimatedTime.value > 0 ? planEs
 const displayMaxParallelism = computed(() => planMaxParallelism.value > 0 ? planMaxParallelism.value : 1)
 const displayStrategy = computed(() => planStrategyUsed.value || '')
 
-// Compute topological levels for layout
+/**
+ * 拓扑层级计算：为每个节点分配其在DAG图中的层级（列索引）。
+ *
+ * 算法：
+ * - 无依赖的节点 → 层级0（L0列）
+ * - 有依赖的节点 → 层级 = max(所有依赖节点的层级) + 1
+ * - 使用递归+缓存避免重复计算
+ * - 结果用于DAG容器的按列布局渲染
+ */
 const nodeLevels = computed(() => {
   const levels = new Map<string, number>()
   const nodes = displayNodes.value
@@ -152,13 +239,26 @@ const nodeLevels = computed(() => {
   return levels
 })
 
+/** DAG图的最大层级数（用于模板中v-for循环渲染各列） */
 const maxLevel = computed(() => {
   let max = 0
   nodeLevels.value.forEach(l => { if (l > max) max = l })
   return max
 })
 
-// ---- Methods ----
+// ---- 方法 ----
+
+/**
+ * 生成任务计划：调用generatePlan API并处理响应。
+ *
+ * 流程：
+ * 1. 验证userIntent非空
+ * 2. 构造PlanRequest（userIntent + strategy + empty context）
+ * 3. 调用generatePlan(req)
+ * 4. 成功且有nodes → 使用API返回数据填充planNodes等状态
+ * 5. 成功但无nodes → 降级使用示例数据
+ * 6. API调用失败 → 降级使用示例数据并模拟进度
+ */
 async function handleGenerate() {
   if (!userIntent.value.trim()) return
   loading.value = true
@@ -173,7 +273,7 @@ async function handleGenerate() {
 
   try {
     const result = await generatePlan(req)
-    // Try to parse response
+    // 尝试解析响应
     if (result.nodes && Array.isArray(result.nodes)) {
       planNodes.value = result.nodes as TaskNode[]
       planCriticalPath.value = (result.criticalPath as string[]) || []
@@ -183,7 +283,7 @@ async function handleGenerate() {
       planId.value = (result.planId as string) || null
       planProgress.value = (result.progress as number) || 0
     } else {
-      // Use fallback
+      // 降级：使用示例数据
       useFallbackPlan()
     }
   } catch {
@@ -193,36 +293,70 @@ async function handleGenerate() {
   }
 }
 
+/**
+ * 降级方案：使用本地预定义的示例任务数据填充计划状态。
+ * 同时模拟42%的进度和"正在执行: 生成初步方案"的状态文本。
+ */
 function useFallbackPlan() {
   planNodes.value = sampleNodes
   planCriticalPath.value = sampleCriticalPath
   planEstimatedTime.value = sampleEstimatedTime
   planMaxParallelism.value = sampleMaxParallelism
   planStrategyUsed.value = selectedStrategy.value
-  // Simulate progress
+  // 模拟执行进度
   planProgress.value = 42
   currentStep.value = 'node-3'
   progressStatus.value = '正在执行: 生成初步方案'
 }
 
+/**
+ * 格式化时间显示：毫秒转换为人类可读格式。
+ * ≥60000ms→"X.Xmin"、≥1000ms→"X.Xs"、<1000ms→"Xms"
+ *
+ * @param ms 毫秒数
+ * @returns 格式化时间字符串
+ */
 function formatTime(ms: number): string {
   if (ms >= 60000) return (ms / 60000).toFixed(1) + 'min'
   if (ms >= 1000) return (ms / 1000).toFixed(1) + 's'
   return ms + 'ms'
 }
 
+/**
+ * 判断节点是否在关键路径上。
+ *
+ * @param nodeId 节点标识
+ * @returns 若在关键路径中返回true
+ */
 function isCritical(nodeId: string): boolean {
   return displayCriticalPath.value.includes(nodeId)
 }
 
+/**
+ * 判断节点是否为当前正在执行的步骤。
+ *
+ * @param nodeId 节点标识
+ * @returns 若为当前步骤返回true
+ */
 function isCurrentStep(nodeId: string): boolean {
   return currentStep.value === nodeId
 }
 
+/**
+ * 获取指定层级的所有节点列表。
+ * 从displayNodes中筛选出nodeLevels映射为指定level的节点。
+ *
+ * @param level 拓扑层级索引（0-based）
+ * @returns 该层级的所有TaskNode数组
+ */
 function getNodesAtLevel(level: number): TaskNode[] {
   return displayNodes.value.filter(n => nodeLevels.value.get(n.nodeId) === level)
 }
 
+/**
+ * 组件挂载：从后端获取可用分解策略列表。
+ * API调用失败时降级为8种预定义的策略（SEQUENTIAL/DAG/COT/REACT/HIERARCHICAL/BY_DOMAIN/BY_PHASE/PARALLEL_INDEPENDENT）。
+ */
 onMounted(async () => {
   try {
     const strategies = await listStrategies()
@@ -246,7 +380,7 @@ onMounted(async () => {
 
 <template>
   <div class="plan-page">
-    <!-- Page Header -->
+    <!-- 页面头部 -->
     <header class="page-header">
       <div class="page-header-title-row">
         <h1 class="page-title">任务规划</h1>
@@ -255,7 +389,7 @@ onMounted(async () => {
       <p class="page-subtitle">DAG 任务图 · 多策略分解 · 实时进度</p>
     </header>
 
-    <!-- Section 1: Plan Generator -->
+    <!-- 区域1：计划生成器 -->
     <section class="generator-section">
       <h2 class="section-title">
         <Brain :size="20" />
@@ -291,13 +425,13 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- Loading -->
+    <!-- 加载状态 -->
     <div v-if="loading" class="loading-state">
       <Loader2 :size="24" class="spin" />
       <span>正在生成任务计划...</span>
     </div>
 
-    <!-- Section 2: DAG Graph (only after generation) -->
+    <!-- 区域2：DAG任务图（仅在生成后显示） -->
     <section v-if="!loading && hasGenerated" class="dag-section">
       <div class="dag-header">
         <h2 class="section-title">
@@ -321,7 +455,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- DAG Layout: columns by topological level -->
+      <!-- DAG布局：按拓扑层级列展示 -->
       <div class="dag-container">
         <div
           v-for="level in maxLevel + 1"
@@ -359,7 +493,7 @@ onMounted(async () => {
                 </span>
                 <span class="node-timeout">{{ formatTime(node.timeoutMs) }}</span>
               </div>
-              <!-- Dependency arrows -->
+              <!-- 依赖箭头 -->
               <div v-if="node.dependencies.length > 0" class="node-deps">
                 <span class="deps-label">依赖:</span>
                 <span v-for="dep in node.dependencies" :key="dep" class="dep-tag">
@@ -372,7 +506,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Legend -->
+      <!-- DAG图例 -->
       <div class="dag-legend">
         <div class="legend-item">
           <div class="legend-dot" style="background: var(--color-primary);" />
@@ -393,7 +527,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- Section 3: Progress -->
+    <!-- 区域3：执行进度 -->
     <section v-if="hasGenerated && !loading" class="progress-section">
       <h2 class="section-title">
         <BarChart3 :size="20" />
@@ -420,7 +554,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- Section 4: Strategies List -->
+    <!-- 区域4：可用分解策略列表 -->
     <section class="strategies-section">
       <h2 class="section-title">
         <Route :size="20" />
@@ -444,7 +578,7 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- Error state -->
+    <!-- 错误状态 -->
     <div v-if="errorMsg && !loading" class="empty-state">
       <AlertCircle :size="32" />
       <span>生成出错: {{ errorMsg }}</span>
@@ -462,7 +596,7 @@ onMounted(async () => {
   gap: var(--spacing-xxl);
 }
 
-/* ---- Page Header ---- */
+/* ---- 页面头部 ---- */
 .page-header {
   display: flex;
   flex-direction: column;
@@ -492,7 +626,7 @@ onMounted(async () => {
   color: var(--color-muted);
 }
 
-/* ---- Badges ---- */
+/* ---- 徽章 ---- */
 .badge-coral {
   display: inline-flex;
   align-items: center;
@@ -521,7 +655,7 @@ onMounted(async () => {
   border: 1px solid var(--color-hairline);
 }
 
-/* ---- Section Title ---- */
+/* ---- 区域标题 ---- */
 .section-title {
   display: flex;
   align-items: center;
@@ -534,7 +668,7 @@ onMounted(async () => {
   margin-bottom: var(--spacing-md);
 }
 
-/* ---- Generator ---- */
+/* ---- 生成器 ---- */
 .generator-section {
   display: flex;
   flex-direction: column;
@@ -633,7 +767,7 @@ onMounted(async () => {
   cursor: not-allowed;
 }
 
-/* ---- Loading ---- */
+/* ---- 加载状态 ---- */
 .loading-state {
   display: flex;
   align-items: center;
@@ -652,7 +786,7 @@ onMounted(async () => {
   to { transform: rotate(360deg); }
 }
 
-/* ---- Empty State ---- */
+/* ---- 空状态 ---- */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -668,7 +802,7 @@ onMounted(async () => {
   padding: var(--spacing-lg);
 }
 
-/* ---- DAG Section ---- */
+/* ---- DAG区域 ---- */
 .dag-section {
   display: flex;
   flex-direction: column;
@@ -699,7 +833,7 @@ onMounted(async () => {
   font-family: var(--font-sans);
 }
 
-/* ---- DAG Container ---- */
+/* ---- DAG容器 ---- */
 .dag-container {
   display: flex;
   gap: var(--spacing-md);
@@ -734,7 +868,7 @@ onMounted(async () => {
   gap: var(--spacing-sm);
 }
 
-/* ---- Task Node Card ---- */
+/* ---- 任务节点卡片 ---- */
 .task-node-card {
   display: flex;
   flex-direction: column;
@@ -835,7 +969,7 @@ onMounted(async () => {
   font-size: 0.65rem;
 }
 
-/* ---- DAG Legend ---- */
+/* ---- DAG图例 ---- */
 .dag-legend {
   display: flex;
   align-items: center;
@@ -859,7 +993,7 @@ onMounted(async () => {
   border-radius: 50%;
 }
 
-/* ---- Progress Section ---- */
+/* ---- 进度区域 ---- */
 .progress-section {
   display: flex;
   flex-direction: column;
@@ -928,7 +1062,7 @@ onMounted(async () => {
   50% { opacity: 0.4; }
 }
 
-/* ---- Strategies Grid ---- */
+/* ---- 策略网格 ---- */
 .strategies-section {
   display: flex;
   flex-direction: column;
