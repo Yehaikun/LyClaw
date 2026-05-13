@@ -31,6 +31,43 @@ public class AnnotatedScriptTool {
             "bash", new String[]{"bash", ".sh"}
     );
 
+    /**
+     * 执行一段脚本代码，将其写入临时文件后通过对应的解释器在子进程中运行。
+     *
+     * <p>支持的编程语言及对应解释器：
+     * <ul>
+     *   <li><b>python</b> — 使用 {@code python3} 解释器，临时文件后缀为 {@code .py}</li>
+     *   <li><b>node</b> — 使用 {@code node} 解释器，临时文件后缀为 {@code .js}</li>
+     *   <li><b>bash</b> — 使用 {@code bash} 解释器，临时文件后缀为 {@code .sh}</li>
+     * </ul>
+     * 语言参数不区分大小写，传入不支持的语言时会返回错误提示。
+     * </p>
+     *
+     * <p>执行流程：
+     * <ol>
+     *   <li>根据 {@code language} 参数查找对应的解释器和文件后缀，若语言不支持则直接返回错误</li>
+     *   <li>通过 {@link java.nio.file.Files#createTempFile} 创建临时文件（前缀为 {@code lyclaw_script_}），
+     *       以 UTF-8 编码将脚本内容写入文件，并设置文件为可执行权限</li>
+     *   <li>拼装命令行：解释器路径 + 临时文件的绝对路径，委托给
+     *       {@link CommandExecutor#execute(String, int, int)} 在独立子进程中执行，
+     *       超时时间为 30 秒，输出限制在 10000 字符以内</li>
+     *   <li>无论执行成功、失败、超时或异常，都会在 finally 块中删除临时文件，避免残留</li>
+     * </ol>
+     * </p>
+     *
+     * <p>返回值格式：
+     * <ul>
+     *   <li>正常完成：{@code [exit=退出码] 标准输出和标准错误的内容}</li>
+     *   <li>执行超时：{@code "脚本执行超时（30秒）"}</li>
+     *   <li>发生异常：{@code "脚本执行异常: 异常消息"}</li>
+     *   <li>语言不支持：{@code "不支持的语言: xxx。支持: python, node, bash"}</li>
+     * </ul>
+     * </p>
+     *
+     * @param language 编程语言标识，支持 {@code "python"}、{@code "node"}、{@code "bash"}（不区分大小写）
+     * @param script   要执行的脚本源代码完整内容，应为合法的对应语言脚本
+     * @return 脚本执行结果字符串，包含退出码和输出内容，出错时返回错误描述信息
+     */
     public String executeScript(
             @Param(name = "language", description = "编程语言: python, node, bash", required = true)
             String language,

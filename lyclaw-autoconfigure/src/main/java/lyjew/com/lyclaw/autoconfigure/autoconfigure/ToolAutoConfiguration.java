@@ -21,6 +21,20 @@ import org.springframework.core.env.Environment;
 @ConditionalOnClass(ToolRegistry.class)
 public class ToolAutoConfiguration {
 
+    /**
+     * 注册 ToolAnnotationProcessor 工具注解处理器 Bean，自动发现 @Tool 注解的工具类。
+     *
+     * <p>该处理器作为 BeanPostProcessor，在应用启动时扫描所有 Spring Bean，自动发现
+     * 标注了 {@code @Tool} 注解的类。支持三种工具注册模式：类级 + 方法级 @Tool 注解模式、
+     * 类级 @Tool 注解 + Tool 接口实现模式、以及旧版无注解的 Tool 接口兼容模式。
+     * 通过反射解析方法参数上的 @Param 注解构建 JSON Schema 格式的参数定义，
+     * 并将工具适配器注册到 ToolRegistry。使用 {@code @ConditionalOnMissingBean}
+     * 允许替换，使用 {@code @ConditionalOnBean(ToolRegistry.class)} 确保依赖就绪。</p>
+     *
+     * @param registry ToolRegistry 实例，由 action 模块的 DefaultToolRegistry 提供，
+     *                 所有发现的工具最终注册到此注册表中
+     * @return ToolAnnotationProcessor 实例，负责发现和注册 @Tool 注解的 Spring Bean
+     */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(ToolRegistry.class)

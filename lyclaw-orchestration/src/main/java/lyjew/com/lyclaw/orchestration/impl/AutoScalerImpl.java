@@ -167,14 +167,29 @@ public class AutoScalerImpl implements AutoScaler {
     }
 
     /**
-     * @return 当前 Agent 数量
+     * 获取当前系统中活跃的 Agent 总数。
+     *
+     * <p>返回内部维护的 currentAgentCount 字段值。该值在系统初始化时默认设为 3，
+     * 随后通过 apply() 方法中的 SCALE_UP/SCALE_DOWN 决策自动调整，或通过
+     * setCurrentAgentCount() 方法手动设置。注意：在真实生产环境中，此值应从实际的
+     * Agent 池（如 AgentRegistry 或 AgentLifecycleManager）中实时获取，当前实现中
+     * 它是一个模拟计数器，用于演示扩缩容逻辑的运行效果。</p>
+     *
+     * @return 当前 Agent 总数，最小值为 1
      */
     public int getCurrentAgentCount() {
         return currentAgentCount;
     }
 
     /**
-     * 手动设置 Agent 数量，确保不小于 1。
+     * 手动设置当前 Agent 总数，用于运维人员直接调整集群规模。
+     *
+     * <p>允许外部调用方（如管理 API、运维脚本或集成测试）绕开扩缩容决策引擎，
+     * 直接设定 Agent 数量。方法内部会确保设置的值不小于 1（保底一个 Agent），
+     * 防止系统缩容至零导致无法响应任何请求。每次调用都会记录 info 级别日志，
+     * 便于追踪手动干预记录。</p>
+     *
+     * @param count 目标 Agent 数量，若小于 1 则自动修正为 1
      */
     public void setCurrentAgentCount(int count) {
         this.currentAgentCount = Math.max(1, count);

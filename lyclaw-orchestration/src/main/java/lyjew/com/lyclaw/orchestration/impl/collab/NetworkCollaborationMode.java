@@ -39,11 +39,34 @@ public class NetworkCollaborationMode implements CollaborationMode {
         this.consensusEngine = consensusEngine;
     }
 
+    /**
+     * 获取网络协作模式的唯一标识符。
+     *
+     * <p>返回固定字符串 "network"，作为该协作模式在系统中的全局唯一 ID。
+     * 该标识符用于 CollaborationHub 中的模式注册和查找（如通过 ModeRegistry
+     * 按 modeId 获取对应的协作模式实例）、编排上下文（OrchestrationContext）中
+     * collaborationModeId 字段的赋值、日志输出中的模式标签，以及前端 API 中
+     * 指定协作模式时的参数值。每个 CollaborationMode 实现类必须返回唯一且不可变的 modeId。</p>
+     *
+     * @return 模式标识符，固定为 "network"
+     */
     @Override
     public String getModeId() {
         return MODE_ID;
     }
 
+    /**
+     * 获取网络协作模式偏好的网络拓扑类型。
+     *
+     * <p>返回 TopologyType.MESH（全连接网状拓扑）。在网络（对等共识）模式中，
+     * 所有 Agent 地位平等（peer），每个 Agent 都可以与任意其他 Agent 直接通信。
+     * 采用 MESH 拓扑意味着建立 N*(N-1)/2 条双向通道（完全图），每对 Agent 之间
+     * 都有独立的通信链路，支持 context_share（上下文共享）、vote（投票）和
+     * message（消息）三种通信类型。StarAgentChannel 会根据此偏好设置当前拓扑类型
+     * 为 MESH，从而启用 meshRoute() 方法进行全对等消息路由。</p>
+     *
+     * @return 偏好的拓扑类型，固定为 TopologyType.MESH
+     */
     @Override
     public TopologyType getPreferredTopology() {
         return TopologyType.MESH;

@@ -28,11 +28,35 @@ public class SupervisorWorkerMode implements CollaborationMode {
     private final ConcurrentHashMap<String, Double> progressMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> cancelMap = new ConcurrentHashMap<>();
 
+    /**
+     * 获取监督者-工作者协作模式的唯一标识符。
+     *
+     * <p>返回固定字符串 "supervisor_worker"，作为该协作模式在系统中的全局唯一 ID。
+     * 该标识符用于 CollaborationHub 中的模式注册和查找（如通过 ModeRegistry
+     * 按 modeId 获取对应的协作模式实例）、编排上下文（OrchestrationContext）中
+     * collaborationModeId 字段的赋值、日志输出中的模式标签，以及前端 API 中
+     * 指定协作模式时的参数值。每个 CollaborationMode 实现类必须返回唯一且不可变的 modeId。</p>
+     *
+     * @return 模式标识符，固定为 "supervisor_worker"
+     */
     @Override
     public String getModeId() {
         return MODE_ID;
     }
 
+    /**
+     * 获取监督者-工作者协作模式偏好的网络拓扑类型。
+     *
+     * <p>返回 TopologyType.STAR（星型拓扑）。在监督者-工作者模式中，第一个 Agent
+     * 担任监督者（supervisor，中心节点），其余 Agent 为工作者（worker，叶节点）。
+     * 监督者负责将任务分派给各个 worker，worker 并行执行后将结果上报给监督者汇总。
+     * 星型拓扑最适合这种集中式任务分配和结果汇总场景，消息路由清晰高效：
+     * 监督者通过 task_dispatch、result_collect、status_query 通道管理 worker，
+     * worker 通过 result_report、error_report、status_update 通道向上汇报。
+     * StarAgentChannel 会根据此偏好设置当前拓扑类型为 STAR。</p>
+     *
+     * @return 偏好的拓扑类型，固定为 TopologyType.STAR
+     */
     @Override
     public TopologyType getPreferredTopology() {
         return TopologyType.STAR;

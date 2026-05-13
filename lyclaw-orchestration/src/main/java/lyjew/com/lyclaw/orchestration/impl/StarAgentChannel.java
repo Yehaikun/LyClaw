@@ -173,6 +173,15 @@ public class StarAgentChannel implements AgentChannel {
 
     /**
      * 取消指定 Agent 的消费者订阅。
+     *
+     * <p>从指定 Agent 的消费者列表中移除给定的 Consumer 回调。
+     * 如果该 Agent 当前没有任何已注册的消费者，调用此方法不会产生任何效果。
+     * 此操作是线程安全的，底层使用 CopyOnWriteArrayList 保证并发修改的安全性。
+     * 取消订阅后，该 Consumer 将不再收到发往该 Agent 的消息推送，
+     * 但 Agent 的消息队列中的已有消息不受影响，仍可通过 receive() 拉取。</p>
+     *
+     * @param agentId  要取消订阅的 Agent ID，不能为 null
+     * @param consumer 要移除的消息消费回调，不能为 null
      */
     public void unsubscribe(String agentId, Consumer<AgentMessage> consumer) {
         CopyOnWriteArrayList<Consumer<AgentMessage>> list = consumers.get(agentId);
@@ -182,42 +191,102 @@ public class StarAgentChannel implements AgentChannel {
     }
 
     /**
-     * 注册全局消费者，接收所有消息。
+     * 注册全局消费者，接收系统中所有 Agent 的消息。
+     *
+     * <p>与 subscribe() 不同的是，全局消费者不绑定到特定 Agent，而是接收所有通过
+     * send()、broadcast() 或 meshRoute() 发送的每一条消息。全局消费者常用于
+     * 实现消息审计日志、跨 Agent 监控、消息总线和调试追踪等场景。
+     * 消费者列表使用 CopyOnWriteArrayList 实现，保证线程安全。
+     * 注意：全局消费者回调中如果抛出异常，会被静默捕获并记录 warn 日志，
+     * 不会中断其他消费者或消息投递流程。</p>
+     *
+     * @param consumer 全局消息消费回调，接收所有 Agent 消息
      */
     public void subscribeGlobal(Consumer<AgentMessage> consumer) {
         globalConsumers.add(consumer);
     }
 
-    /** @return 当前拓扑类型 */
+    /**
+     * 获取当前 Agent 通信网络的拓扑类型。
+     *
+     * <p>拓扑类型决定了消息的路由策略：STAR（星型）拓扑下消息通过中心节点路由，
+     * MESH（网状）拓扑下 Agent 之间直接进行全连接通信。当前拓扑类型由
+     * setTopology() 方法动态设置，初始默认值为 TopologyType.STAR。
+     * 该字段使用 volatile 修饰以保证多线程环境下的可见性。</p>
+     *
+     * @return 当前生效的拓扑类型，默认为 TopologyType.STAR
+     */
     public TopologyType getCurrentTopology() {
         return currentTopology;
     }
 
     /**
-     * 动态切换拓扑类型。
+     * 动态切换 Agent 通信网络的拓扑类型。
+     *
+     * <p>支持在运行时切换通信拓扑，无需重启系统。切换后所有后续的消息路由将遵循
+     * 新的拓扑规则：若切换至 MESH 拓扑，消息将通过 meshRoute() 进行全连接路由；
+     * 若切换至 STAR 拓扑，消息通过中心节点进行星型路由。拓扑切换会记录 info 级别
+     * 日志以便追踪。该操作是原子性的（volatile 写），不会影响正在投递中的消息。</p>
+     *
+     * @param topology 要切换到的目标拓扑类型，不能为 null
      */
     public void setTopology(TopologyType topology) {
         this.currentTopology = topology;
         log.info("[StarAgentChannel] Topology switched to: {}", topology);
     }
 
-    /** @return 当前已连接的 Agent 数量 */
+    /**
+     * 获取当前已连接（已注册消息队列）的 Agent 数量。
+     *
+     * <p>返回值为 queues 映射的大小，每个拥有消息队列的 Agent 都被视为已连接。
+     * Agent 的连接状态通过其是否拥有 BlockingQueue 来判断——只要 Agent 被
+     * 分配了消息队列（无论是通过 send() 首次创建还是显式注册），即被视为已连接。
+     * 此计数可用于监控系统负载、判断是否需要自动扩缩容等运维场景。</p>
+     *
+     * @return 当前已连接且拥有消息队列的 Agent 数量，最小为 0
+     */
     public int getConnectedAgentCount() {
         return queues.size();
     }
 
-    /** @return 已注册 Agent ID 列表 */
+    /**
+     * 获取所有已注册 Agent 的 ID 列表。
+     *
+     * <p>返回 queues 映射中所有 key 的不可变副本。由于返回的是 List.copyOf()
+     * 创建的快照，调用方可以安全地遍历此列表而无需担心并发修改异常。
+     * 注意：该列表仅反映调用时刻的快照状态，之后新注册或清理的 Agent 不会体现在
+     * 已返回的列表中。如需实时监控 Agent 变化，建议使用 subscribeGlobal() 订阅
+     * 全局消息事件。</p>
+     *
+     * @return 所有已注册 Agent ID 的不可变列表，永远不会为 null（最小为空列表）
+     */
     public List<String> getRegisteredAgents() {
         return List.copyOf(queues.keySet());
     }
 
-    /** @return 消息历史记录的不可变副本 */
+    /**
+     * 获取消息历史记录的不可变副本。
+     *
+     * <p>返回最近最多 100 条（MAX_HISTORY）消息的快照列表。消息历史通过 recordHistory()
+     * 方法自动维护，采用滑动窗口机制——当记录数超过 100 条时自动移除最旧的消息。
+     * 返回的列表是 List.copyOf() 创建的不可变副本，调用方可安全地遍历。
+     * 该功能主要用于消息审计、问题调试和跨 Agent 通信行为的回溯分析。</p>
+     *
+     * @return 消息历史的不可变副本，按时间顺序排列（旧到新），最多 100 条
+     */
     public List<AgentMessage> getMessageHistory() {
         return List.copyOf(messageHistory);
     }
 
     /**
-     * 清理指定 Agent 的所有通道数据。
+     * 清理指定 Agent 的所有通道数据，包括消息队列和消费者订阅。
+     *
+     * <p>当 Agent 退出协作、发生故障或需要重置状态时调用此方法进行资源回收。
+     * 清理操作会移除该 Agent 的 BlockingQueue（消息队列）和所有已注册的 Consumer
+     * 回调（消费者订阅），防止内存泄漏。清理完成后会记录 info 级别日志。
+     * 注意：此方法不影响全局消费者和历史消息记录，其他 Agent 的通道数据保持不变。</p>
+     *
+     * @param agentId 要清理的 Agent ID，不能为 null
      */
     public void cleanupAgent(String agentId) {
         queues.remove(agentId);
@@ -226,7 +295,13 @@ public class StarAgentChannel implements AgentChannel {
     }
 
     /**
-     * 清空所有通道数据（队列、消费者、历史）。
+     * 清空所有通道数据，包括 Agent 消息队列、消费者订阅、全局消费者和历史消息记录。
+     *
+     * <p>此方法用于系统重置或全量清理场景，会将所有内部状态恢复为初始状态：
+     * 清空所有 Agent 的 BlockingQueue、移除所有 Agent 级消费者和全局消费者、
+     * 清空消息历史记录。调用后系统处于干净状态，可重新注册 Agent 和订阅消费者。
+     * 操作完成后会记录 info 级别日志。注意：此方法不影响 currentTopology 字段，
+     * 拓扑类型设置保持不变。</p>
      */
     public void clearAll() {
         queues.clear();

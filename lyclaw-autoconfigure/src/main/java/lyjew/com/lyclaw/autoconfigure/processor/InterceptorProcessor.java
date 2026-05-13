@@ -10,9 +10,31 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import java.util.*;
 
 /**
- * {@link BeanPostProcessor} that discovers beans implementing
- * {@link Interceptor} and optionally decorated with the
- * {@code @Interceptor} annotation for ordering constraints.
+ * 拦截器发现处理器，作为 Spring {@link BeanPostProcessor} 在 Bean 初始化完成后自动发现
+ * 实现了 {@link lyjew.com.lyclaw.interceptor.Interceptor} 接口的 Bean，并解析可选的
+ * {@code @Interceptor} 注解中的排序约束信息。
+ *
+ * <p><b>拦截器发现与收集：</b>在 {@link #postProcessAfterInitialization(Object, String)}
+ * 方法中，每发现一个实现了 Interceptor 接口的 Bean，就将其加入 {@code discoveredInterceptors}
+ * 列表中以备后续排序和查询。同时，处理器通过反射读取 {@code @Interceptor} 注解中的
+ * name、after、before 属性，将排序约束信息分别存储在 {@code afterConstraints} 和
+ * {@code beforeConstraints} 两个 Map 中。</p>
+ *
+ * <p><b>排序约束机制：</b>@Interceptor 注解提供了两种依赖声明方式——after 属性声明当前
+ * 拦截器必须在哪些拦截器之后执行，before 属性声明当前拦截器必须在哪些拦截器之前执行。
+ * 这些约束信息会被 {@link #getSortedInterceptors()} 方法用于计算拦截器的最终执行顺序。
+ * 当前实现使用简单的数值排序（按 getOrder() 返回值升序），约束 Map 的信息可供未来的
+ * 拓扑排序实现使用。</p>
+ *
+ * <p><b>拦截器链在管道中的应用：</b>拦截器链在 LyClaw Pipeline 的每个阶段执行前后被
+ * 遍历调用，可以实现诸如请求日志记录、安全鉴权、参数校验、性能监控、结果缓存、
+ * 数据脱敏等横切关注点。拦截器的 order 值越小，越先执行。</p>
+ *
+ * <p><b>线程安全：</b>discoveredInterceptors 列表在启动阶段的 Bean 后处理过程中被
+ * 单线程填充（Spring 容器初始化是单线程的），初始化完成后变为只读访问（通过
+ * {@link #getDiscoveredInterceptors()} 返回不可修改的视图），因此不需要额外的同步控制。</p>
+ *
+ * @see Interceptor 拦截器接口，定义了 before/after 生命周期方法和 getOrder 排序方法
  */
 public class InterceptorProcessor implements BeanPostProcessor {
 

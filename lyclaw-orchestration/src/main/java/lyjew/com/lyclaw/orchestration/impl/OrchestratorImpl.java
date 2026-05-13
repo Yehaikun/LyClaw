@@ -18,12 +18,53 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 编排器核心实现。
+ * 编排器核心实现，是整个编排模块的入口和总调度器。
  *
- * 负责接收聊天上下文，构建并执行完整的处理管线（Pipeline）。
- * 管线按顺序执行：上下文构建 -> 安全拦截 -> 工具调用循环 -> 响应构建 -> 指标采集。
- * 同时支持 Agent 协作任务的编排，通过 Flux 发送协作事件流。
- * 提供协作任务的取消和进度查询能力。
+ * <h3>核心职责</h3>
+ * 本类是 LyClaw 系统的中枢神经，负责接收聊天上下文（ChatContext），通过 Spring 的
+ * PipelineStageProcessor 自动发现和排序所有已注册的流水线阶段（ReactivePipelineStage），
+ * 构建完整的响应式处理管线（Pipeline），并按序串联执行。同时，本类还承担 Agent 多智能体
+ * 协作任务的编排调度，通过 Project Reactor 的 Flux 流式框架向前端推送协作事件流，
+ * 支持协作任务的取消（cancel）和进度查询（getProgress）。
+ *
+ * <h3>管线阶段顺序（实际执行顺序）</h3>
+ * 当前编排管线由六个阶段组成，按 getOrder() 返回值从小到大依次执行：
+ * <ol>
+ *   <li><b>ContextBuildStage（上下文构建）</b>——从记忆服务加载会话上下文和感知数据，
+ *       填充到 PipelineContext 中，为后续阶段提供基础信息。</li>
+ *   <li><b>SecurityCheckStage（安全检查）</b>——对用户输入进行安全审核，
+ *       包括敏感词过滤、注入检测等，如有风险则提前终止管线。</li>
+ *   <li><b>PlanExecutionStage（计划执行）</b>——调用远程规划服务（PlanFeignClient），
+ *       将用户意图分解为多个可执行的任务节点（TaskNode），并推入流水线上下文中。
+ *       注意：本阶段仅负责生成任务计划，不执行具体的工具调用。
+ *       工具调用逻辑内嵌在 RespondStage 的 ReAct 循环中，由 LLM 自主决定调用时机和参数。</li>
+ *   <li><b>ReflectionStage（反思校验）</b>——对 PlanExecutionStage 的执行结果进行
+ *       质量评估和反思校验，生成反思报告（ReflectionReport）和评分，供 RespondStage 参考。</li>
+ *   <li><b>RespondStage（响应生成）</b>——核心交互阶段。内部运行 ReAct（推理-行动）循环，
+ *       将任务节点、工具定义和上下文发送给 LLM，由 LLM 自主决定调用哪个工具、
+ *       传递什么参数，反复迭代直至任务完成或达到最大迭代次数，最终生成对用户的自然语言响应。
+ *       工具调用循环并非独立的管线阶段，而是 RespondStage 的内部实现细节。</li>
+ *   <li><b>MetricsStage（指标采集）</b>——整个管线的收尾阶段，负责持久化记忆摘要、
+ *       记录各阶段耗时指标、汇总成功率和反思评分，并向前端推送最终完成事件。</li>
+ * </ol>
+ *
+ * <h3>并发与错误处理</h3>
+ * 整个 execute() 方法在 boundedElastic 调度器上运行，避免阻塞 Netty 事件循环线程。
+ * 当管线中任一阶段抛出异常时，通过 onErrorResume 捕获并向前端推送格式化的错误 SSE 事件，
+ * 包含 traceId 和失败阶段名称，便于问题定位。
+ *
+ * <h3>协作模式</h3>
+ * executeAgentTask() 方法支持多 Agent 协作场景，通过 Flux.create 以编程方式生成
+ * 协作事件流，依次发送 COLLABORATION_STARTED、TASK_STARTED、TASK_COMPLETED、
+ * COLLABORATION_ENDED 等事件。协作任务可通过 collaborationId 进行取消和进度追踪。
+ *
+ * @see lyjew.com.lyclaw.orchestration.Orchestrator
+ * @see lyjew.com.lyclaw.orchestration.stage.ContextBuildStage
+ * @see lyjew.com.lyclaw.orchestration.stage.SecurityCheckStage
+ * @see lyjew.com.lyclaw.orchestration.stage.PlanExecutionStage
+ * @see lyjew.com.lyclaw.orchestration.stage.ReflectionStage
+ * @see lyjew.com.lyclaw.orchestration.stage.RespondStage
+ * @see lyjew.com.lyclaw.orchestration.stage.MetricsStage
  */
 @Slf4j
 @Service

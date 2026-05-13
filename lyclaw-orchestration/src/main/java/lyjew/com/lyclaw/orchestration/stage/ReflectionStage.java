@@ -129,9 +129,31 @@ public class ReflectionStage extends PipelineStageBase {
         });
     }
 
+    /**
+     * 返回本阶段在管线中的执行顺序编号。
+     *
+     * <p>返回值为 3，表示 ReflectionStage 是编排管线中的第四个阶段，
+     * 排在 ContextBuildStage(0)、SecurityCheckStage(1) 和 PlanExecutionStage(2)
+     * 之后。作为 CORE 组的成员之一，它在任务规划完成后对执行结果进行质量评估，
+     * 其输出（ReflectionReport 和评分）将被后续的 RespondStage(4)
+     * 和 MetricsStage(5) 使用。</p>
+     *
+     * @return 阶段顺序编号，固定为 3
+     */
     @Override
     public int getOrder() { return 3; }
 
+    /**
+     * 返回本阶段的名称标识。
+     *
+     * <p>返回固定字符串 "Reflection"，作为本阶段在编排管线中的唯一标识符。
+     * 该名称用于 PipelineStage 注解中的 name 属性和 after 依赖声明中的引用
+     * （如 RespondStage 声明 after = ReflectionStage.class），日志输出中的
+     * "REFLECT" 子阶段标签，Tracing 追踪中的 span 名称，以及指标采集中的
+     * "REFLECT" 阶段标识。</p>
+     *
+     * @return 阶段名称，固定为 "Reflection"
+     */
     @Override
     public String getStageName() { return "Reflection"; }
 }

@@ -37,11 +37,32 @@ public class OpenAiProtocolAutoConfigurator implements InitializingBean, Applica
     private final ChatModelRegistry registry;
     private final ChatProperties chatProperties;
 
+    /**
+     * 构造 OpenAI 协议自动配置器，注入 ChatModelRegistry 和 ChatProperties 依赖。
+     *
+     * <p>ChatModelRegistry 用于注册配置驱动的模型实例；ChatProperties 提供所有
+     * {@code lyclaw.chat.models.*} 下的模型配置数据，包括 provider 类型、baseUrl、
+     * apiKey、model 名称等。通过构造器注入确保两个依赖在配置器激活前都已就绪。</p>
+     *
+     * @param registry ChatModel 注册表实例，由 ChatAutoConfiguration 创建并注入
+     * @param chatProperties 聊天配置属性实例，由 ChatAutoConfiguration 创建并绑定配置
+     */
     public OpenAiProtocolAutoConfigurator(ChatModelRegistry registry, ChatProperties chatProperties) {
         this.registry = registry;
         this.chatProperties = chatProperties;
     }
 
+    /**
+     * 返回此 InitializingBean 的执行顺序值，数值越小优先级越高。
+     *
+     * <p>返回 {@code Ordered.LOWEST_PRECEDENCE - 180}，在 ChatModelPostProcessor
+     * （-200，处理注解声明的模型）之后、ModelRouterPostProcessor（-190）之前执行。
+     * 这个执行顺序设计确保了：注解声明的 @ChatModel Bean 已经处理完毕（注解优先于配置），
+     * 配置驱动的模型注册在注解模型之后进行（避免覆盖用户实现），模型路由器在所有模型
+     * 注册完毕后统一处理。</p>
+     *
+     * @return {@link Ordered#LOWEST_PRECEDENCE} - 180
+     */
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE - 180;
@@ -52,6 +73,35 @@ public class OpenAiProtocolAutoConfigurator implements InitializingBean, Applica
         this.applicationContext = applicationContext;
     }
 
+    /**
+     * InitializingBean 回调方法，在所有 Bean 属性设置完成后由 Spring 容器调用，
+     * 负责根据配置文件动态创建和注册聊天模型实例，实现"配置即 Provider"的核心逻辑。
+     *
+     * <p><b>处理流程：</b></p>
+     * <ol>
+     *   <li><b>旧版模式检查：</b>如果 {@code lyclaw.chat.legacy=true}，说明使用者
+     *       使用的是旧版单一模型配置模式，跳过自动配置（旧版模式使用 llm.* 配置项，
+     *       由其他配置类处理）。</li>
+     *   <li><b>模型配置遍历：</b>遍历 {@code lyclaw.chat.models.*} 下所有配置条目，
+     *       每个条目的 key 作为 Provider 名称，value 中的 provider 字段决定模型类型。
+     *       如果某条目不指定 provider 类型，记录 DEBUG 日志并跳过。</li>
+     *   <li><b>Provider 类型分发：</b>根据 provider 字段值进行分发处理——
+     *       "openai-protocol" 或 "openai" 调用 {@link #createOpenAiProtocolModel(String, ChatProperties.ModelProperties)}
+     *       创建兼容 OpenAI 协议的模型；"anthropic"、"ollama"、"gemini" 等类型当前仅
+     *       输出提示日志，需要对应的 SDK 在 classpath 中才能激活；未知类型输出警告日志。</li>
+     * </ol>
+     *
+     * <p><b>注解优先原则：</b>{@link #createOpenAiProtocolModel} 在执行时会首先检查
+     * Registry 中是否已存在同名 Provider（由 @ChatModel 注解 Bean 注册），若已存在
+     * 则跳过配置创建，确保注解声明的模型始终优先于配置驱动的模型。</p>
+     *
+     * <p><b>弹性装饰器：</b>每个配置创建的模型会自动应用弹性装饰器链——
+     * 通过 {@link #wrapWithResilience(ChatModel)} 检测类上的 @RetryPolicy、
+     * @Fallback、@CircuitBreaker 注解，并自动生成对应的装饰器包装链。对于没有显式
+     * 声明重试策略的普通模型，自动应用默认重试策略（最大3次，指数退避，1秒基准间隔）。</p>
+     *
+     * @throws Exception 当模型创建或注册过程中发生不可恢复的错误时抛出
+     */
     @Override
     public void afterPropertiesSet() throws Exception {
         if (chatProperties.isLegacy()) {

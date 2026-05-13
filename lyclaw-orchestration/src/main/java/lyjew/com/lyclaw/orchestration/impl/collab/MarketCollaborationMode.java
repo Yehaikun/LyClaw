@@ -41,11 +41,34 @@ public class MarketCollaborationMode implements CollaborationMode {
         this.consensusEngine = consensusEngine;
     }
 
+    /**
+     * 获取市场协作模式的唯一标识符。
+     *
+     * <p>返回固定字符串 "market"，作为该协作模式在系统中的全局唯一 ID。
+     * 该标识符用于 CollaborationHub 中的模式注册和查找（如通过 ModeRegistry
+     * 按 modeId 获取对应的协作模式实例）、编排上下文（OrchestrationContext）中
+     * collaborationModeId 字段的赋值、日志输出中的模式标签，以及前端 API 中
+     * 指定协作模式时的参数值。每个 CollaborationMode 实现类必须返回唯一且不可变的 modeId。</p>
+     *
+     * @return 模式标识符，固定为 "market"
+     */
     @Override
     public String getModeId() {
         return MODE_ID;
     }
 
+    /**
+     * 获取市场协作模式偏好的网络拓扑类型。
+     *
+     * <p>返回 TopologyType.STAR（星型拓扑）。在市场（拍卖）模式中，第一个 Agent
+     * 担任拍卖师（中心节点），其余 Agent 为竞拍者（叶节点），所有通信以拍卖师为中心：
+     * 拍卖师向所有竞拍者广播任务，竞拍者向拍卖师提交投标。星型拓扑天然适合这种
+     * 集中式协调场景，消息路由简单高效，无需在全网范围内维护全连接状态。
+     * StarAgentChannel 会根据此偏好设置当前拓扑类型为 STAR，从而影响
+     * send() 和 broadcast() 等消息路由行为。</p>
+     *
+     * @return 偏好的拓扑类型，固定为 TopologyType.STAR
+     */
     @Override
     public TopologyType getPreferredTopology() {
         return TopologyType.STAR;

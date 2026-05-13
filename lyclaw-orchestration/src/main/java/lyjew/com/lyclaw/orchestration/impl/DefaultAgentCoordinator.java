@@ -241,24 +241,61 @@ public class DefaultAgentCoordinator implements AgentCoordinator {
                 .build();
     }
 
-    /** @return 当前正在运行或等待的 Agent 数量 */
+    /**
+     * 获取当前正在运行或等待中的 Agent 数量。
+     *
+     * <p>通过流式遍历 states 映射中所有 Agent 的状态，统计状态为 RUNNING 或 WAITING
+     * 的 Agent 总数。该计数用于 dispatch() 方法中的并发控制——当此数量达到
+     * maxConcurrentAgents 上限时，新的任务分派请求将被拒绝。返回值实时反映当前
+     * 系统的并发负载情况，可用于监控面板展示和自动扩缩容决策。</p>
+     *
+     * @return 当前处于 RUNNING 或 WAITING 状态的 Agent 数量，最小为 0
+     */
     public long getRunningAgentCount() {
         return states.values().stream()
                 .filter(s -> s == AgentState.RUNNING || s == AgentState.WAITING)
                 .count();
     }
 
-    /** @return 所有 Agent 状态的快照副本 */
+    /**
+     * 获取所有 Agent 状态的快照副本。
+     *
+     * <p>返回 states 映射的浅拷贝（new HashMap），包含调用时刻所有已注册 Agent 的
+     * agentId 到 AgentState 的映射关系。由于返回的是副本，调用方可以安全地遍历和
+     * 修改返回的 Map 而不会影响内部状态表。该快照反映了调用时刻的瞬时状态，
+     * 适合用于监控面板展示、周期性状态巡检和调试日志输出。</p>
+     *
+     * @return 包含所有 Agent ID 到状态的映射副本，永远不会为 null
+     */
     public Map<String, AgentState> getAllStates() {
         return new HashMap<>(states);
     }
 
-    /** @return 指定 Agent 的上下文 */
+    /**
+     * 获取指定 Agent 的聊天上下文。
+     *
+     * <p>从 agentContexts 映射中查找并返回与该 Agent ID 关联的 ChatContext 对象。
+     * ChatContext 在 dispatch() 方法中被存入，包含了父会话信息、用户请求内容和
+     * 追踪数据等。如果 Agent 已执行完毕或被清理但上下文尚未移除，仍可获取到。
+     * 返回值可能为 null（Agent 不存在或上下文已被清理）。</p>
+     *
+     * @param agentId 要查询的 Agent ID，不能为 null
+     * @return 关联的聊天上下文，若不存在则返回 null
+     */
     public ChatContext getAgentContext(String agentId) {
         return agentContexts.get(agentId);
     }
 
-    /** 动态调整最大并发 Agent 数量 */
+    /**
+     * 动态调整最大并发 Agent 数量限制。
+     *
+     * <p>允许在运行时修改 dispatch() 方法中的并发上限，无需重启服务。
+     * 新的限制值将在下一次 dispatch() 调用时立即生效。调整后记录 info 级别日志
+     * 以便审计追踪。初始值通过 Spring 配置属性 lyclaw.agent.max-concurrent 注入，
+     * 默认值为 5。注意：降低此值不会影响已在运行中的 Agent，仅阻止新任务的接入。</p>
+     *
+     * @param max 新的最大并发 Agent 数量，必须为正整数
+     */
     public void setMaxConcurrentAgents(int max) {
         this.maxConcurrentAgents = max;
         log.info("[AgentCoordinator] Max concurrent agents updated to: {}", max);

@@ -103,12 +103,32 @@ public class CollaborationHubImpl implements CollaborationHub {
                 .collect(Collectors.toUnmodifiableList());
     }
 
-    /** @return 所有可用模式 ID 的不可变集合 */
+    /**
+     * 获取所有可用协作模式的 ID 集合。
+     *
+     * <p>返回 modeMap 中所有已注册 CollaborationMode 的 modeId 的不可变视图
+     *（Collections.unmodifiableSet）。当前系统中包含四种模式：
+     * "market"（拍卖）、"network"（对等共识）、"pipeline"（流水线）、
+     * "supervisor_worker"（监督者-工作者）。该集合可用于前端协作模式选择下拉菜单、
+     * API 响应中列出可用模式，以及运维管理界面中展示系统能力。</p>
+     *
+     * @return 所有已注册模式 ID 的不可变集合，永远不会为 null
+     */
     public Set<String> getAvailableModes() {
         return Collections.unmodifiableSet(modeMap.keySet());
     }
 
-    /** @return 已注册模式总数 */
+    /**
+     * 获取已注册协作模式的总数。
+     *
+     * <p>返回 modeMap 的当前大小，反映系统中可用协作模式的数量。该数值在系统
+     * 启动时确定（由构造函数自动注册所有 CollaborationMode Spring Bean），
+     * 之后不会发生变化（除非通过 register() 方法动态注册新模式）。当前默认值
+     * 为 4（market、network、pipeline、supervisor_worker），用于初始化日志
+     * 确认和运维面板中的模式数量展示。</p>
+     *
+     * @return 已注册模式总数，最小为 0
+     */
     public int getModeCount() {
         return modeMap.size();
     }

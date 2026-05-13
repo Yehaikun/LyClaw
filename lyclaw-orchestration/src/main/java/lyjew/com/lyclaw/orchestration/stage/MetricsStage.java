@@ -93,8 +93,15 @@ public class MetricsStage extends PipelineStageBase {
             long respondStartMs = pipelineCtx.getRespondStartMs().get();
             int taskCount = toolResults.size();
 
-            // Approximate orchestration start from respondStartMs (total duration reconstructed)
-            long orchestrationStart = 0; // Note: original passes this from outer scope
+            // 计算总耗时而非纯编排耗时。
+            // orchestrationStart 当前置为 0，这意味着在 PerceptionData.metadata 中记录的
+            // "orchestrationDurationMs" 实际上是自 Unix 纪元以来的总经过毫秒数（now - 0 = now），
+            // 而非严格意义上的编排阶段耗时差。原始设计中此值应从外部作用域传入管线启动时刻的时间戳，
+            // 但由于 MetricsStage 位于管线末尾且无法直接访问 OrchestratorImpl 中的启动时间戳，
+            // 此处暂时使用 0 作为近似值。如需精确编排耗时，建议在 PipelineContext 中增加
+            // orchestrationStartMs 字段，由 OrchestratorImpl.execute() 在管线启动时写入，
+            // 然后在此处读取计算差值。
+            long orchestrationStart = 0; // 当前为计算总经过时间，非编排耗时差值
             long now = System.currentTimeMillis();
 
             // Persist memory (non-blocking fire-and-forget)
@@ -157,9 +164,28 @@ public class MetricsStage extends PipelineStageBase {
         });
     }
 
+    /**
+     * 返回本阶段在管线中的执行顺序编号。
+     *
+     * <p>返回值为 5，表示 MetricsStage 是编排管线中的最后一个阶段（第六个），
+     * 排在所有业务处理阶段之后。PipelineStageProcessor 按此编号升序排列，
+     * 确保指标采集在所有业务逻辑完成后才执行，避免遗漏任何阶段的统计数据。</p>
+     *
+     * @return 阶段顺序编号，固定为 5
+     */
     @Override
     public int getOrder() { return 5; }
 
+    /**
+     * 返回本阶段的名称标识。
+     *
+     * <p>返回固定字符串 "Metrics"，作为本阶段在编排管线中的唯一标识符。
+     * 该名称用于日志输出（如 "stage_complete Metrics"）、指标上报中的阶段标签
+     * 以及 Tracing 追踪中的阶段标记。作为 POSTPROCESSING 组的成员，
+     * 它仅在所有核心阶段正常完成后执行。</p>
+     *
+     * @return 阶段名称，固定为 "Metrics"
+     */
     @Override
     public String getStageName() { return "Metrics"; }
 }

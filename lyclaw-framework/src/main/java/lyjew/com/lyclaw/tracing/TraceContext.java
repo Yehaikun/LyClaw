@@ -7,12 +7,57 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 链路追踪上下文，管理单次请求的 traceId、spanId 及分段耗时信息。
+ * 链路追踪上下文（Trace Context），管理单次请求的全链路追踪信息和分段性能统计。
  *
- * <p>该类实现了类似 Jaeger/Zipkin 的追踪模型：一个 trace 对应一次完整请求调用链，
- * 每个 span 代表调用链中的一个操作单元。支持父子 span 嵌套、分段计时统计、
- * 以及将追踪信息输出为 JSON 格式的日志。
- * <p>同时提供 {@link #wrap(Runnable)} 静态方法，用于在异步线程池中保持 MDC 追踪信息。
+ * <p>本类实现了分布式链路追踪（Distributed Tracing）的核心模型，其设计参考了业界广泛
+ * 使用的 Jaeger 和 Zipkin 追踪系统的基本概念。在一个典型的微服务调用链中，一条完整的
+ * 用户请求可能跨越多个服务、多个线程和多个异步操作。TraceContext 通过 traceId（追踪 ID）
+ * 和 spanId（跨度 ID）两个核心标识符，将分散在不同服务、不同线程中的调用片段串联成
+ * 一条完整的调用链路，从而实现端到端的请求追踪和性能分析。
+ *
+ * <p>核心概念说明：
+ * <ul>
+ *   <li><b>Trace（追踪）</b>：对应一次完整的用户请求调用链，由一个全局唯一的 traceId
+ *       标识。从请求进入系统开始，到响应返回结束，跨越的所有服务调用都属于同一个 Trace。
+ *       traceId 在系统边界处生成，并通过 HTTP Header 或消息头在服务间传播</li>
+ *   <li><b>Span（跨度）</b>：Trace 中的一个操作单元，由一个全局唯一的 spanId 标识。
+ *       每个 Span 代表调用链中的一个具体操作（如一次 HTTP 调用、一次数据库查询、
+ *       一次工具执行等）。Span 之间通过 parentSpanId 形成树形层级结构，根 Span 的
+ *       parentSpanId 为 null</li>
+ *   <li><b>Stage（阶段）</b>：Span 内部的分段计时单元，用于更细粒度地统计各子步骤的
+ *       耗时。通过 beginStage/endStage 方法对进行计时，常用于识别性能瓶颈</li>
+ * </ul>
+ *
+ * <p>主要功能：
+ * <ul>
+ *   <li><b>Span 生命周期管理</b>：构造器自动生成 traceId 和 spanId（使用 UUID 去连字符），
+ *       支持从上游传入 traceId 以保持链路连续性。{@link #newSpan()} 方法创建当前 span
+ *       的子 span，实现嵌套追踪</li>
+ *   <li><b>分段计时</b>：{@link #beginStage(String)} 和 {@link #endStage(String)} 方法
+ *       支持命名分段的精确耗时统计，各阶段耗时自动累加，支持同一阶段多次计时的累加汇总。
+ *       {@link #getTotalDuration()} 返回从请求开始到当前时刻（或标记结束时）的总耗时</li>
+ *   <li><b>MDC 跨线程传播</b>：{@link #wrap(Runnable)} 静态工具方法自动保存和恢复 SLF4J
+ *       MDC（Mapped Diagnostic Context）中的追踪信息（traceId、spanId、serviceName），
+ *       确保在使用自定义线程池执行异步任务时追踪信息不会丢失或泄露到其他不相关的请求</li>
+ *   <li><b>JSON 序列化</b>：{@link #toJson()} 方法将追踪上下文输出为结构化 JSON 字符串，
+ *       包含 traceId、spanId、parentSpanId（可选）、service（可选）、各阶段耗时和总耗时，
+ *       便于日志系统采集和可视化分析</li>
+ * </ul>
+ *
+ * <p>使用示例：
+ * <pre>{@code
+ * TraceContext trace = new TraceContext();  // 创建根 Trace
+ * trace.beginStage("memory_search");
+ * // ... 执行记忆搜索 ...
+ * trace.endStage("memory_search");
+ * trace.beginStage("model_call");
+ * // ... 调用 AI 模型 ...
+ * trace.endStage("model_call");
+ * trace.markEnd();
+ * log.info("Trace: {}", trace.toJson());
+ * }</pre>
+ *
+ * @see lyjew.com.lyclaw.tracing.TraceConstants
  */
 public class TraceContext {
 

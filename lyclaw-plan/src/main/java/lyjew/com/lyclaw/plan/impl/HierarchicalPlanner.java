@@ -274,7 +274,8 @@ public class HierarchicalPlanner implements TaskPlanner {
     /**
      * 按 TREE 策略进行层次化分解。
      *
-     * <p>构建完整的 3 层树结构，然后扁平化为 DAG。</p>
+     * <p>构建完整的 3 层树结构，然后扁平化为 DAG。
+     * 每一层节点在构建时就明确其父依赖关系，保证扁平化后仍然保留原始的层次拓扑。</p>
      */
     @Override
     public PlanGraph decompose(TaskNode rootTask, DecompositionStrategy strategy) {
@@ -285,6 +286,9 @@ public class HierarchicalPlanner implements TaskPlanner {
         int l1Count = determineL1Count(desc);
         String prefix = rootTask.getNodeId() + "-hier";
 
+        // === 第一层循环 (L1)：构建高层目标节点 ===
+        // 每个 L1 节点代表一个大阶段（如 ANALYZE / EXECUTE / VERIFY），
+        // 它们全部依赖根任务节点，彼此之间无依赖（可并行调度）
         for (int l1 = 0; l1 < l1Count; l1++) {
             String l1Id = prefix + "-L1-" + l1;
             String label = l1 < L1_LABELS.size() ? L1_LABELS.get(l1) : "PHASE-" + (l1 + 1);
@@ -295,9 +299,14 @@ public class HierarchicalPlanner implements TaskPlanner {
             graph.addNode(l1Node);
             graph.addEdge(rootTask.getNodeId(), l1Id);
 
+            // 获取当前 L1 阶段对应的 L2 步骤标签列表
+            // 如果 L1 数量超过预定义标签数量，则使用通用标签回退
             List<String> l2Labels = l1 < L2_LABELS.size()
                     ? L2_LABELS.get(l1) : List.of("Step-A", "Step-B");
 
+            // === 第二层循环 (L2)：在每个 L1 目标下构建中层步骤节点 ===
+            // 每个 L2 节点依赖其父 L1 节点，同一 L1 下的 L2 节点之间默认无依赖
+            // l2Count 取预定义标签数量和默认上限中的较小值
             int l2Count = Math.min(l2Labels.size(), DEFAULT_L2_PER_L1);
             for (int l2 = 0; l2 < l2Count; l2++) {
                 String l2Id = l1Id + "-L2-" + l2;
@@ -308,10 +317,17 @@ public class HierarchicalPlanner implements TaskPlanner {
                 graph.addNode(l2Node);
                 graph.addEdge(l1Id, l2Id);
 
+                // 获取当前 L2 步骤对应的 L3 原子动作标签
+                // 使用三层嵌套索引：l3Labels[l1][l2] → 该位置的原子动作列表
+                // 索引越界时回退到默认的 "Execute" 动作
                 List<List<String>> l3Labels = l1 < L3_LABELS.size() && l2 < L3_LABELS.get(l1).size()
                         ? List.of(L3_LABELS.get(l1).get(l2))
                         : List.of(List.of("Execute"));
 
+                // === 第三层循环 (L3)：在每个 L2 步骤下构建原子动作节点 ===
+                // 外层遍历 L3 动作组（每个 L2 可能有多个动作组），
+                // 内层遍历每个动作组内的具体原子动作
+                // 每个 L3 节点依赖其父 L2 节点，超时时间减半（原子动作粒度更小）
                 for (List<String> l3Actions : l3Labels) {
                     for (int l3 = 0; l3 < Math.min(l3Actions.size(), DEFAULT_L3_PER_L2); l3++) {
                         String l3Id = l2Id + "-L3-" + l3;

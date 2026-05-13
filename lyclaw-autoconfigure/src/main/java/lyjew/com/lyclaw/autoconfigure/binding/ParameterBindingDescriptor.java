@@ -7,9 +7,33 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Introspects a method's parameters (including {@code @Param} annotations) and
- * provides a {@link #bindAndInvoke(Object, Map)} helper that maps named
- * argument values onto the method's parameter slots.
+ * 方法参数绑定描述符，负责对目标方法的参数列表进行内省分析，并提供命名的参数值到方法
+ * 形式参数的映射绑定和反射调用能力。
+ *
+ * <p><b>核心职责：</b>在 LyClaw 的工具执行流程中，LLM 以大语言模型返回的参数是键值对
+ * 形式的命名参数（JSON 对象），而 Java 方法接收的是按位置排列的形式参数。本类的核心任务
+ * 就是完成从"命名参数映射"到"位置参数数组"的转换，使得通过 @Tool 注解声明的任意 Java
+ * 方法都可以被 LLM 以标准 JSON 参数格式调用。</p>
+ *
+ * <p><b>参数元数据提取：</b>构造时通过反射遍历目标方法的所有参数，为每个参数创建
+ * {@link ParamInfo} 内部类实例。ParamInfo 在构造时会尝试从参数上的 {@code @Param}
+ * 注解中读取以下元数据信息：</p>
+ * <ul>
+ *   <li><b>name：</b>参数名称，优先使用 @Param 注解中显式指定的名称，否则使用 Java
+ *       反射提供的参数名（需要编译时保留参数名信息或者使用 -parameters 编译选项）</li>
+ *   <li><b>description：</b>参数描述，帮助 LLM 理解参数的用途和格式要求</li>
+ *   <li><b>required：</b>是否为必填参数，默认为 true，必填参数缺失时会抛出异常</li>
+ *   <li><b>defaultValue：</b>默认值，当 LLM 未提供参数值时使用的回退值</li>
+ *   <li><b>type：</b>参数的 Java 类型，用于后续的类型强制转换</li>
+ * </ul>
+ *
+ * <p><b>类型转换机制：</b>{@link #coerce(Object, Class)} 方法提供了一套完善的值类型
+ * 转换逻辑：Number 类型到各种数值类型的自动转换（int、long、double、float、short、byte）、
+ * String 到 Enum 的自动解析、String 到 boolean 的自动转换等。这些转换使得 LLM 传递的
+ * 字符串参数能够自动适配方法声明的具体类型，大大降低了工具开发的复杂度。</p>
+ *
+ * <p><b>异常处理：</b>当必填参数缺失时，抛出 {@link IllegalArgumentException} 并附带
+ * 明确的参数名称信息，帮助开发者快速定位问题参数。</p>
  */
 public class ParameterBindingDescriptor {
 

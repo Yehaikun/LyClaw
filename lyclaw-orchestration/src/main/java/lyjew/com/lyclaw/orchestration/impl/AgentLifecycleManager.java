@@ -268,35 +268,76 @@ public class AgentLifecycleManager implements AgentLifecycle {
     }
 
     /**
-     * 获取 Agent 句柄。
+     * 获取指定 Agent 的完整句柄信息。
      *
-     * @param agentId Agent ID
-     * @return AgentHandle，不存在返回 null
+     * <p>从 handleMap 中查找并返回与 agentId 关联的 AgentHandle 对象。
+     * AgentHandle 包含 Agent 的 ID、名称、状态、能力列表、创建时间和历史准确率等
+     * 完整元数据。该对象是可变的——其 state 和 historicalAccuracy 字段可能被
+     * AgentLifecycleManager 中的 schedule()、pause()、resume()、terminate() 等方法
+     * 实时更新。如果 agentId 对应的 Agent 不存在或已被清理，返回 null。</p>
+     *
+     * @param agentId 要查询的 Agent ID，不能为 null
+     * @return Agent 句柄对象，若不存在则返回 null
      */
     public AgentHandle getHandle(String agentId) {
         return handleMap.get(agentId);
     }
 
     /**
-     * @return 所有 Agent 状态的快照副本
+     * 获取所有 Agent 状态的完整快照副本。
+     *
+     * <p>返回 stateMap 的浅拷贝（new ConcurrentHashMap），包含调用时刻所有
+     * 已创建 Agent 的 agentId 到 AgentState 的映射关系。由于返回的是副本，
+     * 调用方可以安全地遍历、修改返回的 Map 而不会影响内部的状态管理表。
+     * 该快照反映调用时刻的瞬时状态，适合用于监控面板展示全部 Agent 状态、
+     * 周期性健康检查和调试日志输出。注意：返回类型为 ConcurrentHashMap
+     * 而非 Map 接口，直接暴露了实现细节，调用方应注意兼容性。</p>
+     *
+     * @return 所有 Agent ID 到状态的映射副本，永远不会为 null
      */
     public ConcurrentHashMap<String, AgentState> getAllStates() {
         return new ConcurrentHashMap<>(stateMap);
     }
 
     /**
-     * 统计指定状态的 Agent 数量。
+     * 统计处于指定状态的 Agent 数量。
+     *
+     * <p>对流式遍历 stateMap 中所有 Agent 的状态值，过滤出等于指定状态的所有 Agent
+     * 并返回其数量。此方法是 getIdleCount() 和 getRunningCount() 的基础实现。
+     * 统计是实时计算的，反映调用时刻的准确状态。适用于扩缩容决策中了解各状态
+     * Agent 分布、监控告警中检测异常状态 Agent 数量等运维场景。</p>
+     *
+     * @param state 要统计的目标状态，不能为 null
+     * @return 处于指定状态的 Agent 数量，最小为 0
      */
     public long countByState(AgentState state) {
         return stateMap.values().stream().filter(s -> s == state).count();
     }
 
-    /** @return 空闲 Agent 数量 */
+    /**
+     * 获取当前处于空闲（IDLE）状态的 Agent 数量。
+     *
+     * <p>委托 countByState(AgentState.IDLE) 进行统计。空闲 Agent 是可以立即接受
+     * 新任务调度的 Agent，此数值直接影响 AutoScalerImpl 的扩缩容决策——
+     * 当空闲数低于 TARGET_IDLE(3) 时触发扩容，高于高水位线(6) 时触发缩容。
+     * 也用于调度器在 dispatch/schedule 时判断是否有可用 Agent。</p>
+     *
+     * @return 当前 IDLE 状态的 Agent 数量，最小为 0
+     */
     public long getIdleCount() {
         return countByState(AgentState.IDLE);
     }
 
-    /** @return 运行中 Agent 数量 */
+    /**
+     * 获取当前正在运行（RUNNING）的 Agent 数量。
+     *
+     * <p>委托 countByState(AgentState.RUNNING) 进行统计。运行中的 Agent 正在执行
+     * 异步任务，占用线程池资源。此数值用于并发控制——当运行数达到上限时，
+     * 新的任务分派将被拒绝或排队。同时它也是系统负载的核心指标之一，
+     * 与 getIdleCount() 配合可计算出系统利用率（running / total）。</p>
+     *
+     * @return 当前 RUNNING 状态的 Agent 数量，最小为 0
+     */
     public long getRunningCount() {
         return countByState(AgentState.RUNNING);
     }

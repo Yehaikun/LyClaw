@@ -355,12 +355,12 @@ public class ToolSandboxImpl implements ToolSandbox {
     }
 
     /**
-     * 将内部 ToolResult 转换为公开 API 的 ToolResult。
+     * 将内部 ToolExecutionResult 转换为公开 API 的 ToolExecutionResult。
      *
      * @param toolName    工具名称
      * @param innerResult 内部执行结果
      * @param startTime   执行开始时间戳（毫秒）
-     * @return 格式化后的 ToolResult
+     * @return 格式化后的 ToolExecutionResult
      */
     private ToolExecutionResult convertResult(String toolName,
                                       ToolExecutionResult innerResult,

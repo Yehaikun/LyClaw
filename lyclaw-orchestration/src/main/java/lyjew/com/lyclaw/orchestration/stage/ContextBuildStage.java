@@ -120,9 +120,31 @@ public class ContextBuildStage extends PipelineStageBase {
         });
     }
 
+    /**
+     * 返回本阶段在管线中的执行顺序编号。
+     *
+     * <p>返回值为 0，表示 ContextBuildStage 是整个编排管线的第一个阶段。
+     * 作为 PREPROCESSING 组的唯一起始阶段，它在所有其他阶段之前执行。
+     * PipelineStageProcessor 按此编号升序排列所有阶段，编号 0 意味着
+     * 管线启动后 ContextBuildStage 会最先运行。该编号也用于日志输出中的阶段
+     * 顺序标识和指标采集中的阶段位置标记。</p>
+     *
+     * @return 阶段顺序编号，固定为 0
+     */
     @Override
     public int getOrder() { return 0; }
 
+    /**
+     * 返回本阶段的名称标识。
+     *
+     * <p>返回固定字符串 "ContextBuild"，作为本阶段在整个编排管线中的唯一标识符。
+     * 该名称用于 PipelineStage 注解注册、自动装配时的阶段匹配、日志输出中的
+     * 阶段标记（如 "[ContextBuild]"）、SSE 事件流中的阶段来源标注，以及
+     * Tracing 追踪系统中与 span 名称对应的阶段标记。PipelineStageProcessor
+     * 在排序和查找阶段时也会使用此名称进行匹配。</p>
+     *
+     * @return 阶段名称，固定为 "ContextBuild"
+     */
     @Override
     public String getStageName() { return "ContextBuild"; }
 }

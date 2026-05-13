@@ -44,6 +44,18 @@ public class RespondStage extends PipelineStageBase {
     private static final int MAX_TOOL_ROUNDS = 10;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * 构造响应生成阶段实例。
+     *
+     * <p>通过 Spring 依赖注入接收 ChatFacade（聊天门面）和 ActionFeignClient（动作服务客户端）。
+     * ChatFacade 负责 LLM 模型的路由决策和调用，ActionFeignClient 负责获取可用工具定义列表
+     * 并执行具体的工具调用。这两个依赖共同支撑 ReAct 循环的完整运行：ChatFacade 提供 LLM 推理能力，
+     * ActionFeignClient 通过 listTools() 提供工具清单供 LLM 自主选择，通过 executeTool() 执行
+     * LLM 决定的工具调用并将结果返回给 LLM 继续推理。</p>
+     *
+     * @param chatFacade         聊天门面，封装模型路由和 LLM 调用逻辑
+     * @param actionFeignClient  动作服务 Feign 客户端，用于获取工具列表和执行工具调用
+     */
     public RespondStage(ChatFacade chatFacade, ActionFeignClient actionFeignClient) {
         this.chatFacade = chatFacade;
         this.actionFeignClient = actionFeignClient;
@@ -352,9 +364,31 @@ public class RespondStage extends PipelineStageBase {
                 .toList();
     }
 
+    /**
+     * 返回本阶段在管线中的执行顺序编号。
+     *
+     * <p>返回值为 4，表示 RespondStage 是编排管线中的第五个阶段，
+     * 排在 ContextBuildStage(0)、SecurityCheckStage(1)、PlanExecutionStage(2)
+     * 和 ReflectionStage(3) 之后。作为管线中最复杂的阶段，它内嵌了完整的
+     * ReAct（推理-行动）循环逻辑，负责 LLM 流式响应生成和工具调用的编排。
+     * 只有在 ReflectionStage 将 pipelineOk 设为 true 后，本阶段才会执行。</p>
+     *
+     * @return 阶段顺序编号，固定为 4
+     */
     @Override
     public int getOrder() { return 4; }
 
+    /**
+     * 返回本阶段的名称标识。
+     *
+     * <p>返回固定字符串 "Respond"，作为本阶段在编排管线中的唯一标识符。
+     * 该名称用于 PipelineStage 注解中的 name 属性和 after 依赖声明（如
+     * MetricsStage 声明 after = RespondStage.class），日志输出中的 "RESPOND"
+     * 阶段标签，Tracing 追踪中的 span 名称，以及前端 SSE 事件中 respond_start、
+     * message、done 等事件的来源标注。</p>
+     *
+     * @return 阶段名称，固定为 "Respond"
+     */
     @Override
     public String getStageName() { return "Respond"; }
 }

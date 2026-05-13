@@ -133,7 +133,7 @@ public class ActionExecutorImpl implements ActionExecutor {
      * @param toolName 工具名称
      * @param args     工具参数
      * @param level    沙箱安全级别
-     * @return CompletableFuture 包装的 ToolResult
+     * @return CompletableFuture 包装的 ToolExecutionResult
      */
     @Override
     public CompletableFuture<ToolExecutionResult> executeTool(String toolName,

@@ -37,7 +37,51 @@ public class DefaultMemoryConsolidator implements MemoryConsolidator {
         this.memorySystem = memorySystem;
     }
 
-    /** 使用默认策略进行合并。 */
+    /**
+     * 使用默认合并策略对指定用户和会话的短期记忆执行合并。
+     *
+     * <p>这是一个便捷重载方法，其内部委托给
+     * {@link #consolidate(String, String, MemoryConsolidationPolicy)}
+     * 三参数版本，并自动构建一个使用全部默认值的 {@link MemoryConsolidationPolicy} 对象。
+     * 默认策略的配置参数如下：</p>
+     * <ul>
+     *   <li><b>重要性阈值 (importanceThreshold)</b> — 使用 {@code 0.0}，
+     *       即不进行重要性过滤，所有合并后的条目都有机会被提升为长期记忆</li>
+     *   <li><b>最大批次大小 (maxBatchSize)</b> — 使用 {@link Integer#MAX_VALUE}，
+     *       即不限制单次合并处理的条目数量</li>
+     *   <li><b>LLM 摘要开关 (enableLlmSummary)</b> — 默认为 {@code false}，
+     *       表示不使用大语言模型来生成摘要，仅使用规则化方法</li>
+     *   <li><b>合并策略模式 (mode)</b> — 使用标准的基于并查集的语义相似度合并算法</li>
+     * </ul>
+     *
+     * <p>该重载方法的典型使用场景是定时任务触发或管理后台手动触发，
+     * 不需要精细控制合并行为时可直接调用此简化版本。</p>
+     *
+     * <p>内部调用链路：</p>
+     * <pre>
+     * consolidate(userId, sessionId)
+     *   └── memorySystem.getShortTermMemories(sessionId)  // 获取会话的短期记忆
+     *   └── tokenize + jaccardSimilarity                  // 分词并计算相似度
+     *   └── union-find 分组                               // 将相似条目分到同组
+     *   └── 合并每组内容 + 重要性排序                      // 选取最佳代表条目
+     *   └── commitLongTerm(entry)                         // 提升符合条件的条目
+     *   └── evictExpiredPerceptions()                     // 清理过期感知数据
+     * </pre>
+     *
+     * @param userId    用户标识，用于过滤特定用户的短期记忆条目。
+     *                  可以为 {@code null}，此时不过滤用户，处理所有短期记忆。
+     * @param sessionId 会话标识，用于从记忆系统中检索对应会话的短期记忆条目。
+     *                  不能为 {@code null}，否则无法定位任何短期记忆。
+     * @return {@link ConsolidationReport} 合并报告对象，包含以下统计信息：
+     *         <ul>
+     *           <li>{@code promotedToLongTerm} — 成功提升为长期记忆的条目数量</li>
+     *           <li>{@code mergedDuplicates} — 被合并消除的重复条目数量</li>
+     *           <li>{@code expiredRemoved} — 因过期而被清理的感知数据数量</li>
+     *           <li>{@code totalProcessed} — 实际处理的条目总数</li>
+     *           <li>{@code durationMs} — 合并操作耗时（毫秒）</li>
+     *           <li>{@code promotedEntryIds} — 被提升条目的 ID 列表</li>
+     *         </ul>
+     */
     @Override
     public ConsolidationReport consolidate(String userId, String sessionId) {
         return consolidate(userId, sessionId, MemoryConsolidationPolicy.builder().build());

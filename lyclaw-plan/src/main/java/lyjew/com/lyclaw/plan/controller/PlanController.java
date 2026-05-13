@@ -16,10 +16,38 @@ import java.util.*;
 /**
  * 任务规划 REST API 控制器，提供计划生成、修订、分解和图构建接口。
  *
- * <p>支持多种规划策略的动态切换（DAG、CoT、ReAct、层次化），
- * 并对生成的计划进行校验和进度跟踪。</p>
+ * <p><b>设计动机</b>：LyClaw 作为多智能体协作框架，需要一个统一的计划管理层来
+ * 协调不同智能体的任务执行。PlanController 是这一层的对外 REST 接口，
+ * 它使得前端、CLI、或其他微服务可以通过标准 HTTP 协议提交规划请求、
+ * 查询执行进度、以及动态调整计划策略。通过将规划逻辑封装为 REST 端点，
+ * 实现了规划决策与智能体执行之间的解耦，计划可以在不同执行环境中复用。</p>
  *
- * <p>端点列表：
+ * <p><b>工作流程</b>：典型的计划生命周期如下：
+ * <ol>
+ *   <li><b>计划生成 (POST /api/plan/plan)</b> — 客户端提交用户意图和策略选择，
+ *       控制器根据策略名称（dag/cot/react/hierarchical）选择合适的规划器，
+ *       生成包含任务节点及其依赖关系的计划图。</li>
+ *   <li><b>计划校验 (POST /api/plan/validate)</b> — 对生成的任务计划进行结构校验，
+ *       检查节点依赖是否存在循环引用、必填字段是否完整、超时时间是否合理等。</li>
+ *   <li><b>计划分解 (POST /api/plan/decompose)</b> — 当任务描述较为宏观时，
+ *       使用指定的分解策略（按阶段、按领域、并行独立、LLM驱动等）将根任务
+ *       进一步拆分为更细粒度的子任务图，便于多个 Agent 并行执行。</li>
+ *   <li><b>图构建 (POST /api/plan/graph)</b> — 允许直接通过 JSON 格式定义
+ *       节点和边的关系来构建完整的任务图，适用于前端可视化拖拽生成的计划。</li>
+ *   <li><b>进度跟踪 (GET /api/plan/progress/{planId})</b> — 查询某个计划
+ *       的实时执行进度，包括当前正在执行的节点、完成百分比、预计剩余时间等。</li>
+ *   <li><b>计划修订 (POST /api/plan/revise)</b> — 当反思引擎检测到计划存在问题
+ *       （如节点顺序错误、缺失步骤）时，根据反馈修订原计划。</li>
+ * </ol>
+ * </p>
+ *
+ * <p><b>策略切换机制</b>：控制器通过 Spring 的 {@code @Qualifier} 注解注入
+ * 多个规划器实现（DAGTaskPlanner / cotPlanner / reActPlanner / hierarchicalPlanner），
+ * {@link #selectPlanner(String)} 方法根据请求中的策略名称进行运行时选择。
+ * 如果指定策略对应的规划器 Bean 不可用（为 null），则自动回退到默认的 DAGTaskPlanner，
+ * 保证了系统的容错性和可用性。</p>
+ *
+ * <p><b>端点列表</b>：所有端点均返回标准 JSON 格式的 ResponseEntity：
  * <ul>
  *   <li><b>POST /api/plan/plan</b> — 根据用户意图生成任务计划</li>
  *   <li><b>POST /api/plan/revise</b> — 根据反馈修订现有计划</li>
@@ -27,7 +55,7 @@ import java.util.*;
  *   <li><b>GET /api/plan/progress/{planId}</b> — 查询计划执行进度</li>
  *   <li><b>POST /api/plan/validate</b> — 校验计划的有效性</li>
  *   <li><b>POST /api/plan/graph</b> — 从 JSON 构建任务图</li>
- *   <li><b>GET /api/plan/strategies</b> — 列出可用的分解策略</li>
+ *   <li><b>GET /api/plan/strategies</b> — 列出可用的分解策略及其描述</li>
  * </ul>
  * </p>
  */

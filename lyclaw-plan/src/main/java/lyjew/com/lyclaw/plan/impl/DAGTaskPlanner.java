@@ -590,22 +590,27 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
 
         String desc = rootTask.getDescription();
 
-        // 尝试按独立信号词拆分
+        // === 阶段1：扫描独立信号词，判断任务是否包含可并行的子任务 ===
+        // 通过检测中英文独立信号词（如"同时"、"并行"、"also"、"in parallel"等）
+        // 来确定任务描述中是否明确表达了多任务并行执行的意图。
         String[] independentMarkers = {"同时", "并行", "分别", "一方面", "另一方面",
                 "also", "meanwhile", "in parallel", "separately", "respectively"};
 
         String prefix = rootTask.getNodeId() + "-par";
         boolean hasIndependent = false;
 
+        // 逐一遍历所有独立信号词，只要命中任意一个即视为存在并行意图
         for (String marker : independentMarkers) {
             if (desc.toLowerCase().contains(marker.toLowerCase())) {
                 hasIndependent = true;
-                break;
+                break;  // 提前终止，无需检查剩余信号词
             }
         }
 
+        // === 分支1：任务包含独立信号词 → 按标点分割并拆分为并行子任务 ===
         if (hasIndependent) {
-            // 拆分出 2-3 个并行分支
+            // 阶段2a：按逗号、分号等分隔符将任务描述拆分为多个独立子句
+            // 每个子句将成为一个并行分支的描述文本
             String[] splitByComma = desc.split("[,，;；]");
             List<String> branches = new ArrayList<>();
             for (String s : splitByComma) {
@@ -615,14 +620,17 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
                 }
             }
 
+            // 阶段2b：兜底处理 — 如果按标点拆分后只有1个或0个分支，
+            // 说明任务描述中没有明显的分句结构，此时手动构造两个通用分支
             if (branches.size() < 2) {
-                // 回退：手动创建两个并行分支
                 branches = List.of(
                         "Part A of: " + desc,
                         "Part B of: " + desc);
             }
 
-            // 限制并行分支数量
+            // 阶段2c：分支数量上限控制 — 当拆分后的分支数超过5个时，
+            // 按平均分组策略将多余的分支合并到5个组中，避免并行度过高
+            // 导致资源竞争和调度复杂度失控
             if (branches.size() > 5) {
                 List<String> merged = new ArrayList<>();
                 int groupSize = (int) Math.ceil((double) branches.size() / 5);
@@ -633,6 +641,9 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
                 branches = merged;
             }
 
+            // 阶段2d：将每个分支创建为独立的任务节点并加入图中
+            // 所有分支节点都依赖根任务节点（rootTask），形成扇出结构
+            // 分支节点之间彼此无依赖关系，因此可以被并行调度执行
             for (int i = 0; i < branches.size(); i++) {
                 String childId = prefix + "-" + i;
                 TaskNode child = new TaskNode(childId, "EXECUTE", branches.get(i),
@@ -642,7 +653,10 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
                 graph.addEdge(rootTask.getNodeId(), childId);
             }
         } else {
-            // 没有显式并行标记 → 创建两个通用并行分析节点
+            // === 分支2：任务不包含独立信号词 → 创建两个通用并行分析节点 ===
+            // 即使没有显式并行标记，仍然构造两个并行的分析节点作为默认策略，
+            // 分别从不同角度（Aspect A / Aspect B）分析同一任务，
+            // 这样可以提供多视角的分析结果，后续可通过合并节点整合
             TaskNode childA = new TaskNode(prefix + "-a", "ANALYZE",
                     "Analyze aspect A: " + desc, List.of(),
                     List.of(rootTask.getNodeId()), rootTask.getTimeoutMs());

@@ -22,13 +22,52 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * OpenAI 协议 ChatModel 实现——"配置即 Provider"的核心适配器。
+ * OpenAI 协议 ChatModel 实现——"配置即 Provider"的核心适配器，是框架中最关键的基础模型类。
  *
- * <p>覆盖 85%+ 的 AI Provider（DeepSeek、OpenAI、Groq、MiniMax 等所有 OpenAI 兼容端点），
- * 只需改 YAML 配置中的 baseUrl 和 apiKey 就能切换 Provider，无需写 Java 代码。
+ * <p>作为整个框架的模型接入层基石，本类基于 OpenAI 兼容的 HTTP+SSE 协议实现了与 AI 大模型
+ * 服务的完整通信链路。由于业界超过 85% 的 AI Provider（包括 DeepSeek、OpenAI、Groq、
+ * MiniMax、通义千问、智谱 GLM 等国内主流大模型平台）均提供 OpenAI 兼容的 API 端点，
+ * 因此只需在 YAML 配置文件或 ModelConfig 中设置不同的 baseUrl、apiKey 和 model 参数，
+ * 即可无缝切换不同的 AI 服务提供商，无需编写任何额外的 Java 适配代码，真正实现了
+ * "一次编写、配置切换"的设计理念，大幅降低了多模型接入的开发和维护成本。
  *
- * <p>使用 WebClient（Reactive）替代 OkHttp，支持结构化 SSE 解析：
- * 自动拼接 content、增量聚合 tool_calls、提取 thinking 内容、累加 usage。
+ * <p>在技术实现层面，本类采用 Spring WebClient（Reactive 响应式 HTTP 客户端）替代了
+ * 传统的 OkHttp 阻塞式方案，具备以下核心能力：通过 POST 请求向 `/chat/completions`
+ * 端点发送符合 OpenAI Chat Completions API 规范的 JSON 请求体，包括完整的消息列表
+ * （系统提示词、用户/助手/工具消息及其角色标注）、工具定义（名称、描述、参数 Schema）、
+ * 采样参数（temperature、topP、maxTokens）、思考模式配置（thinking 类型与 budget_tokens
+ * 预算）、以及停止序列等多项可控参数。接收响应后，通过结构化解析 SSE（Server-Sent Events）
+ * 数据流，支持自动拼接增量（delta）content 文本、增量聚合多轮 tool_calls 中的 function
+ * name 和 arguments 参数、提取 reasoning_content 中的思维链内容、以及累加 usage 中的
+ * prompt_tokens 和 completion_tokens 消耗统计。
+ *
+ * <p>本类继承自 {@link AbstractChatModel}，实现了其定义的三个核心模板方法：
+ * <ul>
+ *   <li>{@link #buildNativeRequest(ChatRequest)} — 将框架内部的统一 ChatRequest 对象
+ *       转换为 OpenAI 协议兼容的 JSON Map 结构，处理消息序列化、工具定义转换、思考模式
+ *       参数注入等</li>
+ *   <li>{@link #sendNativeRequest(Object)} — 通过 WebClient 发送 HTTP POST 流式请求，
+ *       处理 HTTP 错误状态码（自动提取响应体并包装为 ModelException）、设置超时时间
+ *       （300 秒）、记录请求和错误日志</li>
+ *   <li>{@link #parseChunk(String)} — 将原始 SSE 数据行解析为统一的 ModelResponse 对象，
+ *       兼容流式（delta 格式）和非流式（message 格式）两种响应，提取 content、
+ *       thinking、tool_calls 和 usage 信息</li>
+ * </ul>
+ *
+ * <p>此外，本类还提供了运行时热更新能力：{@link #updateApiKey(String)} 和
+ * {@link #updateBaseUrl(String)} 方法允许在不重启应用的情况下动态切换 API 密钥或
+ * 端点地址，特别适用于密钥轮换和故障切换等运维场景。同时实现了 {@link #validate()}
+ * 健康检查方法，通过发送最小化请求（单 token、无实际内容）来验证 Provider 连通性，
+ * 并通过 {@link #countTokens(String)} 提供基于字符数的简易 Token 估算功能。
+ *
+ * <p>对于需要自定义 Provider 特性的场景，开发者可以继承本类（参见 {@code DeepSeekChatModel}
+ * 示例），覆写 {@link #getDefaultBaseUrl()} 和 {@link #getDefaultModel()} 方法来提供
+ * Provider 专属的默认端点地址和模型名称，同时通过 {@code @ChatModel}、{@code @RetryPolicy}、
+ * {@code @Fallback}、{@code @CircuitBreaker} 等注解声明弹性策略。
+ *
+ * @see AbstractChatModel
+ * @see lyjew.com.lyclaw.model.ChatRequest
+ * @see lyjew.com.lyclaw.model.ModelResponse
  */
 public class OpenAiProtocolChatModel extends AbstractChatModel {
 
@@ -43,8 +82,15 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
     private WebClient webClient;
 
     /**
-     * @param provider Provider 标识
-     * @param config   模型配置（baseUrl、apiKey、model）
+     * 使用 {@link ModelConfig} 配置对象创建 OpenAI 协议适配器实例。
+     *
+     * <p>ModelConfig 是框架统一的模型配置数据对象，包含 baseUrl（API 端点地址）、apiKey
+     * （认证密钥）和 model（模型名称）三个核心字段。构造过程中会从 config 中提取这些字段，
+     * 同时初始化 WebClient 并设置默认的 Authorization Bearer 认证头和 Content-Type 头。
+     *
+     * @param provider Provider 唯一标识字符串，用于在框架中区分不同的 AI 服务提供商
+     *                 例如 "openai"、"deepseek"、"groq" 等
+     * @param config   模型配置对象，封装了 baseUrl、apiKey 和 model 等连接参数
      */
     public OpenAiProtocolChatModel(String provider, ModelConfig config) {
         super(config.getBaseUrl(), config.getApiKey(), config.getModel());
@@ -59,7 +105,19 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
     }
 
     /**
-     * 带完整参数构造。
+     * 带完整参数和自定义 ModelCapabilities 的构造函数。
+     *
+     * <p>与简化构造器不同，本构造器允许直接指定所有连接参数和能力配置，适用于需要精确控制
+     * 模型能力的场景。capabilities 参数定义了该 Provider 所支持的功能特性集合（如流式响应、
+     * 工具调用、思考模式、视觉识别等），框架会根据这些能力声明在运行时有条件地启用或
+     * 禁用相关功能。如果传入的 capabilities 为 null，则自动使用 {@link ModelCapabilities#openAiDefaults()}
+     * 提供的默认能力集。
+     *
+     * @param provider     Provider 唯一标识字符串，用于在框架中区分不同的服务提供商
+     * @param baseUrl      API 端点的基础 URL 地址，例如 "https://api.openai.com"
+     * @param apiKey       用于 API 认证的密钥字符串
+     * @param model        默认使用的模型名称，例如 "gpt-4o"
+     * @param capabilities 该 Provider 的能力声明对象，null 时使用 OpenAI 默认能力集
      */
     public OpenAiProtocolChatModel(String provider, String baseUrl, String apiKey, String model,
                                    ModelCapabilities capabilities) {
@@ -99,6 +157,20 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
         return DEFAULT_MODEL;
     }
 
+    /**
+     * 将框架内部的统一 ChatRequest 对象构建为 OpenAI Chat Completions API 兼容的原生请求体。
+     *
+     * <p>该方法是模板方法模式中的核心步骤之一，负责完成从框架内部模型到外部 API 格式的
+     * 协议转换。构建过程涵盖以下步骤：设置 model 字段（优先使用请求中的模型名，其次使用
+     * 默认模型）；将系统提示词作为 role=system 的首条消息插入；遍历所有历史消息，为每条
+     * 消息构建包含 role、content、reasoning_content、tool_calls、tool_call_id 等字段的
+     * Map 结构；序列化工具定义为 OpenAI 的 tools 数组格式（type=function + function 对象
+     * 包含 name、description、parameters）；注入采样参数（temperature、max_tokens、top_p）；
+     * 启用思考模式时添加 thinking 配置（含 budget_tokens 预算）。
+     *
+     * @param request 框架内部的统一聊天请求对象，包含消息历史、系统提示、工具定义等
+     * @return 符合 OpenAI Chat Completions API 规范的 LinkedHashMap 请求体
+     */
     @Override
     protected Object buildNativeRequest(ChatRequest request) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -174,6 +246,19 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
         return body;
     }
 
+    /**
+     * 通过 WebClient 以 HTTP POST 方式发送流式请求到 OpenAI 兼容端点。
+     *
+     * <p>该方法是模板方法模式中的第二个核心步骤，负责实际的网络通信。使用 Spring WebClient
+     * 响应式客户端发送 POST 请求到 {@code /chat/completions} 端点，将构建好的原生请求体
+     * 以 JSON 格式提交。通过 {@code bodyToFlux(String.class)} 获取响应式字符串流，每个元素
+     * 对应一行 SSE 数据。同时设置了以下容错机制：通过 {@code onStatus} 处理所有 HTTP 错误
+     * 状态码，自动提取响应体并包装为 {@link ModelException}；通过 {@code timeout} 设置 300
+     * 秒的超时时间防止无限等待；通过 {@code doOnError} 记录所有请求级别的异常日志。
+     *
+     * @param nativeRequest 由 {@link #buildNativeRequest(ChatRequest)} 构建的协议原生请求体
+     * @return 响应式字符串流，每个元素为一行原始的 SSE 数据（"data: {...}" 格式）
+     */
     @Override
     @SuppressWarnings("unchecked")
     protected Flux<String> sendNativeRequest(Object nativeRequest) {
@@ -195,6 +280,22 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
                 .doOnError(e -> log.error("OpenAI request error: {}", e.getMessage(), e));
     }
 
+    /**
+     * 将原始 SSE 数据块解析为框架统一的 {@link ModelResponse} 对象。
+     *
+     * <p>该方法是模板方法模式中的第三个核心步骤，负责将 Provider 返回的原始文本数据转换
+     * 为框架内部统一的数据模型。解析过程兼容两种响应格式：流式响应（每个 chunk 包含 delta
+     * 字段，内容为增量文本）和非流式响应（每个响应包含完整的 message 字段）。具体处理
+     * 流程为：首先处理空数据和结束标记 "[DONE]"；然后去掉 "data: " 前缀提取纯 JSON；
+     * 使用 Jackson ObjectMapper 解析 JSON 树结构；从 choices[0] 中提取 finish_reason 和
+     * 内容源（优先 delta，其次 message）；提取 content 文本、reasoning_content 思维链内容、
+     * tool_calls（包含 id、index、function.name、function.arguments）；从根节点的 usage
+     * 对象中提取 prompt_tokens 和 completion_tokens 统计信息。JSON 解析异常时返回空内容
+     * 的 ModelResponse 以保证流式处理不中断。
+     *
+     * @param rawChunk 原始 SSE 数据行，格式为 "data: {...}" 或 "[DONE]"
+     * @return 解析后的统一 ModelResponse 对象，包含 content、thinking、toolCalls、usage 等
+     */
     @Override
     protected ModelResponse parseChunk(String rawChunk) {
         // SSE 格式："data: {...}" 或 "[DONE]"
@@ -287,6 +388,17 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
         }
     }
 
+    /**
+     * 使用基于字符数的简易算法估算文本的 Token 数量。
+     *
+     * <p>由于不是所有 Provider 都提供精确的 tokenize 接口，本方法使用经验估算公式：
+     * 约 4 个字符 ~= 1 个 token。这是对英文场景（平均每 token 约 4 字符）和中文场景
+     * （平均每 token 约 1.5-2 个汉字）的综合近似。对于需要精确 Token 计数的场景，
+     * 建议子类覆写此方法对接 Provider 特定的 tokenize API。
+     *
+     * @param text 需要估算 Token 数量的文本内容
+     * @return 估算的 Token 数量，空文本返回 0
+     */
     @Override
     public int countTokens(String text) {
         if (text == null || text.isEmpty()) return 0;
@@ -294,6 +406,16 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
         return text.length() / 4;
     }
 
+    /**
+     * 通过发送最小化请求来验证 Provider 的连通性和认证有效性。
+     *
+     * <p>该方法发送一个仅包含单条 user message "ping" 且 max_tokens=1 的最小请求，
+     * 不关心响应内容，仅检查 HTTP 状态码是否为 2xx。如果 Provider 连通且认证有效，
+     * 返回 {@code Mono<true>}；如果连接失败、超时或返回错误状态码，返回 {@code Mono<false>}。
+     * 设置了 10 秒超时以防止健康检查长时间阻塞。
+     *
+     * @return 响应式布尔值，true 表示 Provider 健康可用，false 表示不可用
+     */
     @Override
     public Mono<Boolean> validate() {
         // 发最小请求验证连通性
@@ -312,7 +434,15 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
                 .timeout(Duration.ofSeconds(10));
     }
 
-    /** 更新 API 密钥（运行时热更新） */
+    /**
+     * 运行时热更新 API 密钥，无需重启应用即可切换认证凭据。
+     *
+     * <p>该方法会重新构建内部的 WebClient 实例，使用新的 API 密钥设置 Authorization 请求头。
+     * 适用于密钥轮换、临时授权、多租户切换等运维场景。注意此操作会替换整个 WebClient 实例，
+     * 因此调用后所有正在进行中的请求仍使用旧的 WebClient，新请求使用更新后的凭据。
+     *
+     * @param newApiKey 新的 API 密钥字符串，将用于后续所有请求的 Bearer 认证
+     */
     public void updateApiKey(String newApiKey) {
         this.webClient = WebClient.builder()
                 .baseUrl(this.baseUrl)
@@ -321,7 +451,16 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
                 .build();
     }
 
-    /** 更新端点 URL（运行时热更新） */
+    /**
+     * 运行时热更新 API 端点的基础 URL 地址，无需重启应用即可切换服务端点。
+     *
+     * <p>该方法会重新构建内部的 WebClient 实例，使用新的 baseUrl 作为请求目标地址，
+     * 同时保留当前的 API 密钥。适用于故障转移（切换到备用端点）、灰度发布（切换到
+     * 新版本端点）、区域路由（切换到就近区域的端点）等运维场景。与 updateApiKey 类似，
+     * 此操作仅影响后续新请求，正在进行中的流式请求不受影响。
+     *
+     * @param newBaseUrl 新的 API 端点基础 URL，例如 "https://api.deepseek.com"
+     */
     public void updateBaseUrl(String newBaseUrl) {
         String key = this.apiKey;
         this.webClient = WebClient.builder()

@@ -152,9 +152,31 @@ public class SecurityCheckStage extends PipelineStageBase {
         });
     }
 
+    /**
+     * 返回本阶段在管线中的执行顺序编号。
+     *
+     * <p>返回值为 1，表示 SecurityCheckStage 是编排管线中的第二个阶段，
+     * 紧跟在 ContextBuildStage（getOrder=0）之后执行。作为 PREPROCESSING 组
+     * 的成员，它在所有核心业务处理阶段之前运行，起到安全网关的作用。
+     * PipelineStageProcessor 按此编号升序排列，如果 SecurityCheckStage 因安全审计
+     * 而终止流水线（setTerminated(true)），则所有编号大于 1 的阶段都将被跳过。</p>
+     *
+     * @return 阶段顺序编号，固定为 1
+     */
     @Override
     public int getOrder() { return 1; }
 
+    /**
+     * 返回本阶段的名称标识。
+     *
+     * <p>返回固定字符串 "SecurityCheck"，作为本阶段在编排管线中的唯一标识符。
+     * 该名称用于 PipelineStage 注解中的 name 属性、after 依赖声明中的引用、
+     * 日志输出中的阶段标记（如 "[SecurityCheck]" 或 "INTERCEPT" 子阶段标签）、
+     * Tracing 追踪中的 span 名称，以及前端 SSE 事件中 intercept_start 和
+     * intercept_complete 等事件的来源标注。</p>
+     *
+     * @return 阶段名称，固定为 "SecurityCheck"
+     */
     @Override
     public String getStageName() { return "SecurityCheck"; }
 }

@@ -30,11 +30,33 @@ public class PipelineCollaborationMode implements CollaborationMode {
     /** 保存每个阶段的输出结果 */
     private final ConcurrentHashMap<String, List<String>> stageResults = new ConcurrentHashMap<>();
 
+    /**
+     * 获取流水线协作模式的唯一标识符。
+     *
+     * <p>返回固定字符串 "pipeline"，作为该协作模式在系统中的全局唯一 ID。
+     * 该标识符用于 CollaborationHub 中的模式注册和查找（如通过 ModeRegistry
+     * 按 modeId 获取对应的协作模式实例）、编排上下文（OrchestrationContext）中
+     * collaborationModeId 字段的赋值、日志输出中的模式标签，以及前端 API 中
+     * 指定协作模式时的参数值。每个 CollaborationMode 实现类必须返回唯一且不可变的 modeId。</p>
+     *
+     * @return 模式标识符，固定为 "pipeline"
+     */
     @Override
     public String getModeId() {
         return MODE_ID;
     }
 
+    /**
+     * 获取流水线协作模式偏好的网络拓扑类型。
+     *
+     * <p>返回 TopologyType.HIERARCHICAL（层级拓扑）。在流水线模式中，Agent 按序排列，
+     * 数据单向从前一阶段流向下一阶段（Stage 1 -> Stage 2 -> ... -> Stage N），
+     * 不存在反向通信和跨阶段跳跃。层级拓扑准确反映了这种严格的单向数据流结构，
+     * 每个 Agent 仅与其直接后继建立通信通道（output_to_next_stage、data_handoff），
+     * 无需全连接或星型结构的复杂路由。StarAgentChannel 会根据此偏好调整消息路由行为。</p>
+     *
+     * @return 偏好的拓扑类型，固定为 TopologyType.HIERARCHICAL
+     */
     @Override
     public TopologyType getPreferredTopology() {
         return TopologyType.HIERARCHICAL;
