@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.action.ToolExecuteRequest;
-import lyjew.com.lyclaw.action.tool.ToolResult;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.chat.ChatModel;
 import lyjew.com.lyclaw.chat.RoutingDecision;
@@ -16,6 +15,7 @@ import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.springframework.http.codec.ServerSentEvent;
 import lyjew.com.lyclaw.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
@@ -273,10 +273,10 @@ public class RespondStage extends PipelineStageBase {
                     .build();
 
             try {
-                ToolResult result = actionFeignClient.executeTool(execReq);
+                ToolExecutionResult result = actionFeignClient.executeTool(execReq);
                 String toolOutput = result.isSuccess()
-                        ? result.getOutput()
-                        : "Error: " + result.getErrorMessage();
+                        ? result.getResult()
+                        : "Error: " + result.getError();
                 messages.add(Message.builder()
                         .role("tool")
                         .toolCallId(req.getId())

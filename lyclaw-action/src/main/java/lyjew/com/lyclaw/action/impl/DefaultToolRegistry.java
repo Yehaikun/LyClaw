@@ -5,7 +5,7 @@ import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolRegistry;
-import lyjew.com.lyclaw.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -38,7 +38,7 @@ public class DefaultToolRegistry implements ToolRegistry {
                 register(tool);
             }
         }
-        log.info("初始化完成，未来会基于注解注册工具，请看这条日志下面注册工具的消息", tools.size());
+        log.info("DefaultToolRegistry 初始化完成，未来会基于注解注册工具，请看这条日志下面注册工具的消息", tools.size());
     }
 
     /**
@@ -104,7 +104,7 @@ public class DefaultToolRegistry implements ToolRegistry {
      * @throws IllegalArgumentException 当工具未注册
      */
     @Override
-    public ToolResult execute(ToolCall toolCall, ChatContext context) {
+    public ToolExecutionResult execute(ToolCall toolCall, ChatContext context) {
         Tool tool = tools.get(toolCall.getName());
         if (tool == null) {
             throw new IllegalArgumentException(

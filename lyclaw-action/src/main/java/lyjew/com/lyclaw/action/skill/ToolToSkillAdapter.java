@@ -5,8 +5,8 @@ import lyjew.com.lyclaw.dto.SkillResult;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.skill.Skill;
 import lyjew.com.lyclaw.tool.Tool;
-import lyjew.com.lyclaw.tool.ToolResult;
 import lombok.extern.slf4j.Slf4j;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -91,7 +91,7 @@ public class ToolToSkillAdapter implements Skill {
                 log.debug("适配执行: tool={}", tool.getName());
 
                 // 执行底层工具并计算耗时
-                ToolResult result = tool.execute(toolCall, context);
+                ToolExecutionResult result = tool.execute(toolCall, context);
                 long elapsed = System.currentTimeMillis() - startTime;
                 // 根据成功/失败状态构建不同的 SkillResult
                 return new SkillResult(

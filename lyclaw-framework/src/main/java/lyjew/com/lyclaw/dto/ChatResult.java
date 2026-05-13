@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.dto;
 
-import lyjew.com.lyclaw.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 
 import java.util.List;
 
@@ -18,12 +18,12 @@ public class ChatResult {
     /** Token 使用量摘要 */
     private String tokenUsage;
     /** 本次对话中的工具调用结果列表 */
-    private List<ToolResult> toolResults;
+    private List<ToolExecutionResult> toolResults;
     /** 总执行耗时（毫秒） */
     private long durationMs;
 
     public ChatResult(String content, String finishReason, String tokenUsage,
-                      List<ToolResult> toolResults, long durationMs) {
+                      List<ToolExecutionResult> toolResults, long durationMs) {
         this.content = content;
         this.finishReason = finishReason;
         this.tokenUsage = tokenUsage;
@@ -40,8 +40,8 @@ public class ChatResult {
     public String getTokenUsage() { return tokenUsage; }
     public void setTokenUsage(String tokenUsage) { this.tokenUsage = tokenUsage; }
 
-    public List<ToolResult> getToolResults() { return toolResults; }
-    public void setToolResults(List<ToolResult> toolResults) { this.toolResults = toolResults; }
+    public List<ToolExecutionResult> getToolResults() { return toolResults; }
+    public void setToolResults(List<ToolExecutionResult> toolResults) { this.toolResults = toolResults; }
 
     public long getDurationMs() { return durationMs; }
     public void setDurationMs(long durationMs) { this.durationMs = durationMs; }

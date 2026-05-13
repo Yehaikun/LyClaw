@@ -6,7 +6,7 @@ import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import org.springframework.http.codec.ServerSentEvent;
-
+import lyjew.com.lyclaw.model.ChatRequest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -87,8 +87,8 @@ public abstract class PipelineStageBase implements ReactivePipelineStage {
      * @param toolResults 工具执行结果列表
      * @return 组装好的 ChatRequest
      */
-    protected lyjew.com.lyclaw.model.ChatRequest buildLlmRequest(ChatContext context, List<String> toolResults) {
-        lyjew.com.lyclaw.model.ChatRequest original = context.getRequest();
+    protected ChatRequest buildLlmRequest(ChatContext context, List<String> toolResults) {
+        ChatRequest original = context.getRequest();
         List<Message> messages = new ArrayList<>(original.getMessages());
 
         // 如果有工具执行结果，以 user 角色消息追加到对话中

@@ -5,7 +5,7 @@ import lyjew.com.lyclaw.action.SkillExecuteRequest;
 import lyjew.com.lyclaw.action.ToolExecuteRequest;
 import lyjew.com.lyclaw.action.impl.ActionExecutorImpl;
 import lyjew.com.lyclaw.action.impl.DefaultToolRegistry;
-import lyjew.com.lyclaw.action.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import lyjew.com.lyclaw.dto.SkillResult;
 import lyjew.com.lyclaw.model.ToolDefinition;
@@ -67,7 +67,7 @@ public class ActionController {
      * @return 工具执行结果的 Mono
      */
     @PostMapping("/execute-tool")
-    public Mono<ToolResult> executeTool(@RequestBody ToolExecuteRequest request) {
+    public Mono<ToolExecutionResult> executeTool(@RequestBody ToolExecuteRequest request) {
         log.info("收到工具执行请求: tool={}, level={}",
                 request.getToolName(), request.getSandboxLevel());
 

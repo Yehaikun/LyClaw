@@ -4,7 +4,7 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
-import lyjew.com.lyclaw.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -178,13 +178,13 @@ class DefaultToolRegistryTest {
             ToolDefinition def = ToolDefinition.builder().name("calc").source("builtin").build();
             when(tool.getDefinition()).thenReturn(def);
 
-            ToolResult innerResult = new ToolResult(true, "42", null, 10, 0);
+            ToolExecutionResult innerResult = ToolExecutionResult.builder().success(true).result("42").elapsedMs(10).build();
             ToolCall call = ToolCall.builder().name("calc").arguments("{}").build();
             when(tool.execute(eq(call), isNull())).thenReturn(innerResult);
 
             registry = new DefaultToolRegistry(List.of(tool));
 
-            ToolResult result = registry.execute(call, null);
+            ToolExecutionResult result = registry.execute(call, null);
             assertTrue(result.isSuccess());
             assertEquals("42", result.getResult());
         }

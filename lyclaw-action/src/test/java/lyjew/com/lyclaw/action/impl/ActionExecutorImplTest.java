@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.action.impl;
 
-import lyjew.com.lyclaw.action.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.action.tool.ToolSandbox;
 import lyjew.com.lyclaw.dto.SkillResult;
 import lyjew.com.lyclaw.model.ToolDefinition;
@@ -89,11 +89,11 @@ class ActionExecutorImplTest {
             when(toolRegistry.get("calculator")).thenReturn(mockTool);
 
             when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.NONE)))
-                    .thenReturn(ToolResult.builder()
+                    .thenReturn(ToolExecutionResult.builder()
                             .toolName("calculator")
                             .success(true)
-                            .output("42")
-                            .durationMs(10)
+                            .result("42")
+                            .elapsedMs(10)
                             .build());
 
             SimpleTaskPlan plan = new SimpleTaskPlan(List.of(node));
@@ -209,8 +209,8 @@ class ActionExecutorImplTest {
             lenient().when(mockTool.getName()).thenReturn("calculator");
             when(toolRegistry.get("calculator")).thenReturn(mockTool);
             when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.NONE)))
-                    .thenReturn(ToolResult.builder()
-                            .toolName("calculator").success(true).output("ok").build());
+                    .thenReturn(ToolExecutionResult.builder()
+                            .toolName("calculator").success(true).result("ok").build());
 
             SimpleTaskPlan plan = new SimpleTaskPlan(List.of(node));
             StepVerifier.create(executor.execute(plan, null))
@@ -248,15 +248,15 @@ class ActionExecutorImplTest {
             lenient().when(mockTool.getName()).thenReturn("calculator");
             when(toolRegistry.get("calculator")).thenReturn(mockTool);
             when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.NONE)))
-                    .thenReturn(ToolResult.builder()
-                            .toolName("calculator").success(true).output("42").build());
+                    .thenReturn(ToolExecutionResult.builder()
+                            .toolName("calculator").success(true).result("42").build());
 
-            CompletableFuture<ToolResult> future =
+            CompletableFuture<ToolExecutionResult> future =
                     executor.executeTool("calculator", Map.of(), SandboxLevel.NONE);
-            ToolResult result = future.get();
+            ToolExecutionResult result = future.get();
 
             assertTrue(result.isSuccess());
-            assertEquals("42", result.getOutput());
+            assertEquals("42", result.getResult());
             assertEquals("calculator", result.getToolName());
         }
 
@@ -264,12 +264,12 @@ class ActionExecutorImplTest {
         void testExecuteToolNotFound() throws Exception {
             when(toolRegistry.get("no_such_tool")).thenReturn(null);
 
-            CompletableFuture<ToolResult> future =
+            CompletableFuture<ToolExecutionResult> future =
                     executor.executeTool("no_such_tool", Map.of(), SandboxLevel.NONE);
-            ToolResult result = future.get();
+            ToolExecutionResult result = future.get();
 
             assertFalse(result.isSuccess());
-            assertTrue(result.getErrorMessage().contains("未注册"));
+            assertTrue(result.getError().contains("未注册"));
         }
     }
 

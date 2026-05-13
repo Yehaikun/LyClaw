@@ -8,6 +8,7 @@ import lyjew.com.lyclaw.model.ModelResponse;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
 import lyjew.com.lyclaw.tool.ToolErrorAction;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -117,8 +118,7 @@ public class ToolCallLoop {
             boolean shouldAbort = false;
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
                 try {
-                    lyjew.com.lyclaw.tool.ToolResult result =
-                            toolRegistry.execute(buildToolCall(req), context);
+                    ToolExecutionResult result = toolRegistry.execute(buildToolCall(req), context);
 
                     // 追加工具执行结果消息
                     messages.add(Message.builder()

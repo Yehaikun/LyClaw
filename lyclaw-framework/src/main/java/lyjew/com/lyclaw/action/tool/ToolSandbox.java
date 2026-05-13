@@ -2,6 +2,7 @@ package lyjew.com.lyclaw.action.tool;
 
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.tool.Tool;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 
 import java.util.Map;
 
@@ -22,7 +23,7 @@ public interface ToolSandbox {
      * @param level 沙箱安全级别
      * @return 工具执行结果
      */
-    ToolResult execute(Tool tool, Map<String, Object> args, SandboxLevel level);
+    ToolExecutionResult execute(Tool tool, Map<String, Object> args, SandboxLevel level);
 
     /**
      * 检查沙箱是否处于健康状态。

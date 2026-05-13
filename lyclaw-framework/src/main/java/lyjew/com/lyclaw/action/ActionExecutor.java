@@ -1,10 +1,10 @@
 package lyjew.com.lyclaw.action;
 
-import lyjew.com.lyclaw.action.tool.ToolResult;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.SkillResult;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.task.TaskPlan;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -37,7 +37,7 @@ public interface ActionExecutor {
      * @param level    沙箱安全等级
      * @return 异步返回工具执行结果
      */
-    CompletableFuture<ToolResult> executeTool(String toolName, Map<String, Object> args, SandboxLevel level);
+    CompletableFuture<ToolExecutionResult> executeTool(String toolName, Map<String, Object> args, SandboxLevel level);
 
     /**
      * 异步执行指定技能。

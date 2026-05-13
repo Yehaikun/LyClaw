@@ -5,7 +5,7 @@ import lyjew.com.lyclaw.action.SkillExecuteRequest;
 import lyjew.com.lyclaw.action.ToolExecuteRequest;
 import lyjew.com.lyclaw.action.impl.ActionExecutorImpl;
 import lyjew.com.lyclaw.action.impl.DefaultToolRegistry;
-import lyjew.com.lyclaw.action.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.dto.SkillResult;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.security.SandboxLevel;
@@ -65,10 +65,10 @@ class ActionControllerTest {
                     .sandboxLevel("read_only")
                     .build();
 
-            ToolResult toolResult = ToolResult.builder()
+            ToolExecutionResult toolResult = ToolExecutionResult.builder()
                     .toolName("calculator")
                     .success(true)
-                    .output("2")
+                    .result("2")
                     .build();
             when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.READ_ONLY)))
                     .thenReturn(CompletableFuture.completedFuture(toolResult));
@@ -76,7 +76,7 @@ class ActionControllerTest {
             StepVerifier.create(controller.executeTool(req))
                     .assertNext(r -> {
                         assertTrue(r.isSuccess());
-                        assertEquals("2", r.getOutput());
+                        assertEquals("2", r.getResult());
                     })
                     .verifyComplete();
         }
@@ -89,7 +89,7 @@ class ActionControllerTest {
                     .sandboxLevel("INVALID_LEVEL")
                     .build();
 
-            ToolResult toolResult = ToolResult.builder()
+            ToolExecutionResult toolResult = ToolExecutionResult.builder()
                     .toolName("calculator").success(true).build();
             when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.NONE)))
                     .thenReturn(CompletableFuture.completedFuture(toolResult));
@@ -104,7 +104,7 @@ class ActionControllerTest {
             ToolExecuteRequest req = ToolExecuteRequest.builder()
                     .toolName("calculator").args(Map.of()).build();
 
-            ToolResult toolResult = ToolResult.builder()
+            ToolExecutionResult toolResult = ToolExecutionResult.builder()
                     .toolName("calculator").success(true).build();
             when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.NONE)))
                     .thenReturn(CompletableFuture.completedFuture(toolResult));
@@ -119,7 +119,7 @@ class ActionControllerTest {
             ToolExecuteRequest req = ToolExecuteRequest.builder()
                     .toolName("calculator").build();
 
-            ToolResult toolResult = ToolResult.builder()
+            ToolExecutionResult toolResult = ToolExecutionResult.builder()
                     .toolName("calculator").success(true).build();
             when(actionExecutorImpl.executeTool(eq("calculator"), eq(Map.of()), any()))
                     .thenReturn(CompletableFuture.completedFuture(toolResult));

@@ -58,6 +58,8 @@ export const useChatStore = defineStore('chat', () => {
   const currentProvider = ref<string>('deepseek')
   /** 当前活跃会话的唯一标识，用于关联所有后续消息 */
   const currentSessionId = ref<string | null>(null)
+  /** 工具调用状态文字：后端推送 status 事件时更新，流式文本到达或流结束时清空 */
+  const toolStatus = ref<string>('')
 
   // ====================================================================
   // 计算属性（Getters）
@@ -132,12 +134,15 @@ export const useChatStore = defineStore('chat', () => {
 
     isStreaming.value = true
     currentStreamingText.value = ''
+    toolStatus.value = ''
 
     try {
       await postChatStream(
         request,
         // 流式数据块回调：每收到一段文本就追加到currentStreamingText
         (chunk: string) => {
+          // 首个文本块到达 → 工具调用阶段结束，清空状态文字
+          if (toolStatus.value) toolStatus.value = ''
           currentStreamingText.value += chunk
         },
         // 流正常完成回调：将累积的流式文本固化为assistant消息
@@ -151,6 +156,7 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push(assistantMsg)
           }
           currentStreamingText.value = ''
+          toolStatus.value = ''
           isStreaming.value = false
         },
         // 错误回调：保存已接收的部分内容，记录错误信息
@@ -180,6 +186,10 @@ export const useChatStore = defineStore('chat', () => {
             error.value = null  // 已保存部分内容，不显示错误
             errorTraceId.value = undefined
           }
+        },
+        // 工具调用状态回调：后端推送status事件时更新toolStatus供视图展示
+        (statusText: string) => {
+          toolStatus.value = statusText
         },
       )
     } catch (err) {
@@ -374,6 +384,7 @@ export const useChatStore = defineStore('chat', () => {
     currentModel,
     currentProvider,
     currentSessionId,
+    toolStatus,
     // 计算属性
     messageCount,
     lastMessage,

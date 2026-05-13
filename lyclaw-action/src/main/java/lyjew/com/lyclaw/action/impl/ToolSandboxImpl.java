@@ -2,13 +2,12 @@ package lyjew.com.lyclaw.action.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lyjew.com.lyclaw.action.tool.ToolResult;
 import lyjew.com.lyclaw.action.tool.ToolSandbox;
-import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.tool.Tool;
 import lombok.extern.slf4j.Slf4j;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.springframework.stereotype.Component;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -81,13 +80,13 @@ public class ToolSandboxImpl implements ToolSandbox {
      * @return 执行结果
      */
     @Override
-    public ToolResult execute(Tool tool, Map<String, Object> args, SandboxLevel level) {
+    public ToolExecutionResult execute(Tool tool, Map<String, Object> args, SandboxLevel level) {
         if (!healthy.get()) {
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .errorMessage("沙箱不可用")
-                    .durationMs(0)
+                    .error("沙箱不可用")
+                    .elapsedMs(0)
                     .build();
         }
 
@@ -107,11 +106,11 @@ public class ToolSandboxImpl implements ToolSandbox {
         } catch (Exception e) {
             log.error("沙箱执行异常: tool={}, level={}", tool.getName(), level, e);
             long elapsed = System.currentTimeMillis() - startTime;
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .errorMessage("沙箱执行异常: " + e.getMessage())
-                    .durationMs(elapsed)
+                    .error("沙箱执行异常: " + e.getMessage())
+                    .elapsedMs(elapsed)
                     .build();
         }
     }
@@ -151,8 +150,8 @@ public class ToolSandboxImpl implements ToolSandbox {
     /**
      * NONE 级别执行：无隔离，直接在当前线程中执行工具。
      */
-    private ToolResult executeNone(Tool tool, ToolCall toolCall, long startTime) {
-        lyjew.com.lyclaw.tool.ToolResult innerResult = tool.execute(toolCall, null);
+    private ToolExecutionResult executeNone(Tool tool, ToolCall toolCall, long startTime) {
+        ToolExecutionResult innerResult = tool.execute(toolCall, null);
         return convertResult(tool.getName(), innerResult, startTime);
     }
 
@@ -161,19 +160,19 @@ public class ToolSandboxImpl implements ToolSandbox {
      *
      * <p>检查工具定义中的 isReadOnly 标记和配置的只读工具白名单。两者任一满足即放行。</p>
      */
-    private ToolResult executeReadOnly(Tool tool, ToolCall toolCall, long startTime) {
+    private ToolExecutionResult executeReadOnly(Tool tool, ToolCall toolCall, long startTime) {
         // 检查工具是否为只读（工具自身标记 或 在配置白名单中）
         boolean isReadOnly = (tool.getDefinition() != null && tool.getDefinition().isReadOnly())
                 || (configReadOnlyTools != null && configReadOnlyTools.contains(tool.getName()));
         if (!isReadOnly) {
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .errorMessage("工具 " + tool.getName() + " 不允许在 READ_ONLY 沙箱中执行")
-                    .durationMs(System.currentTimeMillis() - startTime)
+                    .error("工具 " + tool.getName() + " 不允许在 READ_ONLY 沙箱中执行")
+                    .elapsedMs(System.currentTimeMillis() - startTime)
                     .build();
         }
-        lyjew.com.lyclaw.tool.ToolResult innerResult = tool.execute(toolCall, null);
+        ToolExecutionResult innerResult = tool.execute(toolCall, null);
         return convertResult(tool.getName(), innerResult, startTime);
     }
 
@@ -191,9 +190,9 @@ public class ToolSandboxImpl implements ToolSandbox {
      * </p>
      * <p>工具在独立的守护线程中执行，超时时间 {@value #DEFAULT_TIMEOUT_SECONDS} 秒。</p>
      */
-    private ToolResult executeRestricted(Tool tool, ToolCall toolCall, long startTime) {
+    private ToolExecutionResult executeRestricted(Tool tool, ToolCall toolCall, long startTime) {
         try {
-            Future<lyjew.com.lyclaw.tool.ToolResult> future = sandboxExecutor.submit(() -> {
+            Future<ToolExecutionResult> future = sandboxExecutor.submit(() -> {
                 // 创建临时工作目录
                 Path tempDir = Files.createTempDirectory("lyclaw-sandbox-");
                 try {
@@ -218,23 +217,23 @@ public class ToolSandboxImpl implements ToolSandbox {
                 }
             });
 
-            lyjew.com.lyclaw.tool.ToolResult innerResult =
+            ToolExecutionResult innerResult =
                     future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             return convertResult(tool.getName(), innerResult, startTime);
         } catch (TimeoutException e) {
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .errorMessage("工具执行超时（" + DEFAULT_TIMEOUT_SECONDS + "秒）")
-                    .durationMs(System.currentTimeMillis() - startTime)
+                    .error("工具执行超时（" + DEFAULT_TIMEOUT_SECONDS + "秒）")
+                    .elapsedMs(System.currentTimeMillis() - startTime)
                     .build();
         } catch (Exception e) {
             log.error("RESTRICTED 级别执行异常: tool={}", tool.getName(), e);
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .errorMessage("受限沙箱执行异常: " + e.getMessage())
-                    .durationMs(System.currentTimeMillis() - startTime)
+                    .error("受限沙箱执行异常: " + e.getMessage())
+                    .elapsedMs(System.currentTimeMillis() - startTime)
                     .build();
         }
     }
@@ -245,7 +244,7 @@ public class ToolSandboxImpl implements ToolSandbox {
      * <p>对于 command 工具，使用 {@link #executeCommandInProcess} 创建独立 Shell 进程执行。
      * 其他不支持进程隔离的工具降级到 RESTRICTED 级别。</p>
      */
-    private ToolResult executeContainer(Tool tool, ToolCall toolCall,
+    private ToolExecutionResult executeContainer(Tool tool, ToolCall toolCall,
                                          Map<String, Object> args, long startTime) {
         try {
             // command 工具：通过独立进程执行
@@ -258,11 +257,11 @@ public class ToolSandboxImpl implements ToolSandbox {
             return executeRestricted(tool, toolCall, startTime);
         } catch (Exception e) {
             log.error("CONTAINER 级别执行异常: tool={}", tool.getName(), e);
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .errorMessage("容器沙箱执行异常: " + e.getMessage())
-                    .durationMs(System.currentTimeMillis() - startTime)
+                    .error("容器沙箱执行异常: " + e.getMessage())
+                    .elapsedMs(System.currentTimeMillis() - startTime)
                     .build();
         }
     }
@@ -273,7 +272,7 @@ public class ToolSandboxImpl implements ToolSandbox {
      * <p>当前实现与 CONTAINER 类似，对 command 工具提供进程隔离，
      * 其他工具降级到 RESTRICTED。未来可增强为完整容器/Docker 隔离。</p>
      */
-    private ToolResult executeIsolated(Tool tool, ToolCall toolCall,
+    private ToolExecutionResult executeIsolated(Tool tool, ToolCall toolCall,
                                         Map<String, Object> args, long startTime) {
         try {
             if ("command".equals(tool.getName()) && args.containsKey("command")) {
@@ -284,11 +283,11 @@ public class ToolSandboxImpl implements ToolSandbox {
             return executeRestricted(tool, toolCall, startTime);
         } catch (Exception e) {
             log.error("ISOLATED 级别执行异常: tool={}", tool.getName(), e);
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .errorMessage("隔离沙箱执行异常: " + e.getMessage())
-                    .durationMs(System.currentTimeMillis() - startTime)
+                    .error("隔离沙箱执行异常: " + e.getMessage())
+                    .elapsedMs(System.currentTimeMillis() - startTime)
                     .build();
         }
     }
@@ -301,35 +300,35 @@ public class ToolSandboxImpl implements ToolSandbox {
      * @param startTime 开始时间戳（毫秒）
      * @return 执行结果
      */
-    private ToolResult executeCommandInProcess(String toolName, String command, long startTime) {
+    private ToolExecutionResult executeCommandInProcess(String toolName, String command, long startTime) {
         lyjew.com.lyclaw.action.util.CommandExecutor.CommandResult cr =
                 lyjew.com.lyclaw.action.util.CommandExecutor.execute(
                         command, DEFAULT_TIMEOUT_SECONDS, MAX_OUTPUT_LENGTH);
         long elapsed = System.currentTimeMillis() - startTime;
 
         if (cr.timedOut()) {
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(toolName)
                     .success(false)
-                    .errorMessage("命令执行超时（" + DEFAULT_TIMEOUT_SECONDS + "秒）")
-                    .durationMs(elapsed)
+                    .error("命令执行超时（" + DEFAULT_TIMEOUT_SECONDS + "秒）")
+                    .elapsedMs(elapsed)
                     .build();
         }
         if (cr.isSuccess()) {
             String out = cr.output().isEmpty() ? "命令执行成功，无输出" : cr.output();
-            return ToolResult.builder()
+            return ToolExecutionResult.builder()
                     .toolName(toolName)
                     .success(true)
-                    .output(out)
-                    .durationMs(elapsed)
+                    .result(out)
+                    .elapsedMs(elapsed)
                     .build();
         }
-        return ToolResult.builder()
+        return ToolExecutionResult.builder()
                 .toolName(toolName)
                 .success(false)
-                .errorMessage("退出码 " + cr.exitCode())
-                .output(cr.output())
-                .durationMs(elapsed)
+                .error("退出码 " + cr.exitCode())
+                .result(cr.output())
+                .elapsedMs(elapsed)
                 .build();
     }
 
@@ -363,16 +362,16 @@ public class ToolSandboxImpl implements ToolSandbox {
      * @param startTime   执行开始时间戳（毫秒）
      * @return 格式化后的 ToolResult
      */
-    private ToolResult convertResult(String toolName,
-                                      lyjew.com.lyclaw.tool.ToolResult innerResult,
+    private ToolExecutionResult convertResult(String toolName,
+                                      ToolExecutionResult innerResult,
                                       long startTime) {
         long elapsed = System.currentTimeMillis() - startTime;
-        return ToolResult.builder()
+        return ToolExecutionResult.builder()
                 .toolName(toolName)
                 .success(innerResult.isSuccess())
-                .output(innerResult.isSuccess() ? innerResult.getResult() : null)
-                .errorMessage(innerResult.isSuccess() ? null : innerResult.getError())
-                .durationMs(elapsed > 0 ? elapsed : innerResult.getElapsedMs())
+                .result(innerResult.isSuccess() ? innerResult.getResult() : null)
+                .error(innerResult.isSuccess() ? null : innerResult.getError())
+                .elapsedMs(elapsed > 0 ? elapsed : innerResult.getElapsedMs())
                 .build();
     }
 }

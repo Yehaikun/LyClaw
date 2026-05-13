@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.action.impl;
 
 import lyjew.com.lyclaw.action.ActionExecutor;
 import lyjew.com.lyclaw.action.ActionResult;
-import lyjew.com.lyclaw.action.tool.ToolResult;
 import lyjew.com.lyclaw.action.tool.ToolSandbox;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.SkillResult;
@@ -14,6 +13,7 @@ import lyjew.com.lyclaw.task.TaskNode;
 import lyjew.com.lyclaw.task.TaskPlan;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.Nullable;
@@ -136,9 +136,9 @@ public class ActionExecutorImpl implements ActionExecutor {
      * @return CompletableFuture 包装的 ToolResult
      */
     @Override
-    public CompletableFuture<ToolResult> executeTool(String toolName,
-                                                      Map<String, Object> args,
-                                                      SandboxLevel level) {
+    public CompletableFuture<ToolExecutionResult> executeTool(String toolName,
+                                                              Map<String, Object> args,
+                                                              SandboxLevel level) {
         return CompletableFuture.supplyAsync(() -> {
             long startTime = System.currentTimeMillis();
             log.info("执行工具: toolName={}, level={}", toolName, level);
@@ -148,29 +148,29 @@ public class ActionExecutorImpl implements ActionExecutor {
                 Tool tool = toolRegistry.get(toolName);
                 if (tool == null) {
                     log.warn("工具未找到: toolName={}", toolName);
-                    return ToolResult.builder()
+                    return ToolExecutionResult.builder()
                             .toolName(toolName)
                             .success(false)
-                            .errorMessage("工具未注册: " + toolName)
-                            .durationMs(System.currentTimeMillis() - startTime)
+                            .error("工具未注册: " + toolName)
+                            .elapsedMs(System.currentTimeMillis() - startTime)
                             .build();
                 }
 
                 // 2. 策略检查
                 if (!toolCallPolicy.canExecute(toolName, (ChatContext) null)) {
                     log.warn("策略禁止执行: toolName={}", toolName);
-                    return ToolResult.builder()
+                    return ToolExecutionResult.builder()
                             .toolName(toolName)
                             .success(false)
-                            .errorMessage("策略禁止执行工具: " + toolName)
-                            .durationMs(System.currentTimeMillis() - startTime)
+                            .error("策略禁止执行工具: " + toolName)
+                            .elapsedMs(System.currentTimeMillis() - startTime)
                             .build();
                 }
 
                 // 3. 确定沙箱级别（默认 NONE）
                 SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.NONE;
                 // 4. 在沙箱中执行
-                ToolResult result = toolSandbox.execute(tool, args, effectiveLevel);
+                ToolExecutionResult result = toolSandbox.execute(tool, args, effectiveLevel);
 
                 long totalDuration = System.currentTimeMillis() - startTime;
                 log.info("工具执行完成: toolName={}, success={}, duration={}ms",
@@ -180,11 +180,11 @@ public class ActionExecutorImpl implements ActionExecutor {
             } catch (Exception e) {
                 log.error("工具执行异常: toolName={}", toolName, e);
                 long elapsed = System.currentTimeMillis() - startTime;
-                return ToolResult.builder()
+                return ToolExecutionResult.builder()
                         .toolName(toolName)
                         .success(false)
-                        .errorMessage("工具执行异常: " + e.getMessage())
-                        .durationMs(elapsed)
+                        .error("工具执行异常: " + e.getMessage())
+                        .elapsedMs(elapsed)
                         .build();
             }
         }, executorService);
@@ -295,16 +295,16 @@ public class ActionExecutorImpl implements ActionExecutor {
                 Map<String, Object> args = new HashMap<>();
                 args.put("description", node.getDescription());
 
-                CompletableFuture<ToolResult> future = executeTool(toolName, args, SandboxLevel.NONE);
+                CompletableFuture<ToolExecutionResult> future = executeTool(toolName, args, SandboxLevel.NONE);
                 // 阻塞等待最多 30 秒
-                ToolResult toolResult = future.get(30, TimeUnit.SECONDS);
+                ToolExecutionResult toolResult = future.get(30, TimeUnit.SECONDS);
 
                 long elapsed = System.currentTimeMillis() - startTime;
                 return ActionResult.builder()
                         .nodeId(nodeId)
                         .success(toolResult.isSuccess())
-                        .output(toolResult.getOutput())
-                        .errorMessage(toolResult.getErrorMessage())
+                        .output(toolResult.getResult())
+                        .errorMessage(toolResult.getError())
                         .durationMs(elapsed)
                         .build();
 

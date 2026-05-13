@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.protocol.mcp;
 
-import lyjew.com.lyclaw.action.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 
 import java.util.Map;
 import java.util.Set;
@@ -90,5 +90,5 @@ public interface McpServer {
      * @param args     工具参数字典
      * @return 包含工具执行结果的 CompletableFuture
      */
-    CompletableFuture<ToolResult> executeTool(String toolName, Map<String, Object> args);
+    CompletableFuture<ToolExecutionResult> executeTool(String toolName, Map<String, Object> args);
 }

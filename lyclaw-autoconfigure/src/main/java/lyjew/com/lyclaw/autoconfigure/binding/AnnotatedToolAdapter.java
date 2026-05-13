@@ -4,14 +4,14 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
-import lyjew.com.lyclaw.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 
 import java.lang.reflect.Method;
 import java.util.Map;
 
 /**
- * Adapts a {@code @Tool}-annotated POJO method into the framework {@link Tool}
- * interface.  Parameter binding is handled by {@link ParameterBindingDescriptor}.
+ * 将 @Tool 注解的 POJO 适配为 Tool 接口。
+ * 通过 ParameterBindingDescriptor 完成参数绑定和反射调用。
  */
 public class AnnotatedToolAdapter implements Tool {
 
@@ -41,17 +41,25 @@ public class AnnotatedToolAdapter implements Tool {
     }
 
     @Override
-    public ToolResult execute(ToolCall toolCall, ChatContext context) {
+    public ToolExecutionResult execute(ToolCall toolCall, ChatContext context) {
         long start = System.currentTimeMillis();
         try {
             Map<String, Object> args = ParameterBinder.bindToMap(toolCall.getArguments());
             Object result = bindingDescriptor.bindAndInvoke(target, args);
             long elapsed = System.currentTimeMillis() - start;
             String resultStr = result != null ? result.toString() : "";
-            return new ToolResult(true, resultStr, null, elapsed, 0);
+            return ToolExecutionResult.builder()
+                    .success(true)
+                    .result(resultStr)
+                    .elapsedMs(elapsed)
+                    .build();
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - start;
-            return new ToolResult(false, null, e.getMessage(), elapsed, 0);
+             return ToolExecutionResult.builder()
+                     .success(false)
+                     .error(e.getMessage())
+                     .elapsedMs(elapsed)
+                     .build();
         }
     }
 

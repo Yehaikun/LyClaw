@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
-import lyjew.com.lyclaw.action.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -188,16 +188,16 @@ public class McpClientImpl implements McpClient {
      * @return 工具执行结果的CompletableFuture
      */
     @Override
-    public CompletableFuture<ToolResult> callTool(String toolName, Map<String, Object> arguments) {
+    public CompletableFuture<ToolExecutionResult> callTool(String toolName, Map<String, Object> arguments) {
         if (connections.isEmpty())
-            return CompletableFuture.completedFuture(ToolResult.builder().toolName(toolName).success(false)
-                    .errorMessage("No MCP servers connected").output(null).durationMs(0).build());
+            return CompletableFuture.completedFuture(ToolExecutionResult.builder().toolName(toolName).success(false)
+                    .error("No MCP servers connected").result(null).elapsedMs(0).build());
 
         ServerConnection target = connections.values().stream()
                 .filter(c -> c.tools.containsKey(toolName) || c.initialized).findFirst().orElse(null);
         if (target == null)
-            return CompletableFuture.completedFuture(ToolResult.builder().toolName(toolName).success(false)
-                    .errorMessage("No connected server has tool: " + toolName).output(null).durationMs(0).build());
+            return CompletableFuture.completedFuture(ToolExecutionResult.builder().toolName(toolName).success(false)
+                    .error("No connected server has tool: " + toolName).result(null).elapsedMs(0).build());
 
         return CompletableFuture.supplyAsync(() -> {
             long start = System.currentTimeMillis();
@@ -208,22 +208,22 @@ public class McpClientImpl implements McpClient {
                 String response = sendJsonRpcRequest(request, target);
                 JsonNode root = objectMapper.readTree(response);
                 if (root.has("error")) {
-                    return ToolResult.builder().toolName(toolName).success(false)
-                            .errorMessage(root.get("error").get("message").asText())
-                            .output(null).durationMs(System.currentTimeMillis() - start).build();
+                    return ToolExecutionResult.builder().toolName(toolName).success(false)
+                            .error(root.get("error").get("message").asText())
+                            .result(null).elapsedMs(System.currentTimeMillis() - start).build();
                 }
                 StringBuilder output = new StringBuilder();
                 for (JsonNode block : root.path("result").path("content"))
                     if ("text".equals(block.path("type").asText()))
                         output.append(block.path("text").asText());
-                return ToolResult.builder().toolName(toolName).success(true)
-                        .output(output.toString()).durationMs(System.currentTimeMillis() - start)
+                return ToolExecutionResult.builder().toolName(toolName).success(true)
+                        .result(output.toString()).elapsedMs(System.currentTimeMillis() - start)
                         .metadata(Map.of("serverKey", target.serverKey)).build();
             } catch (Exception e) {
                 log.error("Tool call failed: {}", toolName, e);
-                return ToolResult.builder().toolName(toolName).success(false)
-                        .errorMessage("Tool call failed: " + e.getMessage())
-                        .output(null).durationMs(System.currentTimeMillis() - start).build();
+                return ToolExecutionResult.builder().toolName(toolName).success(false)
+                        .error("Tool call failed: " + e.getMessage())
+                        .result(null).elapsedMs(System.currentTimeMillis() - start).build();
             }
         }, executor);
     }

@@ -1,17 +1,19 @@
 package lyjew.com.lyclaw.tool;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 框架层的工具执行结果封装，作为新框架与旧 action 模块之间的双向转换桥梁。
+ * 工具执行结果封装，框架中唯一的工具结果类型。
  *
- * <p>同时保存成功结果（result）和失败信息（error），通过 {@link #isSuccess()} 判断执行状态。
- * 核心职责是提供 {@link #fromLegacyActionResult(Object)} 和 {@link #toLegacyActionResult()}
- * 两组反射转换方法，使新旧两套 ToolResult 类型可以互操作，便于渐进式迁移。</p>
- *
- * <p>构造器全参数，建议通过静态工厂方法 {@link #success(String)} / {@link #failure(String)} 创建实例。</p>
+ * <p>通过 {@link #isSuccess()} 判断执行状态，构造器自动处理 null 值（转空字符串/空 Map）。
+ * 建议通过静态工厂方法或 Builder 创建实例。
  */
+@Getter
 public class ToolExecutionResult {
 
     /** 执行是否成功 */
@@ -32,6 +34,7 @@ public class ToolExecutionResult {
     /**
      * 全参数构造器，null 值自动转为空字符串/空 Map 以保证不可变性。
      */
+    @Builder
     public ToolExecutionResult(boolean success, String result, String error,
                       long elapsedMs, int tokenUsage, String toolName,
                       Map<String, Object> metadata) {
@@ -64,66 +67,6 @@ public class ToolExecutionResult {
         return new ToolExecutionResult(false, "", error, 0L, 0, toolName, null);
     }
 
-    /**
-     * 通过反射将旧 action 模块的 ToolResult 转换为框架层 ToolResult。
-     *
-     * <p>通过 Java 反射调用旧对象的 isSuccess/getOutput/getErrorMessage/getDurationMs/getToolName/getMetadata
-     * 方法提取字段值，零编译依赖实现模块解耦。转换过程如出现异常则返回 failure 结果标记转换失败原因。</p>
-     *
-     * @param legacy 旧 action 模块的 ToolResult 实例
-     * @return 框架层 ToolResult，legacy 为 null 时返回 failure
-     */
-    public static ToolExecutionResult fromLegacyActionResult(Object legacy) {
-        if (legacy == null) {
-            return failure("null legacy result");
-        }
-        try {
-            Class<?> c = legacy.getClass();
-            // 逐个反射调用 getter 提取字段值
-            boolean success = (boolean) c.getMethod("isSuccess").invoke(legacy);
-            String output = (String) c.getMethod("getOutput").invoke(legacy);
-            String errorMsg = (String) c.getMethod("getErrorMessage").invoke(legacy);
-            long duration = (long) c.getMethod("getDurationMs").invoke(legacy);
-            String name = (String) c.getMethod("getToolName").invoke(legacy);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> meta = (Map<String, Object>) c.getMethod("getMetadata").invoke(legacy);
-            return new ToolExecutionResult(success,
-                    output != null ? output : "",
-                    errorMsg != null ? errorMsg : "",
-                    duration, 0,
-                    name != null ? name : "",
-                    meta);
-        } catch (Exception e) {
-            return failure("Failed to convert legacy result: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 通过反射将当前框架层 ToolResult 转换为旧 action 模块的 ToolResult。
-     *
-     * <p>使用 builder 模式构造旧对象：先通过 Class.forName 加载旧 ToolResult 类，再反射调用
-     * builder() 工厂方法创建 builder，逐个设置字段，最后调用 build() 产出实例。
-     * 整个过程零编译依赖旧模块。</p>
-     *
-     * @return 旧 action 模块的 ToolResult 实例
-     * @throws RuntimeException 反射操作失败时抛出
-     */
-    public Object toLegacyActionResult() {
-        try {
-            // 通过反射加载旧模块类型并走 builder 模式构建
-            Class<?> c = Class.forName("lyjew.com.lyclaw.action.tool.ToolResult");
-            Object builder = c.getMethod("builder").invoke(null);
-            builder.getClass().getMethod("toolName", String.class).invoke(builder, this.toolName);
-            builder.getClass().getMethod("success", boolean.class).invoke(builder, this.success);
-            builder.getClass().getMethod("output", String.class).invoke(builder, this.result);
-            builder.getClass().getMethod("errorMessage", String.class).invoke(builder, this.error);
-            builder.getClass().getMethod("durationMs", long.class).invoke(builder, this.elapsedMs);
-            builder.getClass().getMethod("metadata", Map.class).invoke(builder, new HashMap<>(this.metadata));
-            return builder.getClass().getMethod("build").invoke(builder);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to convert to legacy action result: " + e.getMessage(), e);
-        }
-    }
 
     /** @return 执行是否成功 */
     public boolean isSuccess() { return success; }
@@ -148,7 +91,7 @@ public class ToolExecutionResult {
 
     @Override
     public String toString() {
-        return "ToolResult{success=" + success
+        return "ToolExecutionResult{success=" + success
                 + ", result='" + result + '\''
                 + ", error='" + error + '\''
                 + ", elapsedMs=" + elapsedMs

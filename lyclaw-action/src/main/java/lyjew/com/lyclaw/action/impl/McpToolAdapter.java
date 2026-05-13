@@ -4,7 +4,7 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
-import lyjew.com.lyclaw.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
@@ -93,7 +93,7 @@ public class McpToolAdapter implements Tool {
      * @return 执行结果
      */
     @Override
-    public ToolResult execute(ToolCall toolCall, ChatContext context) {
+    public ToolExecutionResult execute(ToolCall toolCall, ChatContext context) {
         long startTime = System.currentTimeMillis();
         try {
             // 构建 JSON-RPC 2.0 请求体
@@ -115,17 +115,27 @@ public class McpToolAdapter implements Tool {
             if (response.statusCode() == 200) {
                 // 从 JSON-RPC 响应中提取 content 字段
                 String extracted = extractResult(response.body());
-                return new ToolResult(true, extracted, null, elapsed, 0);
+                return ToolExecutionResult.builder()
+                        .success(true)
+                        .result(extracted)
+                        .elapsedMs(elapsed)
+                        .build();
             } else {
                 log.warn("MCP 服务返回非 200: status={}", response.statusCode());
-                return new ToolResult(false, null,
-                        "MCP 服务返回错误: HTTP " + response.statusCode(), elapsed, 0);
+                return ToolExecutionResult.builder()
+                        .success(false)
+                        .error("MCP 服务返回错误: HTTP " + response.statusCode())
+                        .elapsedMs(elapsed)
+                        .build();
             }
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - startTime;
             log.error("MCP 工具执行失败: tool={}", name, e);
-            return new ToolResult(false, null,
-                    "MCP 工具执行失败: " + e.getMessage(), elapsed, 0);
+            return ToolExecutionResult.builder()
+                    .success(false)
+                    .error("MCP 工具执行失败: " + e.getMessage())
+                    .elapsedMs(elapsed)
+                    .build();
         }
     }
 

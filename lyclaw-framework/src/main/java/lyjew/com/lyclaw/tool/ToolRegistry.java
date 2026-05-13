@@ -7,15 +7,12 @@ import lyjew.com.lyclaw.model.ToolDefinition;
 import java.util.List;
 
 /**
- * 旧版工具注册表接口，已废弃。
+ * 工具注册表 SPI 接口。
  *
- * 作为工具的管理中心，负责注册、查找和执行工具。在系统启动时收集所有
- * 可用的工具实现，运行时根据模型发起的工具调用请求查找对应工具并执行。
- * 同时负责提供所有工具定义列表，用于构造发送给 AI 模型的请求参数。
- *
- * @deprecated 请使用新的工具注册架构替代
+ * <p>作为工具的管理中心，负责注册、查找和执行工具。
+ * 在系统启动时通过 ToolAnnotationProcessor 自动收集 @Tool 注解的工具，
+ * 运行时根据模型发起的工具调用请求查找对应工具并执行。
  */
-@Deprecated
 public interface ToolRegistry {
 
     /**
@@ -49,5 +46,5 @@ public interface ToolRegistry {
      * @param context  聊天上下文
      * @return 工具执行结果
      */
-    ToolResult execute(ToolCall toolCall, ChatContext context);
+    ToolExecutionResult execute(ToolCall toolCall, ChatContext context);
 }

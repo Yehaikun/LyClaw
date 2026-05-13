@@ -232,8 +232,8 @@ class McpServerImplTest {
             var result = future.get();
 
             assertThat(result.isSuccess()).isTrue();
-            assertThat(result.getOutput()).contains("test_tool");
-            assertThat(result.getDurationMs()).isPositive();
+            assertThat(result.getResult()).contains("test_tool");
+            assertThat(result.getElapsedMs()).isPositive();
         }
 
         @Test
@@ -243,7 +243,7 @@ class McpServerImplTest {
             var result = future.get();
 
             assertThat(result.isSuccess()).isFalse();
-            assertThat(result.getErrorMessage()).contains("not found");
+            assertThat(result.getError()).contains("not found");
         }
     }
 }

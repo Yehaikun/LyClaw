@@ -89,11 +89,16 @@ function onMessageListScroll() {
 const hasMessages = computed(() => chatStore.messages.length > 0)
 
 /**
- * 是否处于"思考中"状态：正在流式输出但尚未产生任何可见文本。
- * 此时显示三个跳动圆点动画提示用户AI正在处理请求。
+ * 是否处于"思考中"或"工具调用中"状态：正在流式输出但尚未产生任何可见文本。
+ * 此时显示跳动圆点动画，若有工具状态文字则优先展示。
  */
 const isThinking = computed(() =>
   chatStore.isStreaming && !chatStore.currentStreamingText
+)
+
+/** 当前的状态提示文字：工具调用中显示后端推送的状态，否则显示"思考中..." */
+const statusLabel = computed(() =>
+  chatStore.toolStatus || '思考中...'
 )
 
 /**
@@ -291,7 +296,7 @@ watch(
                 <span class="thinking-dot" />
                 <span class="thinking-dot" />
                 <span class="thinking-dot" />
-                <span class="thinking-text">思考中...</span>
+                <span class="thinking-text">{{ statusLabel }}</span>
               </div>
             </div>
           </div>

@@ -2,9 +2,9 @@ package lyjew.com.lyclaw.feign;
 
 import lyjew.com.lyclaw.action.SkillExecuteRequest;
 import lyjew.com.lyclaw.action.ToolExecuteRequest;
-import lyjew.com.lyclaw.action.tool.ToolResult;
 import lyjew.com.lyclaw.dto.SkillResult;
 import lyjew.com.lyclaw.model.ToolDefinition;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.tracing.FeignConfig;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
@@ -34,7 +34,7 @@ public interface ActionFeignClient {
      * @return 工具执行结果，包含输出内容、状态等信息
      */
     @PostMapping("/execute-tool")
-    ToolResult executeTool(@RequestBody ToolExecuteRequest request);
+    ToolExecutionResult executeTool(@RequestBody ToolExecuteRequest request);
 
     /**
      * 执行指定的技能。

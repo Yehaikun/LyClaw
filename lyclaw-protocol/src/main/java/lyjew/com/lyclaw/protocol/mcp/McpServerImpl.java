@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import lyjew.com.lyclaw.action.tool.ToolResult;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -134,13 +134,13 @@ public class McpServerImpl implements McpServer {
      * @return 工具执行结果的CompletableFuture
      */
     @Override
-    public CompletableFuture<ToolResult> executeTool(String toolName, Map<String, Object> args) {
+    public CompletableFuture<ToolExecutionResult> executeTool(String toolName, Map<String, Object> args) {
         McpToolDescriptor descriptor = tools.get(toolName);
         if (descriptor == null) {
             log.warn("Tool not found: {}", toolName);
             return CompletableFuture.completedFuture(
-                    ToolResult.builder().toolName(toolName).success(false)
-                            .errorMessage("Tool not found: " + toolName).output(null).durationMs(0).build());
+                    ToolExecutionResult.builder().toolName(toolName).success(false)
+                                .error("Tool not found: " + toolName).result(null).elapsedMs(0).build());
         }
         long start = System.currentTimeMillis();
         return CompletableFuture.supplyAsync(() -> {
@@ -148,14 +148,14 @@ public class McpServerImpl implements McpServer {
                 log.info("Executing tool: {} with args: {}", toolName, args);
                 String output = buildToolExecutionOutput(descriptor, args);
                 long duration = System.currentTimeMillis() - start;
-                return ToolResult.builder().toolName(toolName).success(true)
-                        .output(output).durationMs(duration)
+                return ToolExecutionResult.builder().toolName(toolName).success(true)
+                        .result(output).elapsedMs(duration)
                         .metadata(Map.of("serverName", descriptor.getServerName(), "args", args)).build();
             } catch (Exception e) {
                 log.error("Tool execution failed: {}", toolName, e);
-                return ToolResult.builder().toolName(toolName).success(false)
-                        .errorMessage("Execution failed: " + e.getMessage()).output(null)
-                        .durationMs(System.currentTimeMillis() - start).build();
+                return ToolExecutionResult.builder().toolName(toolName).success(false)
+                        .error("Execution failed: " + e.getMessage()).result(null)
+                        .elapsedMs(System.currentTimeMillis() - start).build();
             }
         }, executor);
     }
@@ -212,10 +212,10 @@ public class McpServerImpl implements McpServer {
         Map<String, Object> args = params.has("arguments")
                 ? objectMapper.convertValue(params.get("arguments"), Map.class) : Map.of();
         try {
-            ToolResult result = executeTool(toolName, args).get();
+            ToolExecutionResult result = executeTool(toolName, args).get();
             ObjectNode content = objectMapper.createObjectNode()
                     .put("type", "text")
-                    .put("text", result.isSuccess() ? result.getOutput() : result.getErrorMessage());
+                    .put("text", result.isSuccess() ? result.getResult() : result.getError());
             ObjectNode resultNode = objectMapper.createObjectNode()
                     .put("isError", !result.isSuccess());
             resultNode.set("content", objectMapper.createArrayNode().add(content));

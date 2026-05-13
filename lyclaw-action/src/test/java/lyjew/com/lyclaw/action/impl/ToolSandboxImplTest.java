@@ -1,8 +1,8 @@
 package lyjew.com.lyclaw.action.impl;
 
-import lyjew.com.lyclaw.action.tool.ToolResult;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.tool.Tool;
+import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -58,9 +58,9 @@ class ToolSandboxImplTest {
             sandbox.destroy();
             Tool mockTool = mock(Tool.class);
             lenient().when(mockTool.getName()).thenReturn("calc");
-            ToolResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.NONE);
+            ToolExecutionResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.NONE);
             assertFalse(result.isSuccess());
-            assertTrue(result.getErrorMessage().contains("沙箱不可用"));
+            assertTrue(result.getError().contains("沙箱不可用"));
         }
     }
 
@@ -74,12 +74,12 @@ class ToolSandboxImplTest {
                 Tool mockTool = mock(Tool.class);
                 when(mockTool.getName()).thenReturn("calculator");
                 when(mockTool.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(new lyjew.com.lyclaw.tool.ToolResult(true, "42", null, 5, 0));
+                        .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
 
-                ToolResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.NONE);
+                ToolExecutionResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.NONE);
                 assertTrue(result.isSuccess());
-                assertEquals("42", result.getOutput());
-                assertTrue(result.getDurationMs() >= 0);
+                assertEquals("42", result.getResult());
+                assertTrue(result.getElapsedMs() >= 0);
             } finally {
                 destroySandbox();
             }
@@ -96,9 +96,9 @@ class ToolSandboxImplTest {
                 Tool calc = mock(Tool.class);
                 when(calc.getName()).thenReturn("calculator");
                 when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(new lyjew.com.lyclaw.tool.ToolResult(true, "ok", null, 5, 0));
+                        .thenReturn(ToolExecutionResult.builder().success(true).result("ok").elapsedMs(5).build());
 
-                ToolResult result = sandbox.execute(calc, Map.of(), SandboxLevel.READ_ONLY);
+                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.READ_ONLY);
                 assertTrue(result.isSuccess());
             } finally {
                 destroySandbox();
@@ -110,9 +110,9 @@ class ToolSandboxImplTest {
             try {
                 Tool cmd = mock(Tool.class);
                 when(cmd.getName()).thenReturn("command");
-                ToolResult result = sandbox.execute(cmd, Map.of(), SandboxLevel.READ_ONLY);
+                ToolExecutionResult result = sandbox.execute(cmd, Map.of(), SandboxLevel.READ_ONLY);
                 assertFalse(result.isSuccess());
-                assertTrue(result.getErrorMessage().contains("不允许在 READ_ONLY"));
+                assertTrue(result.getError().contains("不允许在 READ_ONLY"));
             } finally {
                 destroySandbox();
             }
@@ -124,9 +124,9 @@ class ToolSandboxImplTest {
                 Tool time = mock(Tool.class);
                 when(time.getName()).thenReturn("current_time");
                 when(time.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(new lyjew.com.lyclaw.tool.ToolResult(true, "2025-01-01", null, 5, 0));
+                        .thenReturn(ToolExecutionResult.builder().success(true).result("2025-01-01").elapsedMs(5).build());
 
-                ToolResult result = sandbox.execute(time, Map.of(), SandboxLevel.READ_ONLY);
+                ToolExecutionResult result = sandbox.execute(time, Map.of(), SandboxLevel.READ_ONLY);
                 assertTrue(result.isSuccess());
             } finally {
                 destroySandbox();
@@ -139,9 +139,9 @@ class ToolSandboxImplTest {
                 Tool search = mock(Tool.class);
                 when(search.getName()).thenReturn("web_search");
                 when(search.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(new lyjew.com.lyclaw.tool.ToolResult(true, "results", null, 5, 0));
+                        .thenReturn(ToolExecutionResult.builder().success(true).result("results").elapsedMs(5).build());
 
-                ToolResult result = sandbox.execute(search, Map.of(), SandboxLevel.READ_ONLY);
+                ToolExecutionResult result = sandbox.execute(search, Map.of(), SandboxLevel.READ_ONLY);
                 assertTrue(result.isSuccess());
             } finally {
                 destroySandbox();
@@ -161,9 +161,9 @@ class ToolSandboxImplTest {
                 when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
                         .thenThrow(new RuntimeException("test error"));
 
-                ToolResult result = sandbox.execute(calc, Map.of(), SandboxLevel.RESTRICTED);
+                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.RESTRICTED);
                 assertFalse(result.isSuccess());
-                assertTrue(result.getErrorMessage().contains("受限沙箱执行异常"));
+                assertTrue(result.getError().contains("受限沙箱执行异常"));
             } finally {
                 destroySandbox();
             }
@@ -180,9 +180,9 @@ class ToolSandboxImplTest {
                 Tool calc = mock(Tool.class);
                 when(calc.getName()).thenReturn("calculator");
                 when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(new lyjew.com.lyclaw.tool.ToolResult(true, "42", null, 5, 0));
+                        .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
 
-                ToolResult result = sandbox.execute(calc, Map.of(), SandboxLevel.CONTAINER);
+                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.CONTAINER);
                 assertTrue(result.isSuccess());
             } finally {
                 destroySandbox();
@@ -195,9 +195,9 @@ class ToolSandboxImplTest {
                 Tool calc = mock(Tool.class);
                 when(calc.getName()).thenReturn("calculator");
                 when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(new lyjew.com.lyclaw.tool.ToolResult(true, "42", null, 5, 0));
+                        .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
 
-                ToolResult result = sandbox.execute(calc, Map.of(), SandboxLevel.ISOLATED);
+                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.ISOLATED);
                 assertTrue(result.isSuccess());
             } finally {
                 destroySandbox();
@@ -215,10 +215,10 @@ class ToolSandboxImplTest {
                 Tool calc = mock(Tool.class);
                 when(calc.getName()).thenReturn("calculator");
                 when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(new lyjew.com.lyclaw.tool.ToolResult(true, "42", null, 5, 0));
+                        .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
 
-                ToolResult result = sandbox.execute(calc, Map.of(), null);
-                assertTrue(result.isSuccess(), "null级别应回退到NONE并成功执行: " + result.getErrorMessage());
+                ToolExecutionResult result = sandbox.execute(calc, Map.of(), null);
+                assertTrue(result.isSuccess(), "null级别应回退到NONE并成功执行: " + result.getError());
             } finally {
                 destroySandbox();
             }
