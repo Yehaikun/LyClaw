@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  nacos:
+    image: nacos/nacos-server:v2.5.0
+    container_name: lyclaw-nacos
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    environment:
+      MODE: standalone
+    healthcheck:
+      test: curl -s http://localhost:8848/nacos/v1/console/health/readiness || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  lyclaw-gateway:
+    image: haikunye/lyclaw-gateway:latest
+    container_name: lyclaw-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: nacos:8848
+    env_file:
+      - .env
+    depends_on:
+      nacos:
+        condition: service_healthy
+    restart: unless-stopped
+
+  lyclaw-orchestration:
+    image: haikunye/lyclaw-orchestration:latest
+    container_name: lyclaw-orchestration
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: nacos:8848
+    env_file:
+      - .env
+    depends_on:
+      nacos:
+        condition: service_healthy
+    restart: unless-stopped
