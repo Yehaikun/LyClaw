@@ -1,0 +1,93 @@
+name: LyClaw CI
+
+on:
+  push:
+    branches:
+      - '**'           # 所有分支
+    tags-ignore:
+      - 'v*'           # tag 推送不触发 CI（由 CD 负责）
+  pull_request:
+    branches:
+      - main
+      - dev
+  schedule:
+    - cron: '0 2 * * *'   # 每天凌晨 2 点全量测试
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_OPTS: '-Xmx2g -XX:MaxMetaspaceSize=512m'
+
+jobs:
+  # ========== Job 1: 编译与单元测试 ==========
+  build-and-test:
+    name: Build & Test (JDK ${{ env.JAVA_VERSION }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: 缓存 Maven 本地仓库
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: 编译所有模块
+        run: mvn compile -q -DskipTests
+
+      - name: 运行单元测试
+        run: mvn test -q
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/target/surefire-reports/
+            **/target/site/jacoco/
+
+  # ========== Job 2: 代码风格检查（可选） ==========
+  checkstyle:
+    name: Code Style Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Checkstyle 检查
+        run: mvn checkstyle:check -q || true
+        continue-on-error: true   # 初期可宽松，稳定后再收紧
+
+  # ========== Job 3: 安全漏洞扫描（可选） ==========
+  dependency-check:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: OWASP Dependency Check
+        run: mvn org.owasp:dependency-check-maven:check -q || true
+        continue-on-error: true
