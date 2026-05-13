@@ -41,3 +41,12 @@ services:
       nacos:
         condition: service_healthy
     restart: unless-stopped
+
+  lyclaw-ui:
+    image: haikunye/lyclaw-ui:latest
+    container_name: lyclaw-ui
+    ports:
+      - "80:80"
+    depends_on:
+      - lyclaw-gateway
+    restart: unless-stopped
