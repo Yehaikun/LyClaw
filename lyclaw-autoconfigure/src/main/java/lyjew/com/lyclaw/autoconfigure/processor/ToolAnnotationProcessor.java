@@ -202,8 +202,9 @@ public class ToolAnnotationProcessor implements BeanPostProcessor {
         } else {
             return null;
         }
-        for (var a : anns) {
-            if (a.annotationType().getSimpleName().equals(simpleName)) {
+        for (Annotation a : anns) {
+            // 改用全限定名比对更安全，匹配注解名字，如Autowired会匹配org.springframework.beans.factory.annotation.Autowired
+            if (a.annotationType().getName().endsWith("." + simpleName)) {
                 return a;
             }
         }
