@@ -60,7 +60,7 @@ jobs:
             lyclaw-action/target/*.jar
             lyclaw-plan/target/*.jar
             lyclaw-memory/target/*.jar
-            lyclaw-reflection/target/*.jar
+            lyclaw-reflect/target/*.jar
             lyclaw-facade/target/*.jar
 
   # ============================================================
@@ -80,7 +80,7 @@ jobs:
           - action
           - plan
           - memory
-          - reflection
+          - reflect
           - facade
     steps:
       - uses: actions/checkout@v4
@@ -167,12 +167,12 @@ jobs:
           curl -f http://113.45.200.224:8081/actuator/health || exit 1
 
   deploy-tengxunyun:
-    name: Deploy Tencent (memory+reflection+facade)
+    name: Deploy Tencent (memory+reflect+facade)
     runs-on: ubuntu-latest
     needs: docker
     timeout-minutes: 10
     steps:
-      - name: 部署 memory + reflection + facade 到腾讯云
+      - name: 部署 memory + reflect + facade 到腾讯云
         uses: appleboy/ssh-action@v1
         with:
           host: 81.71.120.92
@@ -181,7 +181,7 @@ jobs:
           script: |
             cd /opt/lyclaw
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-memory:latest
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-reflection:latest
+            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-reflect:latest
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-facade:latest
             docker compose -f docker-compose.tengxunyun.yml down
             docker compose -f docker-compose.tengxunyun.yml up -d
