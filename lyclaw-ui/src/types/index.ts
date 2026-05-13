@@ -17,24 +17,7 @@ export enum MemoryCategory {
   GOAL = 'GOAL',
 }
 
-export enum ErrorType {
-  HALLUCINATION = 'HALLUCINATION',
-  LOGIC_CONTRADICTION = 'LOGIC_CONTRADICTION',
-  TOOL_FAILURE_PATTERN = 'TOOL_FAILURE_PATTERN',
-  INCOMPLETE_OUTPUT = 'INCOMPLETE_OUTPUT',
-  SAFETY_VIOLATION = 'SAFETY_VIOLATION',
-  FORMAT_ERROR = 'FORMAT_ERROR',
-}
 
-export enum AdjustmentType {
-  REWRITE_PROMPT = 'REWRITE_PROMPT',
-  SWITCH_PLAN_STRATEGY = 'SWITCH_PLAN_STRATEGY',
-  ADD_TOOL_CALL = 'ADD_TOOL_CALL',
-  REDUCE_TEMPERATURE = 'REDUCE_TEMPERATURE',
-  INCREASE_TEMPERATURE = 'INCREASE_TEMPERATURE',
-  TRIGGER_HUMAN_INTERVENTION = 'TRIGGER_HUMAN_INTERVENTION',
-  RETRY_WITH_CONTEXT = 'RETRY_WITH_CONTEXT',
-}
 
 export enum AgentCapability {
   TEXT_GEN = 'TEXT_GEN',
@@ -158,17 +141,6 @@ export interface SkillResult {
   elapsedMs: number
 }
 
-export interface ModelConfig {
-  id: string
-  name: string
-  provider: string
-  apiKey: string
-  model: string
-  baseUrl: string | null
-  enabled: boolean
-  createdAt: string
-  updatedAt: string
-}
 
 // ===== Memory Types =====
 
@@ -230,53 +202,11 @@ export interface PerceptionData {
 
 // ===== Reflection Types =====
 
-export interface ReflectRequest {
-  sessionId?: string
-  output: string
-  expectedOutput?: string
-  context?: string
-}
 
-export interface ReflectionReport {
-  reflectionId: string
-  sessionId: string
-  quality: QualityAssessment
-  errors: DetectedError[]
-  suggestion?: StrategyAdjustment
-  overallScore: number
-  timestamp: number
-}
 
-export interface QualityAssessment {
-  accuracy: number
-  completeness: number
-  safety: number
-  userExperience: number
-  overall: number
-}
 
-export interface DetectedError {
-  type: ErrorType
-  description: string
-  location: string
-  confidence: number
-  suggestion: string
-}
 
-export interface StrategyAdjustment {
-  type: AdjustmentType
-  reason: string
-  parameters: Record<string, unknown>
-  priority: number
-}
 
-export interface ToolCallRecord {
-  toolName: string
-  success: boolean
-  durationMs: number
-  output: string | null
-  errorMessage: string | null
-}
 
 // ===== Plan / Task Types =====
 
@@ -324,13 +254,6 @@ export interface AgentCard {
 
 // ===== Infrastructure Types =====
 
-export interface HealthStatus {
-  service: string
-  status: 'UP' | 'DOWN' | 'DEGRADED'
-  uptimeSeconds?: number
-  traceId?: string
-  details?: Record<string, unknown>
-}
 
 export interface ServiceHealth {
   healthy: boolean
@@ -340,23 +263,4 @@ export interface ServiceHealth {
   details?: Record<string, unknown>
 }
 
-export interface SSEEvent {
-  event?: string
-  data: string
-}
 
-export interface AppSettings {
-  theme: 'light' | 'dark'
-  fontSize: number
-  codeFontSize: number
-  showLineNumbers: boolean
-  autoScroll: boolean
-  sendOnEnter: boolean
-  compactMode: boolean
-  developerMode: boolean
-  defaultModel: string
-  maxTokens: number
-  temperature: number
-  sandboxLevel: string
-  sidebarCollapsed: boolean
-}

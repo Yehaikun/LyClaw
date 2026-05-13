@@ -149,8 +149,8 @@ function toggleWebSearch() {
 
 <style scoped>
 .message-input-bar {
-  padding: 12px 16px;
-  padding-bottom: 16px;
+  padding: 10px 14px;
+  padding-bottom: 14px;
 }
 
 .input-card {
@@ -174,7 +174,7 @@ function toggleWebSearch() {
   display: flex;
   align-items: flex-end;
   gap: var(--spacing-sm);
-  padding: 16px 16px 8px;
+  padding: 14px 14px 6px;
 }
 
 .attach-btn {
@@ -204,8 +204,8 @@ function toggleWebSearch() {
 
 .input-textarea {
   flex: 1;
-  min-height: 68px;
-  max-height: 224px;
+  min-height: 60px;
+  max-height: 200px;
   padding: var(--spacing-xs) 0;
   background: transparent;
   border: none;
@@ -285,7 +285,7 @@ function toggleWebSearch() {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 0 16px 14px;
+  padding: 0 14px 12px;
 }
 
 .option-chip {

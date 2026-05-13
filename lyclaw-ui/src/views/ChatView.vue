@@ -7,7 +7,6 @@ import { useSettingsStore } from '@/stores/settings'
 import WelcomeHero from '@/components/WelcomeHero.vue'
 import MessageBubble from '@/components/MessageBubble.vue'
 import MessageInput from '@/components/MessageInput.vue'
-import ModelSelector from '@/components/ModelSelector.vue'
 import TraceIdBadge from '@/components/TraceIdBadge.vue'
 import type { Message } from '@/types'
 
@@ -53,12 +52,12 @@ const allMessages = computed<Message[]>(() => {
   return chatStore.messages
 })
 
-function getProviderForModel(model: string): string {
-  if (model.startsWith('deepseek')) return 'deepseek'
-  if (model.startsWith('claude')) return 'anthropic'
-  if (model.startsWith('gpt')) return 'openai'
-  return 'deepseek'
-}
+const messageListStyle = computed(() => {
+  if (chatStore.isStreaming) {
+    return { paddingBottom: '15vh' }
+  }
+  return {}
+})
 
 async function ensureSession() {
   if (!sessionStore.currentSessionId) {
@@ -100,16 +99,8 @@ function handleRetry() {
   chatStore.retry()
 }
 
-function handleClear() {
-  chatStore.clearChat()
-}
-
 function handleSelectPrompt(text: string) {
   inputText.value = text
-}
-
-function handleModelChange(model: string) {
-  chatStore.setModel(model, getProviderForModel(model))
 }
 
 function scrollToBottom(force = false) {
@@ -148,28 +139,6 @@ watch(
 
 <template>
   <div class="chat-view">
-    <!-- Header bar -->
-    <div class="chat-header">
-      <div class="chat-header-left">
-        <h2 class="chat-title">Chat</h2>
-        <ModelSelector
-          v-if="hasMessages"
-          :model-value="chatStore.currentModel"
-          @update:model-value="handleModelChange"
-        />
-      </div>
-      <div class="chat-header-right">
-        <button
-          v-if="hasMessages"
-          class="header-btn"
-          title="Clear chat"
-          @click="handleClear"
-        >
-          Clear
-        </button>
-      </div>
-    </div>
-
     <!-- Empty state: WelcomeHero -->
     <WelcomeHero
       v-if="!hasMessages && !chatStore.isStreaming"
@@ -178,7 +147,7 @@ watch(
 
     <!-- Messages view -->
     <template v-if="hasMessages || chatStore.isStreaming">
-      <div ref="messageListRef" class="message-list" @scroll="onMessageListScroll">
+      <div ref="messageListRef" class="message-list" :style="messageListStyle" @scroll="onMessageListScroll">
         <MessageBubble
           v-for="(msg, index) in allMessages"
           :key="index"
@@ -254,59 +223,11 @@ watch(
   background: var(--color-canvas);
 }
 
-.chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--header-height);
-  padding: 0 24px;
-  border-bottom: 1px solid var(--header-border);
-  background: var(--header-bg);
-  flex-shrink: 0;
-}
-
-.chat-header-left {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-}
-
-.chat-title {
-  font-family: var(--font-sans);
-  font-size: var(--title-md-size);
-  font-weight: var(--title-md-weight);
-  color: var(--color-ink);
-  margin: 0;
-}
-
-.chat-header-right {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.header-btn {
-  padding: 6px 12px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--rounded-sm);
-  background: transparent;
-  color: var(--color-body);
-  font-family: var(--font-sans);
-  font-size: var(--body-sm-size);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.header-btn:hover {
-  background: var(--color-surface-soft);
-  border-color: var(--color-muted-soft);
-}
-
 .message-list {
   flex: 1;
   overflow-y: auto;
   padding: var(--spacing-md) 0;
+  transition: padding-bottom 0.4s ease;
   /* scroll-behavior removed: smooth causes jitter during SSE streaming */
 }
 

@@ -1,4 +1,4 @@
-import { post, get, del, postSSE } from './client'
+import { post, del, postSSE } from './client'
 import type { ChatRequest, ChatResult, Session } from '../types'
 
 export function postChatStream(
@@ -16,10 +16,6 @@ export function postChat(req: ChatRequest): Promise<ChatResult> {
 
 export function createSession(req?: ChatRequest): Promise<Session> {
   return post<Session>('/api/sessions', req || undefined)
-}
-
-export function getSession(sessionId: string): Promise<Session> {
-  return get<Session>(`/api/sessions/${sessionId}`)
 }
 
 export function deleteSession(

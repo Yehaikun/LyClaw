@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import type { Session } from '@/types'
 import {
   createSession as apiCreateSession,
-  getSession,
   deleteSession as apiDeleteSession,
 } from '@/api/chat'
 
