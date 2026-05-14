@@ -1,43 +1,3 @@
-<!--
-  AppSidebar：应用侧栏导航组件，提供全局页面导航和最近会话快速访问。
-
-  侧栏分为五个功能区域（从上至下）：
-
-  1. Logo区域（sidebar-logo）：
-     - LyClaw品牌标识，包含彩色圆点和应用名称
-     - 字体使用Georgia衬线体，与应用整体风格一致
-
-  2. 主导航区域（sidebar-nav）：
-     - 包含7个主要页面入口：Chat、Sessions、Models、Tools、Memory、Plan、Agents
-     - 每个导航项使用router-link实现路由跳转
-     - 当前激活的页面通过.active类高亮显示（左侧3px主色边框 + 背景色变化）
-     - 图标使用lucide-vue-next图标库，统一18px尺寸
-
-  3. 底部导航区域（sidebar-section）：
-     - 包含Dashboard和Settings两个工具性页面入口
-     - 使用border-top分隔线与主导航区分
-     - margin-top: auto确保固定在侧栏底部
-
-  4. 最近会话区域（sidebar-sessions）：
-     - 展示最多10个最近的聊天会话
-     - 支持折叠/展开切换（ChevronRight图标旋转90度）
-     - 点击会话项跳转到/chat?session={sessionId}
-     - 当前活跃会话高亮显示
-     - 会话名称未设置时显示"Untitled"
-
-  5. 页脚区域（sidebar-footer）：
-     - 显示应用版本号v2.0.0
-
-  折叠机制：
-  - 通过settingsStore.sidebarCollapsed控制折叠状态
-  - 折叠时width: 0且min-width: 0，通过CSS transition实现平滑动画
-  - 折叠按钮位于AppHeader的左侧
-
-  样式设计：
-  - 暗色背景(var(--color-surface-dark))与主内容区形成对比
-  - 导航项hover时背景变亮，active时显示左侧彩色边框
-  - 字体系统使用CSS变量确保与全局风格一致
--->
 <template>
   <aside class="sidebar" :class="{ collapsed: settingsStore.sidebarCollapsed }">
     <div class="sidebar-logo">
@@ -53,7 +13,7 @@
         class="nav-item"
         :class="{ active: isActive(item.to) }"
       >
-        <component :is="item.icon" class="nav-icon" :size="18" />
+        <component :is="item.icon" class="nav-icon" :size="15" />
         <span class="nav-label">{{ item.label }}</span>
       </router-link>
     </nav>
@@ -66,7 +26,7 @@
         class="nav-item"
         :class="{ active: isActive(item.to) }"
       >
-        <component :is="item.icon" class="nav-icon" :size="18" />
+        <component :is="item.icon" class="nav-icon" :size="15" />
         <span class="nav-label">{{ item.label }}</span>
       </router-link>
     </div>
@@ -76,7 +36,7 @@
         <ChevronRight
           class="chevron"
           :class="{ expanded: sessionsExpanded }"
-          :size="14"
+          :size="12"
         />
         <span>Recent Sessions</span>
       </button>
@@ -88,7 +48,7 @@
           :class="{ active: currentSession?.sessionId === session.sessionId }"
           @click="goToSession(session.sessionId)"
         >
-          <MessageSquare class="session-icon" :size="14" />
+          <MessageSquare class="session-icon" :size="12" />
           <span class="session-name">{{ session.name || 'Untitled' }}</span>
         </button>
       </div>
@@ -125,10 +85,8 @@ const sessionStore = useSessionStore()
 const chatStore = useChatStore()
 const settingsStore = useSettingsStore()
 
-/** 最近会话列表的展开/折叠状态 */
 const sessionsExpanded = ref(true)
 
-/** 主导航菜单项定义：路径、标签和图标 */
 const mainNav = [
   { to: '/chat', label: 'Chat', icon: MessageSquare },
   { to: '/sessions', label: 'Sessions', icon: History },
@@ -139,46 +97,34 @@ const mainNav = [
   { to: '/agents', label: 'Agents', icon: Users },
 ]
 
-/** 底部导航菜单项（工具性页面） */
 const bottomNav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-/** 从SessionStore获取的会话列表 */
 const sessions = computed(() => sessionStore.sessions ?? [])
-/** 最近10个会话，供侧栏快速访问 */
 const recentSessions = computed(() => sessions.value.slice(0, 10))
-/** 当前活跃的会话对象 */
 const currentSession = computed(() => sessionStore.currentSession ?? null)
 
-/**
- * 判断给定路径是否为当前激活的路由。
- * 支持精确匹配和前缀匹配（如/chat开头的所有子路由）。
- *
- * @param path 导航项的目标路径
- * @returns 如果当前路由匹配该路径则返回true
- */
 function isActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')
 }
 
-/**
- * 导航到指定会话的聊天页面。
- * 通过路由查询参数传递会话ID，ChatView的onMounted会检测并加载该会话。
- *
- * @param sessionId 目标会话的唯一标识
- */
 function goToSession(sessionId: string) {
+  // 移动端导航后自动折叠侧栏
+  if (window.innerWidth <= 768) {
+    settingsStore.sidebarCollapsed = true
+  }
   router.push({ path: '/chat', query: { session: sessionId } })
 }
 </script>
 
 <style scoped>
 .sidebar {
-  width: 260px;
-  min-width: 260px;
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background-color: var(--color-surface-dark);
@@ -186,6 +132,7 @@ function goToSession(sessionId: string) {
   font-family: var(--font-sans);
   overflow: hidden;
   transition: width 250ms ease, min-width 250ms ease;
+  z-index: var(--z-sidebar);
 }
 
 .sidebar.collapsed {
@@ -193,47 +140,48 @@ function goToSession(sessionId: string) {
   min-width: 0;
 }
 
-/* ---- Logo区域：品牌标识展示 ---- */
+/* ---- Logo ---- */
 .sidebar-logo {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-lg) var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-md);
   background-color: var(--color-surface-dark);
+  flex-shrink: 0;
 }
 
 .logo-accent {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--rounded-pill);
   background-color: var(--color-primary);
   flex-shrink: 0;
 }
 
 .logo-text {
-  font-size: var(--title-lg-size);
-  font-weight: var(--title-lg-weight);
+  font-size: var(--title-md-size);
+  font-weight: var(--title-md-weight);
   color: var(--color-on-dark);
   letter-spacing: var(--title-lg-letter-spacing);
-  line-height: var(--title-lg-line-height);
+  line-height: var(--title-md-line-height);
 }
 
-/* ---- 主导航区域 ---- */
+/* ---- Nav ---- */
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-sm) var(--spacing-sm);
-  gap: 2px;
+  padding: var(--spacing-xs) var(--spacing-xs);
+  gap: 1px;
+  flex: 1;
+  overflow-y: auto;
 }
 
-/* ---- 底部导航区域（Dashboard + Settings） ---- */
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-sm) var(--spacing-sm);
-  gap: 2px;
+  padding: var(--spacing-xs) var(--spacing-xs);
+  gap: 1px;
   border-top: 1px solid var(--color-surface-dark-elevated);
-  margin-top: auto;
 }
 
 .nav-item {
@@ -273,9 +221,9 @@ function goToSession(sessionId: string) {
   text-overflow: ellipsis;
 }
 
-/* ---- 最近会话区域 ---- */
+/* ---- Sessions ---- */
 .sidebar-sessions {
-  padding: 0 var(--spacing-sm) var(--spacing-sm);
+  padding: 0 var(--spacing-xs) var(--spacing-xs);
   border-top: 1px solid var(--color-surface-dark-elevated);
 }
 
@@ -321,7 +269,7 @@ function goToSession(sessionId: string) {
   align-items: center;
   gap: var(--spacing-xs);
   width: 100%;
-  padding: 6px var(--spacing-sm);
+  padding: 4px var(--spacing-sm);
   border-radius: var(--rounded-sm);
   color: var(--color-on-dark-soft);
   font-size: var(--body-sm-size);
@@ -353,7 +301,7 @@ function goToSession(sessionId: string) {
   text-overflow: ellipsis;
 }
 
-/* ---- 页脚区域：版本号 ---- */
+/* ---- Footer ---- */
 .sidebar-footer {
   padding: var(--spacing-sm) var(--spacing-md);
   border-top: 1px solid var(--color-surface-dark-elevated);
@@ -363,5 +311,23 @@ function goToSession(sessionId: string) {
   font-size: var(--caption-size);
   color: var(--color-muted-soft);
   letter-spacing: var(--caption-letter-spacing);
+}
+
+/* ---- Mobile: overlay mode ---- */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    box-shadow: var(--shadow-xl);
+  }
+
+  .sidebar.collapsed {
+    width: 0;
+    min-width: 0;
+    box-shadow: none;
+  }
 }
 </style>

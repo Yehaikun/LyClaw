@@ -20,6 +20,7 @@ html {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   font-family: var(--font-sans);
   font-size: var(--body-md-size);
   font-weight: var(--body-md-weight);
@@ -27,6 +28,13 @@ body {
   letter-spacing: var(--body-md-letter-spacing);
   color: var(--color-body);
   background-color: var(--color-canvas);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Prevent 300ms tap delay on mobile */
+a, button, input, textarea, select {
+  touch-action: manipulation;
 }
 
 /* ===== Selection ===== */

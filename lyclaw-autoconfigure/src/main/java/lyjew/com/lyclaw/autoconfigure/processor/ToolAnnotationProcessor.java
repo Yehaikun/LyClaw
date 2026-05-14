@@ -99,13 +99,14 @@ public class ToolAnnotationProcessor implements BeanPostProcessor {
             // Check for @Tool annotation via reflection (no compile-time dependency required)
             Object toolAnnot = findAnnotation(clazz, "Tool");
             if (toolAnnot != null) {
+                //类上标tool注解，是工具
                 String name = getAnnotationAttr(toolAnnot, "name", String.class);
                 String desc = getAnnotationAttr(toolAnnot, "description", String.class);
-                boolean readonly = Boolean.TRUE.equals(
-                        getAnnotationAttr(toolAnnot, "readonly", Boolean.class));
+                boolean readonly = Boolean.TRUE.equals(getAnnotationAttr(toolAnnot, "readonly", Boolean.class));
                 String group = getAnnotationAttr(toolAnnot, "group", String.class);
                 long timeout = getAnnotationAttr(toolAnnot, "timeout", Long.class);
 
+                //工具名为空则用类名首字母小写代替
                 if (name == null || name.isEmpty()) {
                     name = Character.toLowerCase(clazz.getSimpleName().charAt(0))
                             + clazz.getSimpleName().substring(1);

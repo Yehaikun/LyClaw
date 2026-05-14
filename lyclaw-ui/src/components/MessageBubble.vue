@@ -106,13 +106,13 @@ const showStreamingCursor = computed(
 
 <style scoped>
 .message-bubble {
-  padding: var(--spacing-md) var(--spacing-xl);
+  padding: var(--spacing-sm) var(--spacing-lg);
 }
 
 .message-bubble-inner {
   display: flex;
-  gap: var(--spacing-md);
-  max-width: 768px;
+  gap: var(--spacing-sm);
+  max-width: 720px;
   margin: 0 auto;
   width: 100%;
 }
@@ -123,14 +123,14 @@ const showStreamingCursor = computed(
 
 .message-role-icon {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--rounded-pill);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-sans);
-  font-size: var(--body-sm-size);
+  font-size: var(--caption-size);
   font-weight: 550;
 }
 
@@ -158,7 +158,7 @@ const showStreamingCursor = computed(
   background: var(--chat-bubble-user-bg);
   color: var(--chat-bubble-user-fg);
   border-radius: var(--chat-bubble-user-radius);
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 
 .message-assistant .message-body {
@@ -169,13 +169,13 @@ const showStreamingCursor = computed(
 .message-header {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
+  gap: var(--spacing-xs);
+  margin-bottom: 2px;
 }
 
 .message-role-label {
   font-family: var(--font-sans);
-  font-size: var(--body-sm-size);
+  font-size: var(--caption-size);
   font-weight: 550;
   color: var(--color-body-strong);
 }
@@ -186,11 +186,11 @@ const showStreamingCursor = computed(
 
 .message-model-badge {
   font-family: var(--font-sans);
-  font-size: var(--caption-size);
+  font-size: 0.625rem;
   font-weight: 400;
   color: var(--color-muted);
   background: var(--color-surface-soft);
-  padding: 2px 8px;
+  padding: 1px 7px;
   border-radius: var(--rounded-pill);
   line-height: 1.4;
 }
@@ -225,9 +225,20 @@ const showStreamingCursor = computed(
 }
 
 .message-tool-calls {
-  margin-top: var(--spacing-md);
+  margin-top: var(--spacing-sm);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .message-bubble {
+    padding: var(--spacing-xs) 10px;
+  }
+
+  .message-bubble-inner {
+    gap: var(--spacing-xs);
+  }
 }
 </style>

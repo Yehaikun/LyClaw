@@ -108,56 +108,56 @@ function selectPrompt(text: string) {
   flex: 1;
   min-height: 0;
   background: var(--color-canvas);
-  padding: var(--spacing-xxl) var(--spacing-xl);
+  padding: var(--spacing-xl) 16px;
 }
 
 .hero-content {
   text-align: center;
-  max-width: 640px;
+  max-width: 520px;
   width: 100%;
 }
 
 .hero-headline {
   font-family: Georgia, serif;
-  font-size: 64px;
+  font-size: 2.5rem;
   font-weight: 400;
-  line-height: 1.05;
-  letter-spacing: -1.5px;
+  line-height: 1.1;
+  letter-spacing: -1px;
   color: var(--color-ink);
-  margin: 0 0 var(--spacing-md) 0;
+  margin: 0 0 var(--spacing-sm) 0;
 }
 
 .hero-subtitle {
-  font-size: var(--body-md-size);
-  font-weight: var(--body-md-weight);
-  line-height: var(--body-md-line-height);
+  font-size: var(--body-sm-size);
+  font-weight: var(--body-sm-weight);
+  line-height: var(--body-sm-line-height);
   color: var(--color-muted);
-  margin: 0 0 var(--spacing-xl) 0;
+  margin: 0 0 var(--spacing-lg) 0;
 }
 
 .hero-model-select {
   display: flex;
   justify-content: center;
-  margin-bottom: var(--spacing-xxl);
+  margin-bottom: var(--spacing-xl);
 }
 
 .quick-prompts {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
 }
 
 .prompt-card {
   display: block;
   width: 100%;
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--card-radius);
   font-family: var(--font-sans);
-  font-size: var(--body-md-size);
-  font-weight: var(--body-md-weight);
-  line-height: var(--body-md-line-height);
+  font-size: var(--body-sm-size);
+  font-weight: var(--body-sm-weight);
+  line-height: var(--body-sm-line-height);
   color: var(--color-body);
   cursor: pointer;
   transition: background var(--transition-fast), box-shadow var(--transition-fast);
@@ -167,5 +167,23 @@ function selectPrompt(text: string) {
 .prompt-card:hover {
   background: var(--card-bg-hover);
   box-shadow: var(--card-shadow-hover);
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .welcome-hero {
+    padding: var(--spacing-lg) 14px;
+    align-items: flex-start;
+    overflow-y: auto;
+  }
+
+  .hero-headline {
+    font-size: 1.75rem;
+    letter-spacing: -0.5px;
+  }
+
+  .quick-prompts {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

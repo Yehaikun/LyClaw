@@ -440,29 +440,29 @@ watch(
   color: var(--color-body);
 }
 
-/* ---- 思考状态气泡：三个跳动圆点 + "思考中..."文字 ---- */
+/* ---- 思考状态气泡 ---- */
 .thinking-bubble {
-  padding: var(--spacing-md) var(--spacing-xl);
+  padding: var(--spacing-sm) var(--spacing-lg);
 }
 
 .thinking-bubble-inner {
   display: flex;
-  gap: var(--spacing-md);
-  max-width: 768px;
+  gap: var(--spacing-sm);
+  max-width: 720px;
   margin: 0 auto;
   width: 100%;
 }
 
 .thinking-avatar {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--rounded-pill);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-sans);
-  font-size: var(--body-sm-size);
+  font-size: var(--caption-size);
   font-weight: 550;
   background: var(--color-surface-dark);
   color: var(--color-on-dark);
@@ -503,5 +503,24 @@ watch(
   font-size: var(--body-sm-size);
   color: var(--color-muted);
   margin-left: 6px;
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .message-list {
+    padding: var(--spacing-xs) 0;
+  }
+
+  .error-bar {
+    padding: 6px 12px;
+  }
+
+  .thinking-bubble {
+    padding: var(--spacing-xs) 10px;
+  }
+
+  .thinking-bubble-inner {
+    gap: var(--spacing-xs);
+  }
 }
 </style>

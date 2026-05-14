@@ -1,29 +1,12 @@
-<!--
-  AppShell：应用全局布局外壳组件，定义整个应用的视觉框架结构。
-
-  布局采用经典的侧栏+主内容区横向排列模式：
-
-  ┌──────────────┬──────────────────────────┐
-  │              │  AppHeader               │  高度45px，顶栏
-  │  AppSidebar  │  (模型选择、操作按钮)       │
-  │  (侧栏导航)   ├──────────────────────────┤
-  │  260px宽     │  RouterView              │  内容区，flex:1
-  │  可折叠      │  (页面内容，如ChatView)     │  根据路由动态切换
-  │              │                          │
-  └──────────────┴──────────────────────────┘
-
-  关键技术细节：
-  1. app-shell容器使用flex布局，height: 100vh占满全屏
-  2. overflow: hidden防止出现双滚动条
-  3. main-area使用flex: 1填充剩余空间，min-width: 0防止flex子元素溢出
-  4. content区域使用overflow: hidden将滚动控制权交给子页面（如ChatView的message-list）
-  5. AppSidebar的折叠通过settingsStore.sidebarCollapsed控制，宽度过渡使用CSS transition
-
-  此组件极简，不包含业务逻辑，仅负责组合布局子组件。
-  所有状态管理和交互逻辑由各子组件内部通过Store自行处理。
--->
 <template>
   <div class="app-shell">
+    <!-- 移动端侧栏遮罩 -->
+    <div
+      v-if="isMobile && !settingsStore.sidebarCollapsed"
+      class="sidebar-backdrop"
+      @click="settingsStore.toggleSidebar()"
+    />
+
     <AppSidebar />
     <div class="main-area">
       <AppHeader />
@@ -35,14 +18,37 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import { useSettingsStore } from '@/stores/settings'
+
+const settingsStore = useSettingsStore()
+const isMobile = ref(false)
+
+function checkMobile() {
+  isMobile.value = window.innerWidth <= 768
+  // 移动端默认折叠侧栏
+  if (isMobile.value && !settingsStore.sidebarCollapsed) {
+    settingsStore.sidebarCollapsed = true
+  }
+}
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+})
 </script>
 
 <style scoped>
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -60,5 +66,18 @@ import AppHeader from '@/components/AppHeader.vue'
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: calc(var(--z-sidebar) - 1);
+  animation: fadeIn 200ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 </style>

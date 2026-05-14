@@ -101,8 +101,8 @@ function handleSettings() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 45px;
-  padding: 0 16px;
+  height: var(--header-height);
+  padding: 0 12px;
   background-color: var(--color-canvas);
   border-bottom: 1px solid var(--color-hairline);
   flex-shrink: 0;
@@ -116,7 +116,7 @@ function handleSettings() {
 .header-right {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: 6px;
 }
 
 /* ---- 侧栏切换按钮 ---- */
@@ -124,8 +124,8 @@ function handleSettings() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--rounded-sm);
   color: var(--color-muted);
   background-color: transparent;
@@ -164,7 +164,7 @@ function handleSettings() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
+  padding: 3px 10px;
   background-color: var(--color-primary);
   color: var(--color-on-primary);
   font-size: var(--caption-size);
@@ -187,8 +187,8 @@ function handleSettings() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--rounded-pill);
   color: var(--color-muted);
   background-color: transparent;
@@ -200,5 +200,20 @@ function handleSettings() {
 .btn-settings:hover {
   background-color: var(--color-surface-card);
   color: var(--color-body-strong);
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .header {
+    padding: 0 8px;
+  }
+
+  .btn-new-chat span {
+    display: none;
+  }
+
+  .btn-new-chat {
+    padding: 4px 8px;
+  }
 }
 </style>

@@ -246,14 +246,14 @@ function toggleWebSearch() {
 
 <style scoped>
 .message-input-bar {
-  padding: 10px 14px;
-  padding-bottom: 14px;
+  padding: 8px 12px;
+  padding-bottom: 12px;
 }
 
 .input-card {
   display: flex;
   flex-direction: column;
-  max-width: 768px;
+  max-width: 720px;
   margin: 0 auto;
   width: 100%;
   background: var(--color-surface-card);
@@ -270,16 +270,16 @@ function toggleWebSearch() {
 .input-row {
   display: flex;
   align-items: flex-end;
-  gap: var(--spacing-sm);
-  padding: 14px 14px 6px;
+  gap: var(--spacing-xs);
+  padding: 10px 10px 4px;
 }
 
 .attach-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: none;
   background: transparent;
   color: var(--color-muted-soft);
@@ -301,9 +301,9 @@ function toggleWebSearch() {
 
 .input-textarea {
   flex: 1;
-  min-height: 60px;
-  max-height: 200px;
-  padding: var(--spacing-xs) 0;
+  min-height: 44px;
+  max-height: 160px;
+  padding: var(--spacing-xxs) 0;
   background: transparent;
   border: none;
   border-radius: 0;
@@ -328,7 +328,7 @@ function toggleWebSearch() {
 .input-actions {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -336,8 +336,8 @@ function toggleWebSearch() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border: none;
   border-radius: var(--btn-primary-radius);
   background: var(--btn-primary-bg);
@@ -362,8 +362,8 @@ function toggleWebSearch() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--color-primary);
   border-radius: var(--btn-primary-radius);
   background: transparent;
@@ -377,25 +377,25 @@ function toggleWebSearch() {
   color: var(--color-on-primary);
 }
 
-/* ---- 选项行：深度思考和智能搜索按钮 ---- */
+/* ---- 选项行 ---- */
 .input-options-row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 0 14px 12px;
+  gap: var(--spacing-xs);
+  padding: 0 10px 10px;
 }
 
 .option-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
+  gap: 4px;
+  padding: 4px 10px;
   border: 1px solid var(--color-hairline);
   border-radius: var(--rounded-pill);
   background: var(--color-surface-card);
   color: var(--color-muted);
   font-family: var(--font-sans);
-  font-size: var(--body-sm-size);
+  font-size: var(--caption-size);
   font-weight: 500;
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
@@ -408,9 +408,29 @@ function toggleWebSearch() {
 }
 
 .option-chip.active {
-  background: var(--color-primary-soft, rgba(99, 102, 241, 0.1));
+  background: rgba(204, 120, 92, 0.1);
   border-color: var(--color-primary);
   color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary-soft, rgba(99, 102, 241, 0.15));
+  box-shadow: 0 0 0 1px rgba(204, 120, 92, 0.15);
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .message-input-bar {
+    padding: 6px 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .input-row {
+    padding: 8px 8px 2px;
+  }
+
+  .input-options-row {
+    padding: 0 8px 8px;
+  }
+
+  .attach-btn {
+    display: none;
+  }
 }
 </style>

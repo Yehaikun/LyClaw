@@ -354,3 +354,29 @@
   max-width: 100%;
   height: auto;
 }
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .markdown-content h1 { font-size: 1.375rem; }
+  .markdown-content h2 { font-size: 1.1875rem; }
+  .markdown-content h3 { font-size: 1.0625rem; }
+  .markdown-content h4 { font-size: 0.9375rem; }
+
+  .markdown-content pre {
+    font-size: 0.6875rem;
+    padding: var(--spacing-sm) var(--spacing-sm);
+  }
+
+  .markdown-content .code-block-wrapper {
+    margin: var(--spacing-sm) 0;
+  }
+
+  .markdown-content table {
+    font-size: var(--caption-size);
+  }
+
+  .markdown-content ul,
+  .markdown-content ol {
+    padding-left: var(--spacing-lg);
+  }
+}
