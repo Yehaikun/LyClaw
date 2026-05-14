@@ -22,15 +22,3 @@ services:
     env_file:
       - .env
     restart: unless-stopped
-
-  lyclaw-facade:
-    image: haikunye/lyclaw-facade:latest
-    container_name: lyclaw-facade
-    mem_limit: 256m
-    ports:
-      - "8086:8086"
-    environment:
-      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: 47.104.212.121:8848
-    env_file:
-      - .env
-    restart: unless-stopped
