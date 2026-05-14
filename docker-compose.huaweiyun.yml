@@ -3,6 +3,7 @@ services:
   nacos:
     image: nacos/nacos-server:v2.5.0
     container_name: lyclaw-nacos
+    mem_limit: 512m
     ports:
       - "8848:8848"
       - "9848:9848"
@@ -17,6 +18,7 @@ services:
   lyclaw-action:
     image: haikunye/lyclaw-action:latest
     container_name: lyclaw-action
+    mem_limit: 256m
     ports:
       - "8084:8084"
     environment:
@@ -31,6 +33,7 @@ services:
   lyclaw-plan:
     image: haikunye/lyclaw-plan:latest
     container_name: lyclaw-plan
+    mem_limit: 256m
     ports:
       - "8083:8083"
     environment:

@@ -134,21 +134,9 @@ jobs:
             # 写入环境变量供 compose 使用
             echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}" > .env
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
-            # 前端覆盖文件 (80 端口)
-            cat > docker-compose.ui.yml << 'UIEOF'
-            services:
-              lyclaw-ui:
-                image: ${{ env.DOCKER_REGISTRY }}/lyclaw-ui:latest
-                container_name: lyclaw-ui
-                ports:
-                  - "80:80"
-                depends_on:
-                  - lyclaw-gateway
-                restart: unless-stopped
-            UIEOF
             # 重启服务
-            docker compose -f docker-compose.aliyun.yml -f docker-compose.ui.yml down
-            docker compose -f docker-compose.aliyun.yml -f docker-compose.ui.yml up -d
+            docker compose -f docker-compose.aliyun.yml down
+            docker compose -f docker-compose.aliyun.yml up -d
             # 创建 Nacos 命名空间
             sleep 5
             curl -s -X POST 'http://localhost:8848/nacos/v1/console/namespaces' -d 'customNamespaceId=lyclaw&namespaceName=lyclaw' || true

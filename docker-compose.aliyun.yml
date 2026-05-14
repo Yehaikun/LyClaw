@@ -3,6 +3,7 @@ services:
   nacos:
     image: nacos/nacos-server:v2.5.0
     container_name: lyclaw-nacos
+    mem_limit: 512m
     ports:
       - "8848:8848"
       - "9848:9848"
@@ -17,6 +18,7 @@ services:
   lyclaw-gateway:
     image: haikunye/lyclaw-gateway:latest
     container_name: lyclaw-gateway
+    mem_limit: 256m
     ports:
       - "8080:8080"
     environment:
@@ -31,6 +33,7 @@ services:
   lyclaw-orchestration:
     image: haikunye/lyclaw-orchestration:latest
     container_name: lyclaw-orchestration
+    mem_limit: 256m
     ports:
       - "8081:8081"
     environment:
@@ -45,6 +48,7 @@ services:
   lyclaw-ui:
     image: haikunye/lyclaw-ui:latest
     container_name: lyclaw-ui
+    mem_limit: 64m
     ports:
       - "80:80"
     depends_on:
