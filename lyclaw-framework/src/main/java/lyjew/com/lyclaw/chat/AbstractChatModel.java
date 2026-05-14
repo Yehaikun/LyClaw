@@ -46,7 +46,7 @@ import reactor.core.publisher.Flux;
  * <p>构造器采用防御式编程：baseUrl、apiKey、model 三个字段在传入 null 值时均自动回退
  * 到各自的 getDefault*() 方法获取默认值，确保对象始终处于可用状态。
  *
- * @see OpenAiProtocolChatModel
+ * @see lyjew.com.lyclaw.adapter.OpenAiProtocolChatModel
  * @see lyjew.com.lyclaw.model.ChatRequest
  * @see lyjew.com.lyclaw.model.ModelResponse
  */

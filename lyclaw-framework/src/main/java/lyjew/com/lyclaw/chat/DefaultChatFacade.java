@@ -57,9 +57,11 @@ import java.util.stream.Collectors;
 public class DefaultChatFacade implements ChatFacade {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultChatFacade.class);
-
+    //模型注册中心，存储已配置好的各种模型
     private final ChatModelRegistry registry;
+    //模型决策的路由策略
     private final ModelRouter router;
+    //流式对话门面，业务代码操作 AI 模型的推荐入口
     private final ChatClient defaultClient;
 
     /**
@@ -78,6 +80,7 @@ public class DefaultChatFacade implements ChatFacade {
         this.defaultClient = new DefaultChatClient(this);
     }
 
+    //根据路由决策获取模型
     @Override
     public ChatModel resolveModel(RoutingDecision decision) {
         ChatModel model = registry.resolve(decision);
@@ -112,6 +115,7 @@ public class DefaultChatFacade implements ChatFacade {
         return model.call(request);
     }
 
+    //根据路由获取路由决策
     @Override
     public RoutingDecision route(ChatRequest request, Object context) {
         return router.route(request, context);
