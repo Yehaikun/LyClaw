@@ -1,19 +1,4 @@
-version: '3.8'
 services:
-  nacos:
-    image: nacos/nacos-server:v2.5.0
-    container_name: lyclaw-nacos
-    mem_limit: 512m
-    ports:
-      - "8848:8848"
-      - "9848:9848"
-    environment:
-      MODE: standalone
-      JVM_XMS: 256m
-      JVM_XMX: 256m
-      JVM_XMN: 128m
-    restart: unless-stopped
-
   lyclaw-memory:
     image: haikunye/lyclaw-memory:latest
     container_name: lyclaw-memory
@@ -21,11 +6,9 @@ services:
     ports:
       - "8082:8082"
     environment:
-      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: 47.104.212.121:8848
     env_file:
       - .env
-    depends_on:
-      - nacos
     restart: unless-stopped
 
   lyclaw-reflect:
@@ -35,11 +18,9 @@ services:
     ports:
       - "8085:8085"
     environment:
-      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: 47.104.212.121:8848
     env_file:
       - .env
-    depends_on:
-      - nacos
     restart: unless-stopped
 
   lyclaw-facade:
@@ -49,9 +30,7 @@ services:
     ports:
       - "8086:8086"
     environment:
-      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: nacos:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: 47.104.212.121:8848
     env_file:
       - .env
-    depends_on:
-      - nacos
     restart: unless-stopped
