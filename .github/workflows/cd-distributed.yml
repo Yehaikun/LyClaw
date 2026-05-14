@@ -200,5 +200,5 @@ jobs:
 
       - name: 腾讯云健康检查
         run: |
-          sleep 10
+          sleep 30
           curl -f http://81.71.120.92:8082/actuator/health || exit 1
