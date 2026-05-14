@@ -7,7 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -17,10 +17,13 @@ class TavilyWebSearchToolTest {
 
     private TavilyWebSearchTool tool;
 
-    private String TAVILY_API_KEY="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";
+    private static final String TAVILY_API_KEY = "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";
+
     @BeforeEach
     void setUp() {
         tool = new TavilyWebSearchTool();
+        // 绕过 @Value 注入：单元测试不走 Spring 容器，手动设置 API key
+        ReflectionTestUtils.setField(tool, "TAVILY_API_KEY", TAVILY_API_KEY);
     }
 
     @Nested
