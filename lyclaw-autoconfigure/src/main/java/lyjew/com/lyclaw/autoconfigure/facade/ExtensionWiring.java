@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.annotation.Configuration;
@@ -45,6 +46,7 @@ public class ExtensionWiring implements SmartInitializingSingleton, ApplicationC
     private ConditionFilter conditionFilter;
 
     @Autowired(required = false)
+    @Qualifier("lyClawProperties")
     private LyClawConfigurationProperties lyClawConfig;
 
     @Override
@@ -52,6 +54,7 @@ public class ExtensionWiring implements SmartInitializingSingleton, ApplicationC
         this.applicationContext = applicationContext;
     }
 
+    //实现工具注册三阶段核心方法
     @Override
     public void afterSingletonsInstantiated() {
         // ── 1. 装配 ExtensionFacade ──
@@ -96,8 +99,7 @@ public class ExtensionWiring implements SmartInitializingSingleton, ApplicationC
 
             if (extensionFacade != null) {
                 // process() 返回 List<T>，T 由 registrar 的泛型决定，运行时类型擦除是安全的
-                List<?> accepted = extensionFacade.process(
-                        registrar.getPending(), registrar.category());
+                List<?> accepted = extensionFacade.process(registrar.getPending(), registrar.category());
                 ((DeferredRegistrar) registrar).applyFiltered(accepted);
                 log.info("[{}] 过滤后注册: {}/{} 个通过",
                         registrar.category(), accepted.size(), registrar.getPending().size());

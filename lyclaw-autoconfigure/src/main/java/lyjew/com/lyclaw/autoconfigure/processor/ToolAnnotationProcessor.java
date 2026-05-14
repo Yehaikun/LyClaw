@@ -43,6 +43,7 @@ public class ToolAnnotationProcessor implements BeanPostProcessor, DeferredRegis
 
     private final ToolRegistry toolRegistry;
     private final Set<String> collectedClasses = new HashSet<>();
+    //收集tool的bean放在这里
     private final List<Object> pendingBeans = new ArrayList<>();
 
     public ToolAnnotationProcessor(ToolRegistry toolRegistry) {

@@ -157,7 +157,7 @@ public class ChatModelPostProcessor implements BeanPostProcessor, Ordered {
      */
     private ChatModel applyDecorators(ChatModel original, Class<?> clazz) {
         ChatModel wrapped = original;
-
+        log.info("===============应用装饰器包装链================");
         // 检测 @Fallback
         if (clazz.isAnnotationPresent(Fallback.class)) {
             Fallback fb = clazz.getAnnotation(Fallback.class);
@@ -180,7 +180,8 @@ public class ChatModelPostProcessor implements BeanPostProcessor, Ordered {
                     cb.failureThreshold(), cb.halfOpenAfterSeconds());
             wrapped = new lyjew.com.lyclaw.decorator.CircuitBreakerChatModel(wrapped, cb);
         }
-
+        log.info("===============================");
+        log.info("");
         return wrapped;
     }
 

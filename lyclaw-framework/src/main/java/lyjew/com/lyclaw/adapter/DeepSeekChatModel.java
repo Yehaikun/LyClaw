@@ -7,6 +7,7 @@ import lyjew.com.lyclaw.annotation.chat.ModelCapability;
 import lyjew.com.lyclaw.annotation.chat.RetryPolicy;
 import lyjew.com.lyclaw.chat.ModelCapabilities;
 import lyjew.com.lyclaw.model.ModelConfig;
+import org.springframework.context.annotation.Bean;
 
 /**
  * DeepSeek ChatModel 适配器，基于 OpenAI 兼容协议接入 DeepSeek V4 系列大语言模型。
