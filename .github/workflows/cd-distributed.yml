@@ -123,6 +123,7 @@ jobs:
           host: 47.104.212.121
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
           script: |
             cd /opt/lyclaw
             # 拉取最新镜像
@@ -132,8 +133,8 @@ jobs:
             # 写入环境变量供 compose 使用
             echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}" > .env
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
-            # 重启服务
-            docker compose -f docker-compose.aliyun.yml down
+            # 重启服务（增加 stop 超时避免卡住）
+            docker compose -f docker-compose.aliyun.yml down -t 30
             docker compose -f docker-compose.aliyun.yml up -d nacos
             sleep 15
             curl -s -X POST 'http://localhost:8848/nacos/v1/console/namespaces' -d 'customNamespaceId=lyclaw&namespaceName=lyclaw' || true
@@ -167,13 +168,14 @@ jobs:
           host: 113.45.200.224
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
           script: |
             cd /opt/lyclaw
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-action:latest
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-plan:latest
             echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}" > .env
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
-            docker compose -f docker-compose.huaweiyun.yml down
+            docker compose -f docker-compose.huaweiyun.yml down -t 30
             docker compose -f docker-compose.huaweiyun.yml up -d
             docker image prune -f
 
@@ -198,13 +200,14 @@ jobs:
           host: 81.71.120.92
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
           script: |
             cd /opt/lyclaw
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-memory:latest
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-reflect:latest
             echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}" > .env
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
-            docker compose -f docker-compose.tengxunyun.yml down
+            docker compose -f docker-compose.tengxunyun.yml down -t 30
             docker compose -f docker-compose.tengxunyun.yml up -d
             docker image prune -f
 
