@@ -123,8 +123,7 @@ jobs:
           host: 47.104.212.121
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          timeout: 600
-          command_timeout: 10m
+          command_timeout: 20m
           script: |
             cd /opt/lyclaw
             # 并行拉取镜像（减少耗时）
@@ -170,8 +169,7 @@ jobs:
           host: 113.45.200.224
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          timeout: 600
-          command_timeout: 10m
+          command_timeout: 20m
           script: |
             cd /opt/lyclaw
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-action:latest &
@@ -204,8 +202,7 @@ jobs:
           host: 81.71.120.92
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          timeout: 600
-          command_timeout: 10m
+          command_timeout: 20m
           script: |
             cd /opt/lyclaw
             docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-memory:latest &
