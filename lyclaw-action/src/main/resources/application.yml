@@ -17,3 +17,7 @@ management:
   endpoint:
     health:
       show-details: always
+lyclaw:
+  tool:
+    tavily:
+      api-key: ${TAVILY_API_KEY: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}   # 空默认值，没设也不报错

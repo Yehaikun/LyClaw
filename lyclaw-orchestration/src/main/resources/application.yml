@@ -42,9 +42,6 @@ lyclaw:
         api-key: ${DEEPSEEK_API_KEY:}
         model: deepseek-v4-flash
   storage:
-    backends:
-      file:
-        url: /home/lyjew/Documents/Unicom/LyClaw/LyClaw
     stores:
       session: file
       entity: file

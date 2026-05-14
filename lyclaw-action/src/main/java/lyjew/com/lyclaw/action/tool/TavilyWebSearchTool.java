@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.action.tool;
 
+import com.alibaba.nacos.common.utils.MapUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lyjew.com.lyclaw.annotation.tool.Tool;
@@ -7,6 +8,9 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -28,6 +32,11 @@ import java.util.Map;
       readonly = true,
       group = "builtin")
 public class TavilyWebSearchTool implements lyjew.com.lyclaw.tool.Tool {
+
+    private static final Logger log = LoggerFactory.getLogger(TavilyWebSearchTool.class);
+    // 换成成员变量
+    @Value("${lyclaw.tool.tavily.api-key:}")
+    private String TAVILY_API_KEY;
 
     private static final String TAVILY_API_URL = "https://api.tavily.com/search";
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(15);
@@ -98,7 +107,7 @@ public class TavilyWebSearchTool implements lyjew.com.lyclaw.tool.Tool {
                 return ToolExecutionResult.failure("搜索关键词为空", "web_search");
             }
 
-            String apiKey = System.getenv("TAVILY_API_KEY");
+            String apiKey = TAVILY_API_KEY;
             if (apiKey == null || apiKey.isBlank()) {
                 return ToolExecutionResult.failure(
                         "Tavily API Key 未配置，请设置环境变量 TAVILY_API_KEY", "web_search");
@@ -110,7 +119,6 @@ public class TavilyWebSearchTool implements lyjew.com.lyclaw.tool.Tool {
             body.put("search_depth", "basic");
             body.put("include_answer", true);
             body.put("max_results", 5);
-
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(TAVILY_API_URL))
                     .header("Content-Type", "application/json")

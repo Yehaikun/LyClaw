@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -16,6 +17,7 @@ class TavilyWebSearchToolTest {
 
     private TavilyWebSearchTool tool;
 
+    private String TAVILY_API_KEY="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";
     @BeforeEach
     void setUp() {
         tool = new TavilyWebSearchTool();
@@ -52,7 +54,7 @@ class TavilyWebSearchToolTest {
         @Test
         @DisplayName("真实搜索返回成功结果")
         void realSearch() {
-            String apiKey = System.getenv("TAVILY_API_KEY");
+            String apiKey = TAVILY_API_KEY;
             assumeTrue(apiKey != null && !apiKey.isBlank(),
                     "跳过：未设置 TAVILY_API_KEY 环境变量");
 
@@ -90,7 +92,7 @@ class TavilyWebSearchToolTest {
         @Test
         @DisplayName("纯文本参数也能提取查询")
         void plainTextQuery() {
-            String apiKey = System.getenv("TAVILY_API_KEY");
+            String apiKey = TAVILY_API_KEY;
             assumeTrue(apiKey != null && !apiKey.isBlank(),
                     "跳过：未设置 TAVILY_API_KEY 环境变量");
 

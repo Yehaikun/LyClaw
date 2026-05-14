@@ -2,11 +2,12 @@ services:
   lyclaw-action:
     image: haikunye/lyclaw-action:latest
     container_name: lyclaw-action
-    mem_limit: 256m
+    mem_limit: 384m
     ports:
       - "8084:8084"
     environment:
       SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: 47.104.212.121:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_IP: 113.45.200.224
     env_file:
       - .env
     restart: unless-stopped
@@ -14,11 +15,12 @@ services:
   lyclaw-plan:
     image: haikunye/lyclaw-plan:latest
     container_name: lyclaw-plan
-    mem_limit: 256m
+    mem_limit: 384m
     ports:
       - "8083:8083"
     environment:
       SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: 47.104.212.121:8848
+      SPRING_CLOUD_NACOS_DISCOVERY_IP: 113.45.200.224
     env_file:
       - .env
     restart: unless-stopped
