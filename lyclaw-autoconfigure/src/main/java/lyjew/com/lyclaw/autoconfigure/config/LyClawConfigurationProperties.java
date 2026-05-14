@@ -25,7 +25,7 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
 @ConfigurationProperties(prefix = "lyclaw")
 public class LyClawConfigurationProperties {
 
-    /** 扩展属性配置，管理扩展模块的开关和参数 */
+    /** 扩展属性配置，管理扩展模块的开关和参数,找 lyclaw.extension. 下面的配置项装配到这里 */
     @NestedConfigurationProperty
     private ExtensionProperties extension = new ExtensionProperties();
 
