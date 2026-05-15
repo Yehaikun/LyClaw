@@ -95,6 +95,9 @@ public class ToolSandboxImpl implements ToolSandbox {
             // 将参数 Map 构建为 ToolCall 对象
             ToolCall toolCall = buildToolCall(tool.getName(), args);
             SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.NONE;
+            log.info("沙箱执行: tool={}, sandboxLevel={}, params={}",
+                    tool.getName(), effectiveLevel,
+                    args != null ? args.keySet() : "[]");
             // 根据安全级别分发到不同的执行方法
             return switch (effectiveLevel) {
                 case NONE -> executeNone(tool, toolCall, startTime);

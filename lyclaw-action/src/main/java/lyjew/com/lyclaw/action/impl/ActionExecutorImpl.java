@@ -141,7 +141,7 @@ public class ActionExecutorImpl implements ActionExecutor {
                                                               SandboxLevel level) {
         return CompletableFuture.supplyAsync(() -> {
             long startTime = System.currentTimeMillis();
-            log.info("执行工具: toolName={}, level={}", toolName, level);
+            log.info("执行工具: toolName={}, sandboxLevel={}, args={}", toolName, level, args);
 
             try {
                 // 1. 查找工具

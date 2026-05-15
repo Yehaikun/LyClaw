@@ -68,9 +68,6 @@ public class ActionController {
      */
     @PostMapping("/execute-tool")
     public Mono<ToolExecutionResult> executeTool(@RequestBody ToolExecuteRequest request) {
-        log.info("收到工具执行请求: tool={}, level={}",
-                request.getToolName(), request.getSandboxLevel());
-
         // 解析沙箱级别，无效时回退到 NONE
         SandboxLevel level = SandboxLevel.NONE;
         if (request.getSandboxLevel() != null && !request.getSandboxLevel().isBlank()) {
@@ -80,6 +77,11 @@ public class ActionController {
                 log.warn("无效的沙箱级别: {}, 回退到 NONE", request.getSandboxLevel());
             }
         }
+
+        log.info("工具执行请求: tool={}, sandboxLevel={}, sessionId={}, args={}",
+                request.getToolName(), level,
+                request.getSessionId(),
+                request.getArgs() != null ? request.getArgs() : "{}");
 
         return Mono.fromFuture(actionExecutor.executeTool(
                 request.getToolName(),
