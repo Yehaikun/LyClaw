@@ -11,6 +11,7 @@ import lyjew.com.lyclaw.model.ToolCall;
 
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
@@ -219,7 +220,9 @@ public class DefaultReActEngine implements ReActEngine {
                 .concatWith(continueReActRounds(chatFacade, request, toolExecutor, 1));
     }
 
-    /** 对工具调用列表逐项执行并发出 tool_call SSE 事件（executing → done） */
+    /** 对工具调用列表逐项执行并发出 tool_call SSE 事件（executing → done）。
+     *  <p>工具执行（含阻塞 Feign 调用）通过 boundedElastic 隔离，避免阻塞
+     *  WebClient 的 epoll/netty 事件循环线程。</p> */
     private Flux<ServerSentEvent<String>> emitRoundToolCallEvents(
             List<ModelResponse.ToolCallRequest> toolCalls, ToolExecutor toolExecutor,
             List<Message> messages) {
@@ -228,24 +231,24 @@ public class DefaultReActEngine implements ReActEngine {
                     String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
                     String execJson = toolCallEventJson(req.getId(), req.getName(),
                             "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
-                    return Flux.just(sseEvent("tool_call", execJson))
-                            .concatWith(Flux.defer(() -> {
-                                String output;
-                                boolean success;
-                                try {
-                                    output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
-                                    success = true;
-                                } catch (Exception e) {
-                                    log.error("Tool execution failed: name={} error={}",
-                                            req.getName(), e.getMessage(), e);
-                                    output = "Tool error: " + e.getMessage();
-                                    success = false;
-                                }
-                                messages.add(Message.tool(req.getId(), output));
-                                String doneJson = toolCallEventJson(req.getId(), req.getName(),
-                                        "done", req.getName() + " 完成", toolArgs, output, success);
-                                return Flux.just(sseEvent("tool_call", doneJson));
-                            }));
+                    Mono<ServerSentEvent<String>> doneEvent = Mono.fromCallable(() -> {
+                        String output;
+                        boolean success;
+                        try {
+                            output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                            success = true;
+                        } catch (Exception e) {
+                            log.error("Tool execution failed: name={} error={}",
+                                    req.getName(), e.getMessage(), e);
+                            output = "Tool error: " + e.getMessage();
+                            success = false;
+                        }
+                        messages.add(Message.tool(req.getId(), output));
+                        String doneJson = toolCallEventJson(req.getId(), req.getName(),
+                                "done", req.getName() + " 完成", toolArgs, output, success);
+                        return sseEvent("tool_call", doneJson);
+                    }).subscribeOn(Schedulers.boundedElastic());
+                    return Flux.just(sseEvent("tool_call", execJson)).concatWith(doneEvent);
                 });
     }
 
