@@ -60,6 +60,8 @@ export const useChatStore = defineStore('chat', () => {
   const currentSessionId = ref<string | null>(null)
   /** 工具调用状态文字：后端推送 status 事件时更新，流式文本到达或流结束时清空 */
   const toolStatus = ref<string>('')
+  /** 流式进行中的工具调用列表：tool_call 事件驱动，用于展示加载动画卡片 */
+  const liveToolCalls = ref<ToolCall[]>([])
 
   // ====================================================================
   // 计算属性（Getters）
@@ -135,6 +137,7 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming.value = true
     currentStreamingText.value = ''
     toolStatus.value = ''
+    liveToolCalls.value = []
 
     try {
       await postChatStream(
@@ -157,6 +160,7 @@ export const useChatStore = defineStore('chat', () => {
           }
           currentStreamingText.value = ''
           toolStatus.value = ''
+          liveToolCalls.value = []
           isStreaming.value = false
         },
         // 错误回调：保存已接收的部分内容，记录错误信息
@@ -171,6 +175,7 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push(partialMsg)
           }
           currentStreamingText.value = ''
+          liveToolCalls.value = []
           isStreaming.value = false
           // 提取ApiError中的traceId用于错误追踪
           if (err instanceof ApiError) {
@@ -190,6 +195,43 @@ export const useChatStore = defineStore('chat', () => {
         // 工具调用状态回调：后端推送status事件时更新toolStatus供视图展示
         (statusText: string) => {
           toolStatus.value = statusText
+        },
+        // tool_call 事件回调：后端推送工具调用执行状态
+        (data: string) => {
+          try {
+            const event = JSON.parse(data)
+            if (event.status === 'executing') {
+              liveToolCalls.value.push({
+                toolCallId: event.toolCallId || '',
+                name: event.name || '',
+                arguments: '',
+              })
+              toolStatus.value = event.message || `正在执行 ${event.name}...`
+            } else if (event.status === 'done') {
+              // 工具执行完成 → 从 liveToolCalls 移除，固化为独立持久消息
+              liveToolCalls.value = liveToolCalls.value.filter(
+                (tc) => tc.toolCallId !== event.toolCallId,
+              )
+              if (liveToolCalls.value.length === 0) {
+                toolStatus.value = ''
+              }
+              messages.value.push({
+                role: 'assistant',
+                content: '',
+                model: currentModel.value,
+                toolCalls: [{
+                  toolCallId: event.toolCallId || '',
+                  name: event.name || '',
+                  arguments: event.arguments || '',
+                  description: event.message || '',
+                  result: JSON.stringify({
+                    success: event.success !== false,
+                    output: event.result || '',
+                  }),
+                }],
+              })
+            }
+          } catch { /* ignore malformed JSON */ }
         },
       )
     } catch (err) {
@@ -385,6 +427,7 @@ export const useChatStore = defineStore('chat', () => {
     currentProvider,
     currentSessionId,
     toolStatus,
+    liveToolCalls,
     // 计算属性
     messageCount,
     lastMessage,

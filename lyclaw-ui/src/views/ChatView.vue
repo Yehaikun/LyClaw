@@ -46,6 +46,7 @@ import { useSettingsStore } from '@/stores/settings'
 import WelcomeHero from '@/components/WelcomeHero.vue'
 import MessageBubble from '@/components/MessageBubble.vue'
 import MessageInput from '@/components/MessageInput.vue'
+import ToolCallCard from '@/components/ToolCallCard.vue'
 import TraceIdBadge from '@/components/TraceIdBadge.vue'
 import type { Message } from '@/types'
 
@@ -302,6 +303,15 @@ watch(
           </div>
         </div>
 
+        <!-- 实时工具调用卡片：tool_call SSE 事件驱动，展示加载动画 -->
+        <div v-if="chatStore.liveToolCalls.length > 0" class="live-tool-calls">
+          <ToolCallCard
+            v-for="tc in chatStore.liveToolCalls"
+            :key="tc.toolCallId"
+            :tool-call="tc"
+          />
+        </div>
+
         <!-- 流式临时气泡：显示实时累积的流式输出文本 -->
         <MessageBubble
           v-if="tempStreamingMessage"
@@ -503,6 +513,17 @@ watch(
   font-size: var(--body-sm-size);
   color: var(--color-muted);
   margin-left: 6px;
+}
+
+/* ---- 实时工具调用卡片 ---- */
+.live-tool-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 var(--spacing-lg);
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 /* ---- Mobile ---- */

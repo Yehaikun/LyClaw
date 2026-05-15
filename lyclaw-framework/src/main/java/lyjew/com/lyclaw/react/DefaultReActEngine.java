@@ -1,6 +1,5 @@
 package lyjew.com.lyclaw.react;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.chat.ChatFacade;
@@ -12,11 +11,11 @@ import lyjew.com.lyclaw.model.ToolCall;
 
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -164,18 +163,15 @@ public class DefaultReActEngine implements ReActEngine {
                 })
                 .concatWith(Flux.<ServerSentEvent<String>>defer(() -> {
                     if (state[0] == 2) {
-                        // 检测到工具调用 → 合并碎片后重启非流式 ReAct
                         request.setStream(false);
-                        return Mono.fromCallable(() -> {
-                            ModelResponse merged = model.mergeChunks(buffer);
-                            log.info("ReAct tools detected in stream: {}",
-                                    merged.getToolCalls() != null
-                                            ? merged.getToolCalls().stream()
-                                                    .map(ModelResponse.ToolCallRequest::getName).toList()
-                                            : "[]");
-                            return runReActFromFirstResponse(chatFacade, request, toolExecutor, merged);
-                        }).subscribeOn(Schedulers.boundedElastic())
-                          .flatMapMany(this::splitIntoEvents);
+                        ModelResponse merged = model.mergeChunks(buffer);
+                        log.info("ReAct tools detected in stream: {}",
+                                merged.getToolCalls() != null
+                                        ? merged.getToolCalls().stream()
+                                                .map(ModelResponse.ToolCallRequest::getName).toList()
+                                        : "[]");
+                        return multiRoundReActFlux(chatFacade, request, toolExecutor, merged)
+                                .subscribeOn(Schedulers.boundedElastic());
                     }
                     if (state[0] == 0) {
                         // 全程思考模式 → 合并返回
@@ -192,38 +188,126 @@ public class DefaultReActEngine implements ReActEngine {
     // ── 内部方法 ─────────────────────────────────────────────────────
 
     /**
-     * 从已获取的首轮响应（可能来自流式检测的合并结果）启动非流式 ReAct。
+     * 从流式检测到的首轮响应启动 Flux 化多轮 ReAct 循环。
+     * <p>首轮工具调用前发出 tool_call executing 事件，执行后发出 done 事件，
+     * 后续轮次委托 {@link #continueReActRounds} 处理。</p>
      */
-    private String runReActFromFirstResponse(ChatFacade chatFacade, ChatRequest request,
-                                             ToolExecutor toolExecutor, ModelResponse firstResponse) {
+    private Flux<ServerSentEvent<String>> multiRoundReActFlux(ChatFacade chatFacade, ChatRequest request,
+                                                               ToolExecutor toolExecutor, ModelResponse firstResponse) {
         List<Message> messages = request.getMessages();
+        boolean hasToolCalls = firstResponse.hasToolCalls();
+        String content = firstResponse.getContent() != null ? firstResponse.getContent() : "";
 
-        if (firstResponse.hasToolCalls()) {
-            messages.add(Message.builder()
-                    .role("assistant")
-                    .content(firstResponse.getContent() != null ? firstResponse.getContent() : "")
-                    .thinking(firstResponse.getThinking() != null ? firstResponse.getThinking() : "")
-                    .toolCalls(toMessageToolCalls(firstResponse))
-                    .build());
+        if (!hasToolCalls) {
+            messages.add(Message.assistant(content));
+            return splitIntoEvents(content);
+        }
 
-            for (ModelResponse.ToolCallRequest req : firstResponse.getToolCalls()) {
-                log.debug("ReAct (from stream) executing tool: name={} id={}", req.getName(), req.getId());
-                try {
-                    String output = toolExecutor.execute(req.getName(), req.getId(),
-                            req.getArguments() != null ? req.getArguments() : "{}");
-                    messages.add(Message.tool(req.getId(), output));
-                } catch (Exception e) {
-                    log.error("Tool execution failed: name={} error={}", req.getName(), e.getMessage(), e);
-                    messages.add(Message.tool(req.getId(), "Tool error: " + e.getMessage()));
-                }
+        // 工具调用前若有文本内容，先以 message 事件发出
+        Flux<ServerSentEvent<String>> textFlux = content.isEmpty()
+                ? Flux.empty()
+                : splitIntoEvents(content);
+
+        messages.add(Message.builder()
+                .role("assistant")
+                .content(content)
+                .thinking(firstResponse.getThinking() != null ? firstResponse.getThinking() : "")
+                .toolCalls(toMessageToolCalls(firstResponse))
+                .build());
+
+        return textFlux
+                .concatWith(emitRoundToolCallEvents(firstResponse.getToolCalls(), toolExecutor, messages))
+                .concatWith(continueReActRounds(chatFacade, request, toolExecutor, 1));
+    }
+
+    /** 对工具调用列表逐项执行并发出 tool_call SSE 事件（executing → done） */
+    private Flux<ServerSentEvent<String>> emitRoundToolCallEvents(
+            List<ModelResponse.ToolCallRequest> toolCalls, ToolExecutor toolExecutor,
+            List<Message> messages) {
+        return Flux.fromIterable(toolCalls)
+                .concatMap(req -> {
+                    String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
+                    String execJson = toolCallEventJson(req.getId(), req.getName(),
+                            "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
+                    return Flux.just(sseEvent("tool_call", execJson))
+                            .concatWith(Flux.defer(() -> {
+                                String output;
+                                boolean success;
+                                try {
+                                    output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                                    success = true;
+                                } catch (Exception e) {
+                                    log.error("Tool execution failed: name={} error={}",
+                                            req.getName(), e.getMessage(), e);
+                                    output = "Tool error: " + e.getMessage();
+                                    success = false;
+                                }
+                                messages.add(Message.tool(req.getId(), output));
+                                String doneJson = toolCallEventJson(req.getId(), req.getName(),
+                                        "done", req.getName() + " 完成", toolArgs, output, success);
+                                return Flux.just(sseEvent("tool_call", doneJson));
+                            }));
+                });
+    }
+
+    /** 后续 ReAct 轮次（第 1..MAX_TOOL_ROUNDS-1 轮），每轮仍发出 tool_call 事件 */
+    private Flux<ServerSentEvent<String>> continueReActRounds(
+            ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor, int round) {
+        if (round >= MAX_TOOL_ROUNDS) {
+            return Flux.just(sseEvent("message", "[已达最大工具调用轮数(" + MAX_TOOL_ROUNDS + ")]"));
+        }
+
+        return Flux.defer(() -> {
+            log.debug("ReAct stream round {}/{}", round + 1, MAX_TOOL_ROUNDS);
+            ModelResponse response;
+            try {
+                response = chatFacade.chat(request);
+            } catch (Exception e) {
+                log.error("ReAct LLM call failed in stream round {}: {}", round, e.getMessage(), e);
+                return Flux.just(sseEvent("message", "[LLM调用失败: " + e.getMessage() + "]"));
             }
 
-            // 后续轮次复用 execute() 的循环逻辑
-            return execute(chatFacade, request, toolExecutor);
-        } else {
-            String content = firstResponse.getContent() != null ? firstResponse.getContent() : "";
-            messages.add(Message.assistant(content));
-            return content;
+            if (!response.hasToolCalls()) {
+                String content = response.getContent() != null ? response.getContent() : "";
+                request.getMessages().add(Message.builder()
+                        .role("assistant")
+                        .content(content)
+                        .thinking(response.getThinking() != null ? response.getThinking() : "")
+                        .build());
+                return splitIntoEvents(content);
+            }
+
+            request.getMessages().add(Message.builder()
+                    .role("assistant")
+                    .content(response.getContent() != null ? response.getContent() : "")
+                    .thinking(response.getThinking() != null ? response.getThinking() : "")
+                    .toolCalls(toMessageToolCalls(response))
+                    .build());
+
+            return emitRoundToolCallEvents(response.getToolCalls(), toolExecutor, request.getMessages())
+                    .concatWith(continueReActRounds(chatFacade, request, toolExecutor, round + 1));
+        });
+    }
+
+    /** 构建 tool_call SSE 事件的 JSON 数据。done 事件携带 result/success 供前端持久化展示。 */
+    private String toolCallEventJson(String toolCallId, String name, String status,
+                                      String message, String arguments, String result, boolean success) {
+        try {
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("toolCallId", toolCallId);
+            event.put("name", name);
+            event.put("status", status);
+            event.put("message", message);
+            if (arguments != null && !arguments.isEmpty()) {
+                event.put("arguments", arguments);
+            }
+            if (result != null && !result.isEmpty()) {
+                event.put("result", result);
+            }
+            event.put("success", success);
+            return objectMapper.writeValueAsString(event);
+        } catch (Exception e) {
+            return "{\"error\":\"json\"}";
         }
     }
 
