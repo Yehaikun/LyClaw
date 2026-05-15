@@ -2,10 +2,12 @@ package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.autoconfigure.processor.*;
 import lyjew.com.lyclaw.chat.*;
+import lyjew.com.lyclaw.react.ReActEngine;
 import lyjew.com.lyclaw.storage.*;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 
@@ -130,5 +132,23 @@ public class ProcessorAutoConfiguration {
     public OpenAiProtocolAutoConfigurator openAiProtocolAutoConfigurator(
             ChatModelRegistry registry, ChatProperties properties) {
         return new OpenAiProtocolAutoConfigurator(registry, properties);
+    }
+
+    /**
+     * 注册 InteractionModeProcessor 交互模式发现处理器 Bean，自动扫描
+     * {@code @InteractionMode} 注解的 ReActEngine 实现。
+     *
+     * <p>该处理器在 Bean 初始化阶段执行，自动发现所有标注了 @InteractionMode 注解的 Bean，
+     * 校验是否实现了 ReActEngine 接口，提取 name、description、isDefault 属性后构建
+     * 交互模式注册表。同时实现了 SmartInitializingSingleton 接口，在所有单例初始化完成后
+     * 输出启动摘要日志。使用 {@code @ConditionalOnClass} 仅在 ReActEngine 类可用时激活。</p>
+     *
+     * @return InteractionModeProcessor 实例，负责交互模式的自动发现和索引
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnClass(ReActEngine.class)
+    public InteractionModeProcessor interactionModeProcessor() {
+        return new InteractionModeProcessor();
     }
 }

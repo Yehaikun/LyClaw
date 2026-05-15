@@ -11,6 +11,7 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.feign.ActionFeignClient;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
+import lyjew.com.lyclaw.autoconfigure.processor.InteractionModeProcessor;
 import lyjew.com.lyclaw.react.ReActEngine;
 import lyjew.com.lyclaw.react.ToolExecutor;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
@@ -36,28 +37,28 @@ public class RespondStage extends PipelineStageBase {
 
     private final ChatFacade chatFacade;
     private final ActionFeignClient actionFeignClient;
-    private final ReActEngine reActEngine;
+    private final InteractionModeProcessor interactionModeProcessor;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 构造响应生成阶段实例。
      *
-     * <p>通过 Spring 依赖注入接收 ChatFacade、ActionFeignClient 和 ReActEngine。
+     * <p>通过 Spring 依赖注入接收 ChatFacade、ActionFeignClient 和 InteractionModeProcessor。
      * ChatFacade 负责 LLM 模型的路由决策和调用，ActionFeignClient 负责获取工具列表，
-     * ReActEngine 负责多轮推理-行动循环（抽取自本类原有逻辑）。
-     * ReActEngine 和 ChatFacade 标记为 Nullable，在无 LLM 能力时退化为降级响应。</p>
+     * InteractionModeProcessor 负责按名称解析交互模式引擎（由 @InteractionMode 注解驱动）。
+     * ChatFacade 和 InteractionModeProcessor 均为 Nullable，无 LLM 能力时退化为降级响应。</p>
      *
-     * @param chatFacade        聊天门面，可为 null
-     * @param actionFeignClient 动作服务 Feign 客户端
-     * @param reActEngine       ReAct 引擎，可为 null
+     * @param chatFacade               聊天门面，可为 null
+     * @param actionFeignClient        动作服务 Feign 客户端
+     * @param interactionModeProcessor 交互模式处理器，可为 null
      */
     public RespondStage(@org.springframework.lang.Nullable ChatFacade chatFacade,
                         ActionFeignClient actionFeignClient,
-                        @org.springframework.lang.Nullable ReActEngine reActEngine) {
+                        @org.springframework.lang.Nullable InteractionModeProcessor interactionModeProcessor) {
         this.chatFacade = chatFacade;
         this.actionFeignClient = actionFeignClient;
-        this.reActEngine = reActEngine;
+        this.interactionModeProcessor = interactionModeProcessor;
     }
 
     @Override
@@ -92,9 +93,13 @@ public class RespondStage extends PipelineStageBase {
                 toolDefs = Collections.emptyList();
             }
 
+            // 从 InteractionModeProcessor 获取默认引擎（由 @InteractionMode 注解驱动发现）
+            ReActEngine reActEngine = interactionModeProcessor != null
+                    ? interactionModeProcessor.getDefault() : null;
+
             Flux<ServerSentEvent<String>> bodyFlux;
             if (chatFacade != null && reActEngine != null && !toolDefs.isEmpty()) {
-                bodyFlux = reactWithReActEngine(context, traceId, toolDefs);
+                bodyFlux = reactWithReActEngine(reActEngine, context, traceId, toolDefs);
             } else if (chatFacade != null) {
                 bodyFlux = simpleChatStream(context, traceId);
             } else {
@@ -122,7 +127,8 @@ public class RespondStage extends PipelineStageBase {
      * <p>构建 ToolExecutor 桥接 ActionFeignClient，将工具执行委托给远程 action 服务。
      * 设置 tools/toolChoice/stream 后委托给 ReActEngine 处理流式检测和多轮循环。</p>
      */
-    private Flux<ServerSentEvent<String>> reactWithReActEngine(ChatContext context, String traceId,
+    private Flux<ServerSentEvent<String>> reactWithReActEngine(ReActEngine reActEngine,
+                                                                ChatContext context, String traceId,
                                                                 List<ToolDefinition> toolDefs) {
         lyjew.com.lyclaw.model.ChatRequest request = context.getRequest();
         request.setTools(toolDefs);
