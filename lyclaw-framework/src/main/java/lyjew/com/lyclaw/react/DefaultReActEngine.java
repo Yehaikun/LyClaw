@@ -14,7 +14,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +38,7 @@ import java.util.Map;
 @InteractionMode(name = "react", description = "Reasoning-Acting loop with tool execution", isDefault = true)
 public class DefaultReActEngine implements ReActEngine {
 
-    private static final int MAX_TOOL_ROUNDS = 10;
+    private static final int MAX_TOOL_ROUNDS = 30;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     // ── 非流式 ReAct ────────────────────────────────────────────────
