@@ -149,7 +149,7 @@ jobs:
             sleep 15
             curl -s -X POST 'http://localhost:8848/nacos/v1/console/namespaces' -d 'customNamespaceId=lyclaw&namespaceName=lyclaw' || true
             docker compose -f docker-compose.aliyun.yml up -d
-            docker image prune -f
+            docker image prune -f || true
 
       - name: 阿里云健康检查
         run: |
@@ -197,7 +197,7 @@ jobs:
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
             docker compose -f docker-compose.huaweiyun.yml down -t 10
             docker compose -f docker-compose.huaweiyun.yml up -d
-            docker image prune -f
+            docker image prune -f || true
 
       - name: 华为云健康检查
         run: |
@@ -239,7 +239,7 @@ jobs:
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
             docker compose -f docker-compose.tengxunyun.yml down -t 10
             docker compose -f docker-compose.tengxunyun.yml up -d
-            docker image prune -f
+            docker image prune -f || true
 
       - name: 腾讯云健康检查
         run: |
