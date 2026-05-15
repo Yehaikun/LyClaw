@@ -138,6 +138,7 @@ public class PlanController {
         response.put("estimatedTime", plan.getEstimatedCompletionTime());
         response.put("valid", validation.isValid());
         response.put("validationErrors", validation.getErrors());
+
         log.info("\n──────────────────────────────────");
         log.info("  [规划] 规划完成");
         log.info("──────────────────────────────────");
@@ -145,6 +146,19 @@ public class PlanController {
         log.info("  节点数  : {}", plan.getNodes() != null ? plan.getNodes().size() : 0);
         log.info("  预估耗时: {}ms", plan.getEstimatedCompletionTime());
         log.info("  校验结果: {}", validation.isValid() ? "通过" : "失败 (" + validation.getErrors().size() + " 个错误)");
+        log.info("──────────────────────────────────");
+        if (plan.getNodes() != null) {
+            int i = 1;
+            for (TaskNode node : plan.getNodes()) {
+                log.info("  [{}/{}] {} | deps={} | tools={} | timeout={}ms",
+                        i++, plan.getNodes().size(),
+                        String.format("%-12s %s", node.getType(), node.getDescription().length() > 60
+                                ? node.getDescription().substring(0, 60) + "..." : node.getDescription()),
+                        node.getDependencies() != null ? node.getDependencies() : "[]",
+                        node.getRequiredTools() != null ? node.getRequiredTools() : "[]",
+                        node.getTimeoutMs());
+            }
+        }
         log.info("══════════════════════════════════\n");
         return ResponseEntity.ok(response);
     }
