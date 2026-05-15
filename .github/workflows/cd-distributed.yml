@@ -126,10 +126,20 @@ jobs:
           command_timeout: 30m
           script: |
             cd /opt/lyclaw
-            # 串行拉取镜像，避免国内服务器到 Docker Hub 带宽争抢导致超时
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-gateway:latest
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-orchestration:latest
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-ui:latest
+            # 带重试的镜像拉取函数，应对国内到 Docker Hub 的网络抖动
+            retry_pull() {
+              local img="$1"
+              for i in 1 2 3; do
+                docker pull "$img" && return 0
+                echo "[retry_pull] 第${i}次失败，等待10s..."
+                sleep 10
+              done
+              echo "[retry_pull] 3次均失败: $img"
+              return 1
+            }
+            retry_pull ${{ env.DOCKER_REGISTRY }}/lyclaw-gateway:latest
+            retry_pull ${{ env.DOCKER_REGISTRY }}/lyclaw-orchestration:latest
+            retry_pull ${{ env.DOCKER_REGISTRY }}/lyclaw-ui:latest
             # 写入环境变量供 compose 使用
             echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}" > .env
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
@@ -171,9 +181,18 @@ jobs:
           command_timeout: 30m
           script: |
             cd /opt/lyclaw
-            # 串行拉取镜像，避免国内服务器到 Docker Hub 带宽争抢导致超时
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-action:latest
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-plan:latest
+            retry_pull() {
+              local img="$1"
+              for i in 1 2 3; do
+                docker pull "$img" && return 0
+                echo "[retry_pull] 第${i}次失败，等待10s..."
+                sleep 10
+              done
+              echo "[retry_pull] 3次均失败: $img"
+              return 1
+            }
+            retry_pull ${{ env.DOCKER_REGISTRY }}/lyclaw-action:latest
+            retry_pull ${{ env.DOCKER_REGISTRY }}/lyclaw-plan:latest
             echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}" > .env
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
             docker compose -f docker-compose.huaweiyun.yml down -t 10
@@ -204,9 +223,18 @@ jobs:
           command_timeout: 30m
           script: |
             cd /opt/lyclaw
-            # 串行拉取镜像，避免国内服务器到 Docker Hub 带宽争抢导致超时
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-memory:latest
-            docker pull ${{ env.DOCKER_REGISTRY }}/lyclaw-reflect:latest
+            retry_pull() {
+              local img="$1"
+              for i in 1 2 3; do
+                docker pull "$img" && return 0
+                echo "[retry_pull] 第${i}次失败，等待10s..."
+                sleep 10
+              done
+              echo "[retry_pull] 3次均失败: $img"
+              return 1
+            }
+            retry_pull ${{ env.DOCKER_REGISTRY }}/lyclaw-memory:latest
+            retry_pull ${{ env.DOCKER_REGISTRY }}/lyclaw-reflect:latest
             echo "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}" > .env
             echo "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}" >> .env
             docker compose -f docker-compose.tengxunyun.yml down -t 10
