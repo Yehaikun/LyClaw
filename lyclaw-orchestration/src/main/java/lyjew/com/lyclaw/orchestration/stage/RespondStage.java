@@ -9,20 +9,16 @@ import lyjew.com.lyclaw.chat.ChatModel;
 import lyjew.com.lyclaw.chat.RoutingDecision;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.feign.ActionFeignClient;
-import lyjew.com.lyclaw.model.Message;
-import lyjew.com.lyclaw.model.ModelResponse;
-import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
+import lyjew.com.lyclaw.react.ReActEngine;
+import lyjew.com.lyclaw.react.ToolExecutor;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.springframework.http.codec.ServerSentEvent;
 import lyjew.com.lyclaw.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -40,25 +36,28 @@ public class RespondStage extends PipelineStageBase {
 
     private final ChatFacade chatFacade;
     private final ActionFeignClient actionFeignClient;
+    private final ReActEngine reActEngine;
 
-    private static final int MAX_TOOL_ROUNDS = 10;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 构造响应生成阶段实例。
      *
-     * <p>通过 Spring 依赖注入接收 ChatFacade（聊天门面）和 ActionFeignClient（动作服务客户端）。
-     * ChatFacade 负责 LLM 模型的路由决策和调用，ActionFeignClient 负责获取可用工具定义列表
-     * 并执行具体的工具调用。这两个依赖共同支撑 ReAct 循环的完整运行：ChatFacade 提供 LLM 推理能力，
-     * ActionFeignClient 通过 listTools() 提供工具清单供 LLM 自主选择，通过 executeTool() 执行
-     * LLM 决定的工具调用并将结果返回给 LLM 继续推理。</p>
+     * <p>通过 Spring 依赖注入接收 ChatFacade、ActionFeignClient 和 ReActEngine。
+     * ChatFacade 负责 LLM 模型的路由决策和调用，ActionFeignClient 负责获取工具列表，
+     * ReActEngine 负责多轮推理-行动循环（抽取自本类原有逻辑）。
+     * ReActEngine 和 ChatFacade 标记为 Nullable，在无 LLM 能力时退化为降级响应。</p>
      *
-     * @param chatFacade         聊天门面，封装模型路由和 LLM 调用逻辑
-     * @param actionFeignClient  动作服务 Feign 客户端，用于获取工具列表和执行工具调用
+     * @param chatFacade        聊天门面，可为 null
+     * @param actionFeignClient 动作服务 Feign 客户端
+     * @param reActEngine       ReAct 引擎，可为 null
      */
-    public RespondStage(ChatFacade chatFacade, ActionFeignClient actionFeignClient) {
+    public RespondStage(@org.springframework.lang.Nullable ChatFacade chatFacade,
+                        ActionFeignClient actionFeignClient,
+                        @org.springframework.lang.Nullable ReActEngine reActEngine) {
         this.chatFacade = chatFacade;
         this.actionFeignClient = actionFeignClient;
+        this.reActEngine = reActEngine;
     }
 
     @Override
@@ -94,8 +93,8 @@ public class RespondStage extends PipelineStageBase {
             }
 
             Flux<ServerSentEvent<String>> bodyFlux;
-            if (chatFacade != null && !toolDefs.isEmpty()) {
-                bodyFlux = streamWithToolDetection(context, traceId, toolDefs);
+            if (chatFacade != null && reActEngine != null && !toolDefs.isEmpty()) {
+                bodyFlux = reactWithReActEngine(context, traceId, toolDefs);
             } else if (chatFacade != null) {
                 bodyFlux = simpleChatStream(context, traceId);
             } else {
@@ -118,197 +117,55 @@ public class RespondStage extends PipelineStageBase {
     }
 
     /**
-     * 流式 + 工具检测：始终 stream=true，实时分析每个 chunk。
+     * 通过 ReActEngine 执行带工具的流式 ReAct 循环。
      *
-     * <p>DeepSeek 在工具场景下先输出 reasoning_content（思考），
-     * 然后要么输出 content（不调工具）要么输出 tool_calls（调工具），
-     * 两者互斥。利用这一特性在流中实时判断：遇 content 即透传，
-     * 遇 tool_calls 则收齐碎片合并后重启非流式 ReAct。</p>
+     * <p>构建 ToolExecutor 桥接 ActionFeignClient，将工具执行委托给远程 action 服务。
+     * 设置 tools/toolChoice/stream 后委托给 ReActEngine 处理流式检测和多轮循环。</p>
      */
-    private Flux<ServerSentEvent<String>> streamWithToolDetection(ChatContext context,
-                                                                   String traceId,
-                                                                   List<ToolDefinition> toolDefs) {
-        context.getRequest().setTools(toolDefs);
-        context.getRequest().setToolChoice("auto");
-        context.getRequest().setStream(true);
+    private Flux<ServerSentEvent<String>> reactWithReActEngine(ChatContext context, String traceId,
+                                                                List<ToolDefinition> toolDefs) {
+        lyjew.com.lyclaw.model.ChatRequest request = context.getRequest();
+        request.setTools(toolDefs);
+        request.setToolChoice("auto");
+        request.setStream(true);
 
-        ChatModel model = chatFacade.resolveModel(chatFacade.route(context.getRequest(), null));
         log.info(logJson("INFO", "llm_stream_detect", "RESPOND", traceId,
-                "Streaming with tool detection via " + model.provider() + ":" + model.model(), null));
+                "Streaming with tool detection via ReActEngine", null));
 
-        // 0=buffering(思考阶段), 1=relaying(纯文本流式), 2=tools_detected(等待重启)
-        int[] state = {0};
-        List<ModelResponse> buffer = new ArrayList<>();
-
-        return model.stream(context.getRequest())
-                .<ServerSentEvent<String>>handle((chunk, sink) -> {
-                    boolean hasContent = chunk.getContent() != null && !chunk.getContent().isEmpty();
-                    boolean hasToolCalls = chunk.getToolCalls() != null && !chunk.getToolCalls().isEmpty();
-
-                    if (state[0] == 2) {
-                        buffer.add(chunk);
-                        return;
-                    }
-
-                    if (state[0] == 1) {
-                        if (hasToolCalls) {
-                            state[0] = 2;
-                            buffer.add(chunk);
-                            log.warn("Tool call appeared after content streaming began - unusual");
-                            return;
-                        }
-                        if (hasContent) {
-                            sink.next(sseEvent("message", chunk.getContent()));
-                        }
-                        return;
-                    }
-
-                    // state[0] == 0: buffering thinking
-                    if (hasToolCalls) {
-                        state[0] = 2;
-                        buffer.add(chunk);
-                        sink.next(sseEvent("status", "Executing tool call..."));
-                        return;
-                    }
-                    if (hasContent) {
-                        state[0] = 1;
-                        sink.next(sseEvent("message", chunk.getContent()));
-                        return;
-                    }
-                    buffer.add(chunk); // thinking or empty
-                })
-                .concatWith(Flux.<ServerSentEvent<String>>defer(() -> {
-                    if (state[0] == 2) {
-                        return Mono.fromCallable(() -> {
-                            context.getRequest().setStream(false);
-                            ModelResponse merged = model.mergeChunks(buffer);
-                            log.info(logJson("INFO", "tool_detected_in_stream", "RESPOND", traceId,
-                                    "Tools detected in stream, restarting ReAct. tools=" +
-                                            (merged.getToolCalls() != null
-                                                    ? merged.getToolCalls().stream()
-                                                            .map(ModelResponse.ToolCallRequest::getName).toList()
-                                                    : "[]"),
-                                    null));
-                            return runReActLoop(context, traceId, merged);
-                        }).subscribeOn(Schedulers.boundedElastic())
-                          .flatMapMany(result -> splitIntoEvents(result));
-                    }
-                    if (state[0] == 0) {
-                        ModelResponse merged = model.mergeChunks(buffer);
-                        String content = merged.getContent() != null ? merged.getContent() : "";
-                        if (!content.isEmpty()) {
-                            return Flux.<ServerSentEvent<String>>just(sseEvent("message", content));
-                        }
-                    }
-                    return Flux.empty();
-                }));
-    }
-
-    /** ReAct 循环，从已获取的首轮响应（可能来自流式检测）开始 */
-    private String runReActLoop(ChatContext context, String traceId, ModelResponse firstResponse) {
-        List<Message> messages = context.getRequest().getMessages();
-
-        // 首轮：处理已检测到的 tool_calls
-        if (firstResponse.hasToolCalls()) {
-            List<ToolCall> toolCalls = convertToolCalls(firstResponse);
-            messages.add(Message.builder()
-                    .role("assistant")
-                    .content(firstResponse.getContent() != null ? firstResponse.getContent() : "")
-                    .thinking(firstResponse.getThinking() != null ? firstResponse.getThinking() : "")
-                    .toolCalls(toolCalls)
-                    .build());
-
-            executeToolCalls(context, traceId, firstResponse.getToolCalls(), messages);
-        } else {
-            // 无工具调用 → 直接返回内容
-            String content = firstResponse.getContent() != null ? firstResponse.getContent() : "";
-            messages.add(Message.builder().role("assistant").content(content).build());
-            return content;
-        }
-
-        // 后续轮次（非流式）
-        for (int round = 1; round < MAX_TOOL_ROUNDS; round++) {
-            log.info(logJson("INFO", "react_round", "RESPOND", traceId,
-                    "Round " + (round + 1) + " (non-streaming)", null));
-
-            ModelResponse response;
-            try {
-                response = chatFacade.chat(context.getRequest());
-            } catch (Exception e) {
-                log.error("LLM call failed in round {}: {}", round, e.getMessage(), e);
-                return "[LLM调用失败: " + e.getMessage() + "]";
-            }
-
-            if (!response.hasToolCalls()) {
-                String content = response.getContent() != null ? response.getContent() : "";
-                messages.add(Message.builder().role("assistant").content(content).build());
-                return content;
-            }
-
-            List<ToolCall> toolCalls = convertToolCalls(response);
-            messages.add(Message.builder()
-                    .role("assistant")
-                    .content(response.getContent() != null ? response.getContent() : "")
-                    .thinking(response.getThinking() != null ? response.getThinking() : "")
-                    .toolCalls(toolCalls)
-                    .build());
-
-            executeToolCalls(context, traceId, response.getToolCalls(), messages);
-        }
-
-        return "[已达最大工具调用轮数(" + MAX_TOOL_ROUNDS + ")]";
-    }
-
-    private void executeToolCalls(ChatContext context, String traceId,
-                                  List<ModelResponse.ToolCallRequest> reqs,
-                                  List<Message> messages) {
-        for (ModelResponse.ToolCallRequest req : reqs) {
-            log.info(logJson("INFO", "tool_executing", "RESPOND", traceId,
-                    "Executing tool: name=" + req.getName() + " id=" + req.getId()
-                            + " args=" + req.getArguments(), null));
-
+        // 构建工具执行器，桥接 ActionFeignClient
+        ToolExecutor toolExecutor = (toolName, toolCallId, arguments) -> {
             Map<String, Object> args;
             try {
-                if (req.getArguments() != null && !req.getArguments().isEmpty()) {
-                    args = objectMapper.readValue(req.getArguments(),
+                if (arguments != null && !arguments.isEmpty()) {
+                    args = objectMapper.readValue(arguments,
                             new TypeReference<Map<String, Object>>() {});
                 } else {
                     args = Collections.emptyMap();
                 }
             } catch (Exception e) {
                 log.error("工具参数JSON解析失败: tool={} args={} error={}",
-                        req.getName(), req.getArguments(), e.getMessage(), e);
+                        toolName, arguments, e.getMessage(), e);
                 args = Collections.emptyMap();
             }
 
             ToolExecuteRequest execReq = ToolExecuteRequest.builder()
-                    .toolName(req.getName())
+                    .toolName(toolName)
                     .args(args)
-                    .sessionId(context.getRequest().getSessionId())
+                    .sessionId(request.getSessionId())
                     .build();
 
             try {
                 ToolExecutionResult result = actionFeignClient.executeTool(execReq);
-                String toolOutput = result.isSuccess()
-                        ? result.getResult()
-                        : "Error: " + result.getError();
-                messages.add(Message.builder()
-                        .role("tool")
-                        .toolCallId(req.getId())
-                        .content(toolOutput)
-                        .build());
                 log.info(logJson("INFO", "tool_executed", "RESPOND", traceId,
-                        "tool=" + req.getName() + " success=" + result.isSuccess(), null));
+                        "tool=" + toolName + " success=" + result.isSuccess(), null));
+                return result.isSuccess() ? result.getResult() : "Error: " + result.getError();
             } catch (Exception e) {
-                messages.add(Message.builder()
-                        .role("tool")
-                        .toolCallId(req.getId())
-                        .content("Tool error: " + e.getMessage())
-                        .build());
-                log.error("工具Feign调用失败: tool={} error={}",
-                        req.getName(), e.getMessage(), e);
+                log.error("工具Feign调用失败: tool={} error={}", toolName, e.getMessage(), e);
+                return "Tool error: " + e.getMessage();
             }
-        }
+        };
+
+        return reActEngine.executeStream(chatFacade, request, toolExecutor);
     }
 
     /** 简单聊天 — 无工具，真流式逐 token 推送 */
@@ -330,41 +187,6 @@ public class RespondStage extends PipelineStageBase {
                         }
                     });
         });
-    }
-
-    /** 将文本按自然边界拆分，ReAct 最终结果用此模拟渐进渲染 */
-    private Flux<ServerSentEvent<String>> splitIntoEvents(String text) {
-        if (text == null || text.isEmpty()) {
-            return Flux.empty();
-        }
-        List<ServerSentEvent<String>> events = new ArrayList<>();
-        StringBuilder buf = new StringBuilder();
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            buf.append(c);
-            if (c == '\n' || c == '。' || c == '！' || c == '？' || c == '；') {
-                String chunk = buf.toString().stripTrailing();
-                if (!chunk.isEmpty()) {
-                    events.add(sseEvent("message", chunk));
-                }
-                buf.setLength(0);
-            }
-        }
-        String last = buf.toString().stripTrailing();
-        if (!last.isEmpty()) {
-            events.add(sseEvent("message", last));
-        }
-        return Flux.fromIterable(events);
-    }
-
-    private List<ToolCall> convertToolCalls(ModelResponse response) {
-        return response.getToolCalls().stream()
-                .<ToolCall>map(req -> ToolCall.builder()
-                        .toolCallId(req.getId())
-                        .name(req.getName())
-                        .arguments(req.getArguments())
-                        .build())
-                .toList();
     }
 
     /**
