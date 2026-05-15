@@ -81,6 +81,9 @@ public class SecurityCheckStage extends PipelineStageBase {
                 context.getTracing().beginStage("INTERCEPT");
                 long t2 = System.currentTimeMillis();
 
+                log.info("\n\n══════════════════════════════════");
+                log.info("  [阶段 1/6] 安全检查 - 身份验证与内容过滤 [INTERCEPT]");
+                log.info("══════════════════════════════════");
                 log.info(logJson("INFO", "stage_start", "INTERCEPT", traceId,
                         "Running security checks and content filter", null));
                 sink.next(sseEvent("intercept_start", "Running security checks and content filter"));

@@ -8,7 +8,17 @@
         </encoder>
     </appender>
 
+    <!-- 业务日志：DEBUG级别，可以看到每个阶段的内部细节 -->
+    <logger name="lyjew.com.lyclaw.orchestration" level="DEBUG"/>
+
+    <!-- Feign HTTP调用日志：DEBUG=请求响应体全量, INFO=只记录URL和状态码(生产环境用INFO) -->
     <logger name="lyjew.com.lyclaw.feign" level="DEBUG"/>
+
+    <!-- 框架噪音：只打印WARN及以上 -->
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="reactor.netty" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+    <logger name="com.netflix" level="WARN"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

@@ -72,6 +72,9 @@ public class ReflectionStage extends PipelineStageBase {
                 context.getTracing().beginStage("REFLECT");
                 long t5 = System.currentTimeMillis();
 
+                log.info("\n\n══════════════════════════════════");
+                log.info("  [阶段 3/6] 反思评估 - 评估计划质量并生成调整建议 [REFLECT]");
+                log.info("══════════════════════════════════");
                 log.info(logJson("INFO", "stage_start", "REFLECT", traceId,
                         "Reflecting on execution results", null));
                 sink.next(sseEvent("reflect_start", "Reflecting on execution results"));

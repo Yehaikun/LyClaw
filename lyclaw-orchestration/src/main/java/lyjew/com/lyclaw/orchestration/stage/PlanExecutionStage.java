@@ -117,6 +117,9 @@ public class PlanExecutionStage extends PipelineStageBase {
                 pipelineCtx.getCurrentStage().set("PLAN");
                 context.getTracing().beginStage("PLAN");
                 long t3 = System.currentTimeMillis();
+                log.info("\n\n══════════════════════════════════");
+                log.info("  [阶段 2/6] 任务规划 - 分解用户意图为执行计划 [PLAN]");
+                log.info("══════════════════════════════════");
                 log.info(logJson("INFO", "stage_start", "PLAN", traceId,
                         "Planning task decomposition", null));
                 sink.next(sseEvent("plan_start", "Planning task decomposition"));

@@ -221,6 +221,7 @@ public class ToolSandboxImpl implements ToolSandbox {
                     future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             return convertResult(tool.getName(), innerResult, startTime);
         } catch (TimeoutException e) {
+            log.error("RESTRICTED级别工具执行超时({}秒): tool={}", DEFAULT_TIMEOUT_SECONDS, tool.getName(), e);
             return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)

@@ -72,6 +72,9 @@ public class ContextBuildStage extends PipelineStageBase {
                 context.getTracing().beginStage("CONTEXT_BUILD");
                 long t1 = System.currentTimeMillis();
 
+                log.info("\n\n══════════════════════════════════");
+                log.info("  [阶段 0/6] 上下文构建 - 加载会话并检索记忆 [CONTEXT_BUILD]");
+                log.info("══════════════════════════════════");
                 log.info(logJson("INFO", "stage_start", "CONTEXT_BUILD", traceId,
                         "Loading session and retrieving memories", null));
                 sink.next(sseEvent("context_build_start", "Loading session and retrieving memories"));

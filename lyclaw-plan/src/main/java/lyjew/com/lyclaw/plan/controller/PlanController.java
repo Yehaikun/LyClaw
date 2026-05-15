@@ -11,6 +11,8 @@ import lyjew.com.lyclaw.task.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.*;
 
 /**
@@ -59,6 +61,7 @@ import java.util.*;
  * </ul>
  * </p>
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/plan")
 public class PlanController {
@@ -114,8 +117,10 @@ public class PlanController {
      */
     @PostMapping("/plan")
     public ResponseEntity<Map<String, Object>> plan(@RequestBody PlanRequest request) {
+        log.info("收到规划请求: strategy={}, userIntent={}", request.getStrategy(), request.getUserIntent());
         ChatContext context = buildContext(request);
         TaskPlanner planner = selectPlanner(request.getStrategy());
+        log.debug("使用规划器: {}", planner.getClass().getSimpleName());
         TaskPlan plan = planner.plan(context, request.getUserIntent());
         PlanValidator.ValidationResult validation = planValidator.validate(plan);
 

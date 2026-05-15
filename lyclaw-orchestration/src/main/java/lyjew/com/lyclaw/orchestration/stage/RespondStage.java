@@ -74,6 +74,9 @@ public class RespondStage extends PipelineStageBase {
             ReflectionReport report = pipelineCtx.getReportRef().get();
             List<String> toolResults = pipelineCtx.getToolResults();
 
+            log.info("\n\n══════════════════════════════════");
+            log.info("  [阶段 4/6] 响应生成 - ReAct循环(LLM推理+工具调用) [RESPOND]");
+            log.info("══════════════════════════════════");
             log.info(logJson("INFO", "stage_start", "RESPOND", traceId,
                     "Starting response generation", null));
             pipelineCtx.getCurrentStage().set("RESPOND");
@@ -86,7 +89,7 @@ public class RespondStage extends PipelineStageBase {
                         toolDefs.size() + " tools from action service: " +
                                 toolDefs.stream().map(ToolDefinition::getName).toList(), null));
             } catch (Exception e) {
-                log.warn("Failed to fetch tools from action service: {}", e.getMessage());
+                log.error("获取工具列表失败，将无工具可用: {}", e.getMessage(), e);
                 toolDefs = Collections.emptyList();
             }
 
@@ -273,8 +276,8 @@ public class RespondStage extends PipelineStageBase {
                     args = Collections.emptyMap();
                 }
             } catch (Exception e) {
-                log.warn("Failed to parse tool arguments: tool={} args={} error={}",
-                        req.getName(), req.getArguments(), e.getMessage());
+                log.error("工具参数JSON解析失败: tool={} args={} error={}",
+                        req.getName(), req.getArguments(), e.getMessage(), e);
                 args = Collections.emptyMap();
             }
 
@@ -302,8 +305,8 @@ public class RespondStage extends PipelineStageBase {
                         .toolCallId(req.getId())
                         .content("Tool error: " + e.getMessage())
                         .build());
-                log.warn("Tool execution error (feign): tool={} error={}",
-                        req.getName(), e.getMessage());
+                log.error("工具Feign调用失败: tool={} error={}",
+                        req.getName(), e.getMessage(), e);
             }
         }
     }

@@ -13,6 +13,8 @@ import lyjew.com.lyclaw.task.TaskPlan;
 
 import org.springframework.stereotype.Service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -44,6 +46,7 @@ import java.util.regex.Pattern;
  * @see TaskPlan
  * @see PlanGraph
  */
+@Slf4j
 @Service
 public class DAGTaskPlanner extends AbstractTaskPlanner {
 
@@ -91,6 +94,7 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
     public TaskPlan plan(ChatContext context, String userIntent) {
         String intent = extractIntent(context, userIntent);
         int complexity = assessComplexity(intent);
+        log.info("DAG规划: userIntent={}, complexity={}", intent.length() > 80 ? intent.substring(0, 80) + "..." : intent, complexity);
 
         return switch (complexity) {
             case 0, 1 -> buildSimplePlan(intent);
@@ -197,6 +201,7 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
      */
     @Override
     public PlanGraph decompose(TaskNode rootTask, DecompositionStrategy strategy) {
+        log.debug("DAG分解: rootTask={}, strategy={}", rootTask != null ? rootTask.getNodeId() : "null", strategy);
         if (rootTask == null || strategy == null) {
             PlanGraph graph = new PlanGraph();
             if (rootTask != null) {

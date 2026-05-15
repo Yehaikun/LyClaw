@@ -10,6 +10,7 @@ import lyjew.com.lyclaw.reflect.ReflectionEngine;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
 import lyjew.com.lyclaw.reflect.StrategyAdjuster;
 import lyjew.com.lyclaw.reflect.StrategyAdjustment;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,6 +32,7 @@ import java.util.*;
  * {@link ReflectionEngine}、{@link QualityEvaluator}、{@link ErrorDetector}。
  * 这种"轻薄控制器"设计将业务逻辑完全委托给服务层，便于单元测试和组件替换。</p>
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/reflect")
 public class ReflectController {
@@ -73,6 +75,8 @@ public class ReflectController {
      */
     @PostMapping("/reflect")
     public ReflectionReport reflect(@RequestBody ReflectRequest request) {
+        log.info("收到反思请求: sessionId={}, output长度={}", request.getSessionId(),
+                request.getOutput() != null ? request.getOutput().length() : 0);
         // 构建质量评估标准（默认开启全部四个维度）
         QualityCriteria criteria = QualityCriteria.builder()
                 .taskDescription(request.getContext() != null ? request.getContext() : "")

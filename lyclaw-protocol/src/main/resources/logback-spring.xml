@@ -8,6 +8,12 @@
         </encoder>
     </appender>
 
+    <logger name="lyjew.com.lyclaw.protocol" level="DEBUG"/>
+
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="reactor.netty" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>

@@ -339,6 +339,7 @@ public class ActionExecutorImpl implements ActionExecutor {
             }
         } catch (TimeoutException e) {
             long elapsed = System.currentTimeMillis() - startTime;
+            log.error("节点执行超时(30秒): nodeId={} type={}", nodeId, type, e);
             return ActionResult.builder()
                     .nodeId(nodeId)
                     .success(false)

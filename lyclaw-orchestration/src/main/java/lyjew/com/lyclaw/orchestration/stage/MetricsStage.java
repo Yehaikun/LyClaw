@@ -135,6 +135,9 @@ public class MetricsStage extends PipelineStageBase {
 
             long totalDuration = context.getTracing().getTotalDuration();
             context.getTracing().markEnd();
+            log.info("\n\n══════════════════════════════════");
+            log.info("  [阶段 5/6] 指标采集 - 管线收尾与指标上报 [METRICS]");
+            log.info("══════════════════════════════════");
             log.info(logJson("INFO", "pipeline_complete", "ORCHESTRATION_TOTAL", traceId,
                     "Orchestration completed: " + taskCount + " tasks", totalDuration));
 
