@@ -250,7 +250,12 @@ public class DefaultReActEngine implements ReActEngine {
                 });
     }
 
-    /** 后续 ReAct 轮次（第 1..MAX_TOOL_ROUNDS-1 轮），每轮仍发出 tool_call 事件 */
+    /**
+     * 后续 ReAct 轮次（第 1..MAX_TOOL_ROUNDS-1 轮）。
+     *
+     * <p>使用 stream=true 调用 LLM 进行工具检测：若检测到 tool_calls 则处理并继续；
+     * 若无工具调用，文本通过真流式逐 token 推送给前端，不再走 splitIntoEvents 模拟。</p>
+     */
     private Flux<ServerSentEvent<String>> continueReActRounds(
             ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor, int round) {
         if (round >= MAX_TOOL_ROUNDS) {
@@ -259,33 +264,93 @@ public class DefaultReActEngine implements ReActEngine {
 
         return Flux.defer(() -> {
             log.debug("ReAct stream round {}/{}", round + 1, MAX_TOOL_ROUNDS);
-            ModelResponse response;
-            try {
-                response = chatFacade.chat(request);
-            } catch (Exception e) {
-                log.error("ReAct LLM call failed in stream round {}: {}", round, e.getMessage(), e);
-                return Flux.just(sseEvent("message", "[LLM调用失败: " + e.getMessage() + "]"));
-            }
+            request.setStream(true);
+            ChatModel model = chatFacade.resolveModel(chatFacade.route(request, null));
 
-            if (!response.hasToolCalls()) {
-                String content = response.getContent() != null ? response.getContent() : "";
-                request.getMessages().add(Message.builder()
-                        .role("assistant")
-                        .content(content)
-                        .thinking(response.getThinking() != null ? response.getThinking() : "")
-                        .build());
-                return splitIntoEvents(content);
-            }
+            int[] state = {0};
+            List<ModelResponse> buffer = new ArrayList<>();
+            StringBuilder contentCollector = new StringBuilder();
 
-            request.getMessages().add(Message.builder()
-                    .role("assistant")
-                    .content(response.getContent() != null ? response.getContent() : "")
-                    .thinking(response.getThinking() != null ? response.getThinking() : "")
-                    .toolCalls(toMessageToolCalls(response))
-                    .build());
+            return model.stream(request)
+                    .<ServerSentEvent<String>>handle((chunk, sink) -> {
+                        boolean hasContent = chunk.getContent() != null && !chunk.getContent().isEmpty();
+                        boolean hasToolCalls = chunk.getToolCalls() != null && !chunk.getToolCalls().isEmpty();
 
-            return emitRoundToolCallEvents(response.getToolCalls(), toolExecutor, request.getMessages())
-                    .concatWith(continueReActRounds(chatFacade, request, toolExecutor, round + 1));
+                        if (state[0] == 2) { // 已在收集模式
+                            buffer.add(chunk);
+                            return;
+                        }
+                        if (state[0] == 1) { // 已在真流式透传
+                            if (hasToolCalls) {
+                                state[0] = 2;
+                                buffer.add(chunk);
+                                return;
+                            }
+                            if (hasContent) {
+                                contentCollector.append(chunk.getContent());
+                                sink.next(sseEvent("message", chunk.getContent()));
+                            }
+                            return;
+                        }
+                        // state[0] == 0: 缓冲思考
+                        if (hasToolCalls) {
+                            state[0] = 2;
+                            buffer.add(chunk);
+                            return;
+                        }
+                        if (hasContent) {
+                            state[0] = 1;
+                            contentCollector.append(chunk.getContent());
+                            sink.next(sseEvent("message", chunk.getContent()));
+                            return;
+                        }
+                        buffer.add(chunk);
+                    })
+                    .concatWith(Flux.<ServerSentEvent<String>>defer(() -> {
+                        if (state[0] == 2) {
+                            // 检测到工具调用 → 合并碎片，发 tool_call 事件，继续下一轮
+                            request.setStream(false);
+                            ModelResponse merged = model.mergeChunks(buffer);
+                            String textContent = merged.getContent() != null ? merged.getContent() : "";
+                            Flux<ServerSentEvent<String>> preTextFlux = textContent.isEmpty()
+                                    ? Flux.empty()
+                                    : Flux.just(sseEvent("message", textContent));
+
+                            request.getMessages().add(Message.builder()
+                                    .role("assistant")
+                                    .content(textContent)
+                                    .thinking(merged.getThinking() != null ? merged.getThinking() : "")
+                                    .toolCalls(toMessageToolCalls(merged))
+                                    .build());
+
+                            return preTextFlux
+                                    .concatWith(emitRoundToolCallEvents(merged.getToolCalls(), toolExecutor, request.getMessages()))
+                                    .concatWith(continueReActRounds(chatFacade, request, toolExecutor, round + 1));
+                        }
+                        if (state[0] == 1) {
+                            // 真流式文本已逐 token 发出 → 写入消息历史
+                            String content = contentCollector.toString();
+                            if (!content.isEmpty()) {
+                                request.getMessages().add(Message.builder()
+                                        .role("assistant")
+                                        .content(content)
+                                        .build());
+                            }
+                            return Flux.empty();
+                        }
+                        // state[0] == 0: 仅思考内容 → 合并后若有文本则单次发出
+                        ModelResponse merged = model.mergeChunks(buffer);
+                        String content = merged.getContent() != null ? merged.getContent() : "";
+                        if (!content.isEmpty()) {
+                            request.getMessages().add(Message.builder()
+                                    .role("assistant")
+                                    .content(content)
+                                    .thinking(merged.getThinking() != null ? merged.getThinking() : "")
+                                    .build());
+                            return Flux.just(sseEvent("message", content));
+                        }
+                        return Flux.empty();
+                    }));
         });
     }
 
