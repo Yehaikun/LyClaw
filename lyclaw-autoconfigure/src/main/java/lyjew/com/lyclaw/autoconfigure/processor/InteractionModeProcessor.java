@@ -82,7 +82,7 @@ public class InteractionModeProcessor implements BeanPostProcessor, SmartInitial
     /**
      * 获取默认交互模式引擎。
      *
-     * @return 默认引擎，无可用引擎时返回 null
+     * @return 默认引擎，无可用引擎时返回 null,防御性编程：实际几乎不可能为null
      */
     public ReActEngine getDefault() {
         if (defaultName != null) {
