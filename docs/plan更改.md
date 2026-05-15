@@ -373,7 +373,7 @@ public class LLMTaskPlanner extends AbstractTaskPlanner {
                       "nodeId": "step-0",
                       "type": "ANALYZE|RESEARCH|DESIGN|PREPARE|EXECUTE|INTEGRATE|VERIFY",
                       "description": "what this step does in detail",
-                      "requiredTools": ["exact_tool_name"],
+                      "requiredTools": [],
                       "dependencies": ["step-0"],
                       "timeoutMs": 30000
                     }
@@ -387,8 +387,9 @@ public class LLMTaskPlanner extends AbstractTaskPlanner {
                 - **type**: Must be one of ANALYZE, RESEARCH, DESIGN, PREPARE, EXECUTE, INTEGRATE, VERIFY.
                 - **description**: Clear, actionable description in the user's language.
                   Include what needs to be done, not how.
-                - **requiredTools**: Array of tool names from the Available Tools table above.
-                  Use empty array [] if no tools are needed.
+                - **requiredTools**: Leave as empty array [] unless a step absolutely requires
+                  a specific tool to proceed. Tool selection happens at execution time,
+                  not planning time, so the planner should rarely prescribe tools.
                 - **dependencies**: Array of nodeIds that must complete before this node can start.
                   Use empty array [] for the first node(s).
                 - **timeoutMs**: Estimated timeout in milliseconds. Use 30000 for quick tasks,
@@ -1245,8 +1246,10 @@ private Mono<NodeResult> executeDAGNode(
                         .build();
 
         try {
-            // 调 LLM，如果返回 tool_calls 则进入 ReAct 循环
-            ModelResponse response = chatFacade.chat(localRequest);
+            // 路由解析模型 → 构造 ChatModel → 调 LLM
+            RoutingDecision decision = chatFacade.route(localRequest, null);
+            ChatModel model = chatFacade.resolveModel(decision);
+            ModelResponse response = model.chat(localRequest);
 
             String finalOutput;
             if (response.hasToolCalls()) {
@@ -1285,6 +1288,24 @@ private Mono<NodeResult> executeDAGNode(
 不能——下游只看到上游的摘要。如果 INTEGRATE 节点需要上游 RESEARCH 节点的完整工具调用结果，
 应该通过 `pipelineCtx.getToolResults()` 获取，而不是从消息列表中解析。
 如果确实需要完整交互记录，把 `NodeResult` 的 `output` 存入 `pipelineCtx` 即可。
+
+**DAG 节点执行期间的 SSE 事件？**
+
+当前设计用 `stream=false` 同步调 LLM，工具调用发生在 `executeDAGNode` 内部的
+`Mono.fromCallable` 中，前端在此期间收不到任何 `tool_call` SSE 事件——只会看到
+"正在执行..."的静态状态。这是有意为之的简化：DAG 节点内部如果复用
+`ReActEngine.executeStream()` 的 Flux 链，需要解决以下问题：
+
+1. **流式 Flux 嵌入 `Mono.fromCallable`** — executeDAGNode 返回 Mono<NodeResult>，
+   流式 Flux 无法自然地塞进同步返回签名。
+2. **并行节点的 SSE 事件交叉** — 同层多个节点并行时，如果每个都推送自己的
+   tool_call 事件，前端收到的顺序会混乱。
+
+**改进方向**：后续可以把 executeDAGNode 改为返回
+`Flux<ServerSentEvent<String>>` + `Mono<NodeResult>` 的组合（用 `Flux.concat`
+或 `Flux.mergeSequential`），在每个 DAG 节点的 SSE 事件前加上节点 ID 前缀，
+前端按节点 ID 分组展示。但当前版本先以保证正确性优先——DAG 并行执行本身
+已是主要收益。
 
 **runReActLoopWithMessages 与现有 runReActLoop 的区别？**
 
@@ -1429,11 +1450,14 @@ public class ReflectionStage extends PipelineStageBase {
 ContextBuild(0) → SecurityCheck(1) → PlanExecution(2) → Respond(3) → Reflection(4) → Metrics(5)
 ```
 
-ReflectionStage 的 `setPipelineOk(true)` 原本是放行 RespondStage 的门控。交换后 Reflection 在 Respond 后面，这个门控不再需要。但为了保持代码兼容性（今后可能有其他 stage 检查 pipelineOk），可保留调用。
+ReflectionStage 的 `setPipelineOk(true)` 原本是放行 RespondStage 的门控。交换后 Reflection 在 Respond 后面，这个门控不再起作用。
 
-**RespondStage 原先的 `pipelineOk` 检查**：
+**PipelineOk 门控调整方案（三处改动）**：
 
-现在 RespondStage 是先于 ReflectionStage 运行了。在 DAG 模式下，需要确保 RespondStage 自身的 `pipelineOk` 检查不会拒绝自己（PlanExecutionStage 不应该提前置 false）。这个检查在新顺序下变为：**前置阶段（PlanExecution）失败时才跳过 Respond**，逻辑仍然成立。
+1. **`PipelineContext` 默认值**：`pipelineOk` 字段初始值改为 `true`（默认放行）。如果 PlanExecutionStage 失败（catch 分支），显式设 `pipelineCtx.setPipelineOk(false)` 阻止 RespondStage 执行无意义回复。
+2. **PlanExecutionStage 成功路径末尾加 `pipelineCtx.setPipelineOk(true)`**（显式放行，与默认值一致，起文档作用）。
+3. **ReflectionStage 移除 `setPipelineOk(true)` 调用** — 不再承担门控职责，仅为评估阶段。仅 catch 分支中保留 `setPipelineOk(true)` 防止 MetricsStage 被跳过。
+4. **RespondStage 的 `isPipelineOk()` 检查含义变为**："PlanExecutionStage 是否成功完成"。PipelineContext 默认 true，仅当前置阶段显式置 false 时才跳过。
 
 ---
 
