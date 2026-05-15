@@ -24,106 +24,275 @@
 
 ## 1. 业界调研：TraceId 设计方案
 
-### 1.1 各大项目的 TraceId 格式对比
+分布式链路追踪的开山之作是 Google 2010 年发表的 **《Dapper, a Large-Scale Distributed Systems Tracing Infrastructure》** 论文。它定义了现代追踪系统的三个核心概念：
 
-#### Apache SkyWalking
+| 概念 | 说明 | Dapper 格式 |
+|------|------|------------|
+| **TraceId** | 一次完整请求链路的全局唯一标识，贯穿所有服务 | 64-bit 整数 |
+| **SpanId** | 链路中每个操作单元的唯一标识 | 64-bit 整数 |
+| **ParentSpanId** | 父 Span 的 ID，通过 NULL/非NULL 构建调用树 | 64-bit 整数 |
+
+Dapper 还确立了四个设计目标：**低开销**（根 Span ~204ns）、**应用级透明**（植入 RPC/线程库，业务零感知）、**可伸缩**（自适应采样）、**带外收集**（Span 先写本地日志，异步汇聚）。
+
+本节基于 Dapper 的思想，逐一分析各主流项目的 TraceId 设计方案。
+
+### 1.1 Apache SkyWalking
 
 ```
-格式：{INSTANCE_UUID}.{THREAD_ID}.{TIMESTAMP}{SEQ}
-示例：b3e8f2a1c6d4.145.17782070341650001
-长度：~50 字符
+格式：{PROCESS_ID}.{THREAD_ID}.{TIMESTAMP * 10000 + SEQ}
+示例：a4ec6fc8ccab4bb4b682064698cc97e6.74.16218381104550009
+长度：约 50 字符
 ```
 
-**结构解析：**
-- `INSTANCE_UUID`（32 位 hex）：服务实例唯一标识，JVM 启动时生成 UUID 去连字符
-- `THREAD_ID`（变长 1-3 位）：`Thread.currentThread().getId()`，无锁高性能
-- `TIMESTAMP`（13 位毫秒时间戳）：`System.currentTimeMillis()`
-- `SEQ`（4 位序号）：ThreadLocal 自增，0-9999 循环
+**源码级结构解析**（基于 SkyWalking 9.x `GlobalIdGenerator`）：
 
-**时间回拨处理（关键设计）：** SkyWalking 的 `IDContext` 内部类实现了时间回拨补偿算法——当检测到 `currentTimeMillis < lastTimestamp` 时，用补偿值（1, 2, 3...）替代真实时间戳，保证 ID 单调递增。
+- **PROCESS_ID**（32 位 hex）：JVM 启动时 `UUID.randomUUID().toString().replaceAll("-", "")` 静态初始化，实例级唯一
+- **THREAD_ID**（变长 1-3 位十进制）：`Thread.currentThread().getId()`
+- **TIMESTAMP** × **10000 + SEQ**（18-19 位十进制）：时间戳左移 4 位，低 4 位放线程自增序号（0-9999）
 
-**优点：** 无需 IP 查詢，纯内存生成，高吞吐（每线程每秒 10000 个 ID）。ThreadLocal 无竞争。
-**缺点：** 无法反向定位到机器（instance UUID 是随机值），长度偏长。
+**时间回拨保护（两个版本）：**
+
+| 版本 | 策略 | 实现 |
+|------|------|------|
+| 老版本（≤8.x） | 补偿值递增 | `lastShiftValue++`（1, 2, 3...），返回补偿值代替真实时间戳 |
+| 新版本（9.x+） | 随机数 | `ThreadLocalRandom.current().nextInt()`，回拨时用随机数替代 |
+
+**为什么 `× 10000`？** 相当于给时间戳预留 4 位十进制空间给序号。这样可以从 ID 反推出生成时间：`时间戳 ≈ 第三段 / 10000`。
+
+**跨进程传播协议（sw8）：**
+
+```
+sw8: 1-TRACEID-SEGMENTID-SPANID-PARENT_SERVICE-PARENT_INSTANCE-PARENT_ENDPOINT-PEER
+```
+
+8 个字段以 `-` 分隔，所有字符串值 **BASE64 编码**。每个字段最多 50-150 UTF-8 字符。额外扩展头 `sw8-x` 控制追踪模式。
+
+**适用场景：** 已部署 SkyWalking OAP 的中大型集群。Agent 字节码注入，业务代码零侵入。
+
+### 1.2 Jaeger + OpenTelemetry
 
 #### Jaeger
 
 ```
-格式：{HEX_128BIT}
+格式：128-bit 随机 hex（32 字符）或 64-bit 整数（历史）
 示例：3c0e4b6f1a9d2e8b4c7a5f3d1e6b8a2c
-长度：32 字符（128-bit hex）
+传播头：uber-trace-id: {traceId}:{spanId}:{parentSpanId}:{flags}
 ```
 
-**生成策略：** 随机 128-bit + Thrift 协议传播。Jaeger 客户端生成完全随机的 128-bit traceId（高位 + 低位），没有嵌入元信息。定位机器需要依赖 Jaeger Collector 的 `jaeger-agent` 上报 hostname。
+Jaeger 的 traceId 完全随机，不嵌入元信息。128-bit 空间保证概率唯一。排查时依赖 Jaeger Query UI 反查 Collector 上报的 hostname/timestamp。
 
-**优点：** 全局唯一概率极高（2^128 空间），不暴露机器信息。
-**缺点：** 纯随机无法反查——看到一条 traceId 无法知道它来自哪个实例、什么时间生成的。排查问题时需要先查 Jaeger UI 反查元数据。
-
-#### W3C TraceContext 标准
+#### OpenTelemetry（CNCF 标准，2024+ 事实标准）
 
 ```
-格式：{VERSION}-{TRACE_ID}-{PARENT_SPAN_ID}-{TRACE_FLAGS}
-示例：00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
-长度：55 字符
+格式：W3C TraceContext 128-bit hex（32 字符）
+传播头：traceparent: 00-{traceId(32hex)}-{spanId(16hex)}-{flags(2hex)}
+示例：traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 ```
 
-**字段说明：**
-- `version`（2 hex）：固定 `00`
-- `trace-id`（32 hex）：128-bit 全局唯一
-- `parent-id`（16 hex）：父 span 的 64-bit ID
-- `trace-flags`（2 hex）：采样标志（01=采样，00=不采样）
+**字段结构：**
 
-**HTTP 头名：** `traceparent`（标准头）+ `tracestate`（厂商扩展）
-**优点：** 跨厂商互操作标准，支持多租户扩展（`tracestate` 头）。
-**缺点：** trace-id 仍然是随机 hex，没有嵌入元信息。
+| 字段 | 长度 | 说明 |
+|------|------|------|
+| `version` | 2 hex | 固定 `00` |
+| `trace-id` | 32 hex | 128-bit，全局唯一 |
+| `parent-id` | 16 hex | 64-bit span ID |
+| `trace-flags` | 2 hex | 01=采样，00=不采样 |
 
-#### OpenTelemetry
+**设计哲学："标识（ID）与元数据分离"**——traceId 只管全局唯一。定位机器通过 Span 的 `Resource` 属性（`service.name`、`host.name`、`telemetry.sdk.version`）在 OTLP 上报时携带。
 
-OpenTelemetry 的 TraceId 格式遵循 W3C TraceContext 标准——128-bit 随机 hex。不嵌入元信息，但通过 `Resource` 概念（`service.name`、`host.name`、`telemetry.sdk.version` 等）在 Span 上报时携带机器信息。
+**扩展头：`tracestate`**——厂商可在 `tracestate` 头中追加自定义键值对（如 `vendor=abc,tenant=123`），实现多租户透传。
 
-**结论：** OpenTelemetry 将"标识（ID）"和"元数据（Resource/Span Attributes）"分离。ID 只管全局唯一，定位机器靠 Span Attributes。
-
-#### paicoding（技术派）— SelfTraceIdGenerator
+**2025 年部署推荐：OTLP Gateway 模式**
 
 ```
-格式：{IP_HEX}.{TIMESTAMP}.{PID}{SEQ}
-示例：0a8b15f6.1778207034160.4652861000
-长度：32 字符
+Application(SDK) → OTLP/gRPC(:4317) → OpenTelemetry Collector(Gateway)
+    → batch/filter/sample → Jaeger Backend → Elasticsearch → Jaeger Query UI(:16686)
 ```
 
-**结构解析：**
-- `IP_HEX`（8 hex）：`10.139.21.246` → 每段转 hex 补齐 2 位 → `0a8b15f6`
-- `TIMESTAMP`（13 位）：`Instant.now().toEpochMilli()`
-- `PID`（5 位零补齐）：`ManagementFactory.getRuntimeMXBean().getName().split("@")[0]`
-- `SEQ`（4 位）：static volatile Integer 自增，1000-9999 循环
+**采样策略（生产环境推荐）：**
 
-**优点：**
-- **可反查**：看到 traceId 就能定位到 IP、精确时间、进程号，排查问题时不需要再查配置中心
-- **紧凑**：32 字符，比 SkyWalking 短
-- **分段可读**：用 `.` 分隔成 3 段，人类可读
+| 采样率 | CPU 开销 | 网络开销 | 数据完整性 | 适用 |
+|--------|----------|----------|-----------|------|
+| 100% | +18% | 45 MB/s | 极高 | 预发/核心支付 |
+| 10% | +3% | 4.5 MB/s | 中等 | 普通接口 |
+| 1% | +0.8% | 0.5 MB/s | 低 | 高流量接口 |
 
-**缺点：**
-- IP 转 hex 依赖 `InetAddress.getLocalHost()`，多网卡时可能拿到错误的 IP
-- static volatile 自增（非 ThreadLocal），高并发下 CAS 竞争
+### 1.3 Zipkin + B3 传播
 
-### 1.2 设计理念分类
+```
+格式：64-bit hex（16 字符，历史）/ 128-bit hex（32 字符，现代）
+示例：80f198ee56343ba864fe8b2a57d3eff7
+```
 
-| 理念 | 代表 | 核心思路 | 适用场景 |
-|------|------|---------|---------|
-| **纯随机** | Jaeger, W3C | 128-bit 随机 hex，ID 只做唯一标识 | 大型分布式系统，需要 Collector 聚合 |
-| **元信息嵌入** | paicoding, SkyWalking（部分） | ID 内嵌入 IP/时间/PID，支持反向定位 | 中小规模，希望从日志直接定位机器 |
-| **时间有序** | Snowflake 变体 | 时间戳在前，天然按时间排序 | 需要数据库索引友好的场景 |
+**两种传播模式：**
 
-### 1.3 LyClaw 的选择：元信息嵌入 + 时间回拨保护
+**多 Header 模式（B3）：**
 
-LyClaw 是中小型项目（5-8 个微服务），没有部署 Jaeger Collector 或 SkyWalking OAP。这意味着**必须能从日志里直接定位机器和时间**——否则排查问题时需要额外查 Nacos/配置中心。
+| Header | 说明 |
+|--------|------|
+| `X-B3-TraceId` | 全局 trace ID（必须） |
+| `X-B3-SpanId` | 当前 span ID（必须） |
+| `X-B3-ParentSpanId` | 父 span ID（root span 无此头） |
+| `X-B3-Sampled` | 1=采样，0=不采样 |
+| `X-B3-Flags` | 1=debug（强制采样） |
 
-**决策：采用 paicoding 的 `IP_HEX.TIMESTAMP.PIDSEQ` 格式，并引入 SkyWalking 的时间回拨保护机制。**
+**单 Header 模式（b3）：**
+```
+b3: {TraceId}-{SpanId}-{SamplingState}-{ParentSpanId}
+示例：4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-1
+```
 
-融合方案：
-- **格式**：paicoding 的三段式 `IP_HEX.TIMESTAMP.PIDSEQ`
-- **时间回拨保护**：SkyWalking 的补偿值算法
-- **线程模型**：ThreadLocal 自增序号（SkyWalking 方案），替代 static volatile（paicoding 方案），消除 CAS 竞争
-- **PID 获取**：paicoding 的 `RuntimeMXBean.getName()`（JDK 标准，无需额外依赖）
+> **注意：** `X-` 前缀已按 HTTP 标准废弃，W3C `traceparent` 是推荐的替代方案。OpenTelemetry 的 `@opentelemetry/propagator-b3` 同时兼容两种模式以保持向后兼容。
+
+### 1.4 Spring Cloud Sleuth → Micrometer Tracing
+
+Spring 生态的追踪方案经历了代际更替：
+
+| 时期 | 方案 | 状态 |
+|------|------|------|
+| Boot 2.x | **Spring Cloud Sleuth** + Brave/Zipkin | 维护模式，已冻结 |
+| Boot 3.x+ | **Micrometer Tracing** + Brave/OpenTelemetry | 官方替代，活跃开发 |
+
+**日志格式（兼容 Boot 2.x Sleuth）：**
+```
+[${spring.application.name},%X{traceId},%X{spanId}]
+示例：[lyclaw-orchestration,5f3a2b1c8d4e6f7a,5f3a2b1c8d4e6f7a]
+```
+
+**Logback 配置（生产环境 JSON → Logstash）：**
+
+```xml
+<appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+    <destination>logstash:5044</destination>
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+        <providers>
+            <timestamp/><logLevel/><loggerName/><threadName/>
+            <mdc/>  <!-- 自动包含 traceId, spanId -->
+            <message/><stackTrace/>
+        </providers>
+    </encoder>
+</appender>
+```
+
+**跨线程解决方案：** `LazyTraceExecutor` 包装线程池，或使用 Alibaba TTL。
+
+### 1.5 阿里 EagleEye（鹰眼）
+
+阿里基于 Dapper 自研的链路追踪系统——"鹰眼"。
+
+**TraceId 格式：**
+- 32 位随机 hex（类似 UUID 去连字符），不嵌入元信息
+- 通过独立部署的鹰眼 Collector 聚合定位
+
+**SpanId 层级体系（独有设计）：**
+
+```
+格式：层级点分表示法
+示例：0, 0.1, 0.1.1, 0.2
+含义：根 Span → 第一个子调用 → 子调用的子调用 → 根 Span 的第二个子调用
+```
+
+这种层级 SpanId 的优势是**直接可读调用深度和兄弟顺序**，不需要查 parentSpanId 就能理解调用拓扑。
+
+**传播协议：**
+
+| Header | 说明 |
+|--------|------|
+| `EagleEye-TraceID` | 32 hex 全局唯一 |
+| `EagleEye-RpcID` | 层级 SpanId（如 `0.1.2`） |
+| `EagleEye-SpanID` | 当前 Span ID |
+| `EagleEye-pSpanID` | 父 Span ID |
+| `EagleEye-Sampled` | 采样标志 |
+| `EagleEye-UserData` | 业务透传数据（如 AB Test 标识，支持 put/putOnce） |
+
+**2024-2025 ARMS 协议优先级：** W3C > EagleEye > SkyWalking > Jaeger > Zipkin
+
+**可借鉴点：**
+- **层级 SpanId** — 直观可读调用拓扑，适合中小项目
+- **UserData 透传** — 在链路追踪的同时传递业务参数（如 AB 实验 ID），一举两得
+
+### 1.6 美团 MTrace
+
+美团的分布式追踪系统同样基于 Dapper。
+
+**TraceId：** 64 位整数，使用 UUID 异或生成。
+
+**四个埋点阶段（抽象为统一模型）：**
+
+```
+Client Send    → 客户端发起请求时埋点
+Server Receive → 服务端接收请求时埋点（回填 traceId/spanId）
+Server Send    → 服务端返回时埋点（归档上下文到异步上传队列）
+Client Receive → 客户端接收时埋点
+```
+
+**存储架构：**
+```
+Span → 异步队列（内存缓冲）→ 压缩（10:1）→ Kafka → HBase（按 traceId RowKey 实时查询）→ Hive（离线分析）
+```
+
+**跨线程传递：**
+- 自研 `TransmittableThreadLocal`（继承 InheritableThreadLocal 但支持线程池复用）
+- javaagent + instrument 无侵入增强 `ThreadPoolExecutor`、`ScheduledThreadPoolExecutor`、`ForkJoinTask`
+
+**可借鉴点：**
+- **四阶段埋点模型** — 通用抽象，任何 RPC/HTTP/MQ 调用都适用
+- **压缩传输** — 10 倍压缩比，大幅降低网络开销
+- **HBase RowKey = traceId** — 天然支持按 traceId 精确查询
+
+### 1.7 综合对比
+
+| 维度 | Google Dapper | SkyWalking | Jaeger/OTel | Zipkin B3 | 阿里 EagleEye | 美团 MTrace | paicoding | **LyClaw v1** |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **TraceId 格式** | 64-bit int | UUID.ThreadId.TimestampSeq | 128-bit hex | 64/128-bit hex | 32 hex | 64-bit int | IP.Timestamp.PIDSeq | **IP.Timestamp.PIDSeq** |
+| **长度** | ~19 位 | ~50 字符 | 32 字符 | 16/32 字符 | 32 字符 | ~19 位 | 32 字符 | **32 字符** |
+| **可排序** | ✅ 自增 | ✅ 含时间戳 | ❌ 随机 | ❌ 随机 | ❌ 随机 | ✅ 自增 | ✅ 时间戳在前 | ✅ |
+| **可反向定位** | ❌ | ✅ 线程+时间 | ❌ | ❌ | ❌ | ❌ | ✅ IP+时间+PID | ✅ |
+| **时间回拨保护** | N/A | ✅ 补偿值/随机数 | N/A | N/A | N/A | N/A | ❌ | **✅ SkyWalking 算法** |
+| **传播协议** | RPC 植入 | sw8 (BASE64) | W3C traceparent | B3 headers | EagleEye headers | RPC 植入 | 自定义 HTTP 头 | **X-Trace-Id + traceparent 双兼容** |
+| **SpanId 设计** | 64-bit int | 三段式同格式 | 16 hex | 16 hex | 层级点分 `0.1.2` | 签名生成 | 16 hex | **层级点分 `0.1.2`** |
+| **无外部依赖** | ✅ | ❌ 需 OAP | ❌ 需 Collector | ❌ 需 Collector | ❌ 需 Collector | ❌ 需全套 | ✅ | ✅ |
+| **线程模型** | ThreadLocal | ThreadLocal | Context API | Brave API | ThreadLocal | TTL | static volatile | **ThreadLocal** |
+
+### 1.8 两大设计流派与 LyClaw 的选择
+
+经过以上调研，可以归纳出两大设计流派和一条第三条路：
+
+```
+纯随机派                       元信息嵌入派
+(Jaeger/W3C/Zipkin)            (paicoding/SkyWalking)
+┌────────────────────┐         ┌────────────────────┐
+│ ID = 随机数        │         │ ID = 结构化字段    │
+│ 元数据 = 独立上报  │         │ 元数据 = 嵌入 ID   │
+│ 需要 Collector     │         │ 无需 Collector     │
+│ 分布式集群首选     │         │ 可直读定位         │
+└────────────────────┘         └────────────────────┘
+          │                            │
+          └──────────┬─────────────────┘
+                     │
+          ┌──────────┴──────────┐
+          │  融合派（LyClaw）    │
+          │  嵌入元信息 +        │
+          │  保留 Collector 扩展点│
+          └─────────────────────┘
+```
+
+**LyClaw 的选择：元信息嵌入 + 保留标准扩展点**
+
+核心逻辑：
+1. **LyClaw 是中小型项目（5-8 个微服务），没有部署 Jaeger Collector 或 SkyWalking OAP。** 也不能为了一个 traceId 日志让用户先搭一套追踪基础设施。因此必须在 traceId 本身嵌入 IP 和时间——排查问题时从日志直接定位。
+2. **但 v2 如果要接入 SkyWalking/OpenTelemetry，需要平滑切换。** 所以 traceId 的生成通过 `TraceIdGenerator` SPI 接口隔离，HTTP 头名保持 `X-Trace-Id` 同时支持 `traceparent`（W3C 兼容模式）。
+
+**融合方案：paicoding 格式 + SkyWalking 时间回拨保护 + EagleEye 层级 SpanId：**
+
+| 设计点 | 来源 | 理由 |
+|--------|------|------|
+| `IP_HEX.TIMESTAMP.PIDSEQ` 三段格式 | paicoding | 紧凑 32 字符，可反查 IP/时间/PID |
+| 时间回拨保护 | SkyWalking | NTP 校时可能导致时钟回拨，补偿值算法最轻量 |
+| ThreadLocal 序号 | SkyWalking | 消除 paicoding 原版 static volatile 的 CAS 竞争 |
+| 层级 SpanId（`0.1.2`） | EagleEye | 直观可读调用深度，比 16 hex 更易排查 |
+| `TraceIdGenerator` SPI | OpenTelemetry | v2 切换到 W3C traceparent 时只换实现，不动调用方 |
+| 四阶段埋点模型 | 美团 MTrace | 统一 RPC/HTTP/MQ 的埋点抽象 |
 
 ---
 
@@ -342,14 +511,43 @@ paicoding 代码中已经有 `SkyWalkingTraceIdGenerator`（`{INSTANCE_UUID}.{TH
 
 ### 3.4 SpanId 设计
 
-SpanId 不需要嵌入元信息（traceId 已经承担了定位职责），保持简洁：
+SpanId 的生成规则可以比 traceId 简单（traceId 已经承担了定位职责），但 v1 采用 EagleEye 的**层级点分 SpanId** 增强可读性。
+
+**v1 默认：EagleEye 层级 SpanId**
 
 ```
-格式：{16 hex}（UUID 前 16 位）
-示例：f47ac10b58cc4372
+格式：{ROOT}.{CHILD}.{GRANDCHILD}...
+示例：0, 0.1, 0.1.1, 0.2, 0.3
 ```
 
-每个新的服务调用/阶段生成新的 spanId，用于构建 Span 树形结构。
+| SpanId | 含义 | parent 隐含 |
+|--------|------|------------|
+| `0` | 根 Span（网关入口） | 无 |
+| `0.1` | 根的第一次子调用（如 orchestration） | `0` |
+| `0.1.1` | orchestration 的第一次子调用（如 feign→memory） | `0.1` |
+| `0.2` | 根的第二次子调用（如 feign→plan） | `0` |
+| `0.3` | 根的第三次子调用（如 feign→action） | `0` |
+
+**优点：**
+- 直接可读调用深度（看点的数量）
+- 兄弟顺序可见（`0.1` 在 `0.2` 前面）
+- 不需要查 parentSpanId 就能理解拓扑关系
+- 32 字符以内，比 16 hex 更紧凑
+
+**生成方式：**
+
+```java
+// TraceContext 中
+public TraceContext newSpan() {
+    int next = this.childCount.incrementAndGet();
+    String childSpanId = this.spanId.equals("0") 
+        ? "0." + next                    // 根结点下
+        : this.spanId + "." + next;      // 非根结点下
+    return new TraceContext(this.traceId, childSpanId, this.spanId, this.serviceName);
+}
+```
+
+**v2 兼容：** 如果后续接入 OpenTelemetry Collector，SpanId 需要与 W3C 兼容（16 位 hex）。通过 `TraceIdGenerator` SPI 切换为纯 hex 模式，`0.1.2` 作为 parent 关系存储在 Span Attributes 中。
 
 ---
 
@@ -749,6 +947,33 @@ logs/
 ```
 
 通过 `spring.application.name` 自动确定 `project`，确保不同项目的日志文件不会互相覆盖。
+
+### 8.5 四阶段埋点模型（借鉴美团 MTrace）
+
+美团 MTrace 的四阶段埋点是对所有 RPC/HTTP/MQ 调用的通用抽象。LyClaw 在 v1 的 Pipeline Stage 埋点可以预留此结构化字段，方便未来扩展：
+
+```
+Client Send      → pipeline_stage="CLIENT_SEND",    span_role="producer"
+Server Receive   → pipeline_stage="SERVER_RECEIVE", span_role="consumer"  
+Server Send      → pipeline_stage="SERVER_SEND",    span_role="producer"
+Client Receive   → pipeline_stage="CLIENT_RECEIVE", span_role="consumer"
+```
+
+这四个阶段在日志中以 MDC key `spanRole` 标记（可选字段），不会增加日志体积但规划了埋点标准化方向。
+
+### 8.6 与 OpenTelemetry 的互操作路径
+
+v1 LyClaw 的自定义 traceId（`IP_HEX.TIMESTAMP.PIDSEQ`）与 W3C traceparent 不兼容，但可以通过以下路径在 v2 平滑过渡：
+
+```
+v1: X-Trace-Id 头（LyClaw 格式）
+     ↓
+v2: X-Trace-Id + traceparent 双头期（同时发送两个头）
+     ↓  
+v3: traceparent 为主，X-Trace-Id 保留兼容期
+```
+
+LyClaw 默认的 `StructuredTraceIdGenerator` 生成的 32 字符 hex 可以在 v2 映射为 W3C traceparent 的 `trace-id` 字段（虽不完美但可工作），加上 OpenTelemetry SDK 的 `Resource` 属性上报 IP/PID 作为 Span Attributes，实现从"嵌入元信息"到"标识与元数据分离"的无痛迁移。
 
 ---
 

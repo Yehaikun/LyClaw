@@ -117,7 +117,13 @@ public class PlanController {
      */
     @PostMapping("/plan")
     public ResponseEntity<Map<String, Object>> plan(@RequestBody PlanRequest request) {
-        log.info("收到规划请求: strategy={}, userIntent={}", request.getStrategy(), request.getUserIntent());
+        log.info("\n\n══════════════════════════════════");
+        log.info("  [规划] 收到任务规划请求");
+        log.info("──────────────────────────────────");
+        log.info("  策略    : {}", request.getStrategy() != null ? request.getStrategy() : "dag");
+        log.info("  意图    : {}", request.getUserIntent() != null ? request.getUserIntent() : "(从上下文提取)");
+        log.info("  会话    : {}", request.getSessionId());
+        log.info("══════════════════════════════════");
         ChatContext context = buildContext(request);
         TaskPlanner planner = selectPlanner(request.getStrategy());
         log.debug("使用规划器: {}", planner.getClass().getSimpleName());
@@ -132,6 +138,14 @@ public class PlanController {
         response.put("estimatedTime", plan.getEstimatedCompletionTime());
         response.put("valid", validation.isValid());
         response.put("validationErrors", validation.getErrors());
+        log.info("\n──────────────────────────────────");
+        log.info("  [规划] 规划完成");
+        log.info("──────────────────────────────────");
+        log.info("  规划器  : {}", planner.getClass().getSimpleName());
+        log.info("  节点数  : {}", plan.getNodes() != null ? plan.getNodes().size() : 0);
+        log.info("  预估耗时: {}ms", plan.getEstimatedCompletionTime());
+        log.info("  校验结果: {}", validation.isValid() ? "通过" : "失败 (" + validation.getErrors().size() + " 个错误)");
+        log.info("══════════════════════════════════\n");
         return ResponseEntity.ok(response);
     }
 
