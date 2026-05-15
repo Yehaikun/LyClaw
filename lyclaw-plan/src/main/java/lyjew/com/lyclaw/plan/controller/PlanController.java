@@ -144,7 +144,6 @@ public class PlanController {
         log.info("──────────────────────────────────");
         log.info("  规划器  : {}", planner.getClass().getSimpleName());
         log.info("  节点数  : {}", plan.getNodes() != null ? plan.getNodes().size() : 0);
-        log.info("  预估耗时: {}ms", plan.getEstimatedCompletionTime());
         log.info("  校验结果: {}", validation.isValid() ? "通过" : "失败 (" + validation.getErrors().size() + " 个错误)");
         log.info("──────────────────────────────────");
         if (plan.getNodes() != null) {
