@@ -95,7 +95,8 @@ public class SecurityCheckStage extends PipelineStageBase {
                     var approvalResult = securityManager.approve(context, "EXECUTE_CHAT");
                     long secDuration = System.currentTimeMillis() - secStart;
                     log.info(logJson("INFO", "feign_call", "INTERCEPT", traceId,
-                            "securityManager.approve completed: approved=" + approvalResult.isApproved(),
+                            "securityManager.approve completed: approved=" + approvalResult.isApproved()
+                                    + ", sandboxLevel=" + approvalResult.getSandboxLevel(),
                             secDuration));
                     // 审批未通过：终止流水线，通知前端拦截
                     if (!approvalResult.isApproved()) {
@@ -108,6 +109,12 @@ public class SecurityCheckStage extends PipelineStageBase {
                         sink.next(sseEvent("done", "{\"status\":\"blocked\"}"));
                         sink.complete();
                         return;
+                    }
+                    // 将审批返回的沙箱级别写入 context，供后续 RespondStage 传递到 action 服务
+                    if (approvalResult.getSandboxLevel() != null) {
+                        context.setAttribute("sandboxLevel", approvalResult.getSandboxLevel().name());
+                        log.info(logJson("INFO", "sandbox_level", "INTERCEPT", traceId,
+                                "Sandbox level from approval: " + approvalResult.getSandboxLevel().name(), null));
                     }
                 }
 

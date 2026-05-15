@@ -154,10 +154,14 @@ public class RespondStage extends PipelineStageBase {
                 args = Collections.emptyMap();
             }
 
+            // 从 context 读取 SecurityCheckStage 写入的沙箱级别
+            String sandboxLevel = (String) context.getAttribute("sandboxLevel");
+
             ToolExecuteRequest execReq = ToolExecuteRequest.builder()
                     .toolName(toolName)
                     .args(args)
                     .sessionId(request.getSessionId())
+                    .sandboxLevel(sandboxLevel)
                     .build();
 
             try {
