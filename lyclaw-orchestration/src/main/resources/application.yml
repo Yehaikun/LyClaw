@@ -14,7 +14,7 @@ spring:
           default:
             connectTimeout: 10000
             readTimeout: 300000
-            loggerLevel: BASIC
+            loggerLevel: full  # 全部日志
           lyclaw-plan-service:
             connectTimeout: 5000
             readTimeout: 60000

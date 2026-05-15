@@ -8,6 +8,9 @@
         </encoder>
     </appender>
 
+    <logger name="lyjew.com.lyclaw.reflect" level="DEBUG"/>
+
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>

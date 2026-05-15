@@ -10,6 +10,8 @@ import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.orchestration.Orchestrator;
 import lyjew.com.lyclaw.orchestration.dto.ChatRequest;
 import lyjew.com.lyclaw.storage.StorageFacade;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -32,6 +34,7 @@ import java.util.Optional;
 @RequestMapping("/api")
 public class OrchestrationController {
 
+    private static final Logger log = LoggerFactory.getLogger(OrchestrationController.class);
     private final Orchestrator orchestrator;
     private final InterceptorChain interceptorChain;
     private final ChatFacade chatFacade;
@@ -74,6 +77,8 @@ public class OrchestrationController {
         lyjew.com.lyclaw.model.ChatRequest modelRequest = buildModelRequest(request);
         // 组装聊天上下文
         ChatContext context = buildChatContext(modelRequest, session, traceId);
+        //记录日志
+        log.info("收到流式请求: traceId={}, sessionId={}", traceId, request.getSessionId());
         // 委托编排器执行完整管线
         return orchestrator.execute(context);
     }
@@ -173,6 +178,7 @@ public class OrchestrationController {
                 .name("Auto Session")
                 .build();
         storageFacade.save("sessions", newId, session);
+        log.info("会话已加载: sessionId={}, 历史消息数={}", sessionId, session.getMessages().size());
         return session;
     }
 
