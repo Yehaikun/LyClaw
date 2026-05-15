@@ -201,10 +201,20 @@ export const useChatStore = defineStore('chat', () => {
           try {
             const event = JSON.parse(data)
             if (event.status === 'executing') {
+              // 若 AI 在调工具之前先发了文本（如"好的，我来查..."），
+              // 立即将该文本固化为一条独立消息，不再阻塞在 streaming 状态。
+              if (currentStreamingText.value) {
+                messages.value.push({
+                  role: 'assistant',
+                  content: currentStreamingText.value,
+                  model: currentModel.value,
+                })
+                currentStreamingText.value = ''
+              }
               liveToolCalls.value.push({
                 toolCallId: event.toolCallId || '',
                 name: event.name || '',
-                arguments: '',
+                arguments: event.arguments || '',
               })
               toolStatus.value = event.message || `正在执行 ${event.name}...`
             } else if (event.status === 'done') {

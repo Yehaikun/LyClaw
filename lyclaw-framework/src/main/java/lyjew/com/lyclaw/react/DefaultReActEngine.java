@@ -337,7 +337,7 @@ public class DefaultReActEngine implements ReActEngine {
                 .toList();
     }
 
-    /** 将文本按自然边界拆分为 SSE 事件，模拟流式输出 */
+    /** 将文本按自然边界拆分为 SSE 事件，模拟流式输出。保留换行以保证 Markdown 渲染正确。 */
     private Flux<ServerSentEvent<String>> splitIntoEvents(String text) {
         if (text == null || text.isEmpty()) {
             return Flux.empty();
@@ -348,16 +348,12 @@ public class DefaultReActEngine implements ReActEngine {
             char c = text.charAt(i);
             buf.append(c);
             if (c == '\n' || c == '。' || c == '！' || c == '？' || c == '；') {
-                String chunk = buf.toString().stripTrailing();
-                if (!chunk.isEmpty()) {
-                    events.add(sseEvent("message", chunk));
-                }
+                events.add(sseEvent("message", buf.toString()));
                 buf.setLength(0);
             }
         }
-        String last = buf.toString().stripTrailing();
-        if (!last.isEmpty()) {
-            events.add(sseEvent("message", last));
+        if (buf.length() > 0) {
+            events.add(sseEvent("message", buf.toString()));
         }
         return Flux.fromIterable(events);
     }
