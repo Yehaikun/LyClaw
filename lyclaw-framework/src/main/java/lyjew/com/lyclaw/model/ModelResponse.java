@@ -105,23 +105,22 @@ public class ModelResponse {
          * @param argsFragment 本次到达的参数字段片段（JSON 格式）
          */
         public void appendArguments(String argsFragment) {
-            // 空片段直接忽略
             if (argsFragment == null || argsFragment.isEmpty()) return;
             if (this.arguments == null || this.arguments.isEmpty()) {
-                // 首次赋值，直接使用
                 this.arguments = argsFragment;
-            } else {
-                // 拼接模式：去掉前一段末尾的 '}' 和当前片段的 '{'
-                String base = this.arguments.trim();
-                String frag = argsFragment.trim();
-                if (base.endsWith("}")) {
-                    base = base.substring(0, base.length() - 1);
-                }
-                if (frag.startsWith("{")) {
-                    frag = frag.substring(1);
-                }
-                this.arguments = base + frag;
+                return;
             }
+            String base = this.arguments;
+            String frag = argsFragment;
+            // 去掉前一段末尾的 '}' 和当前片段的开头的 '{'，它们是 JSON 结构符号
+            // 注意：不使用 trim()，避免丢失字符串值内部的空格（如 "ls -d" 中的空格）
+            if (base.endsWith("}")) {
+                base = base.substring(0, base.length() - 1);
+            }
+            if (frag.startsWith("{")) {
+                frag = frag.substring(1);
+            }
+            this.arguments = base + frag;
         }
     }
 }

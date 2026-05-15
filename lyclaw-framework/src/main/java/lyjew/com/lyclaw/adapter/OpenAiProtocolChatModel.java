@@ -262,7 +262,7 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
     @Override
     @SuppressWarnings("unchecked")
     protected Flux<String> sendNativeRequest(Object nativeRequest) {
-        log.debug("OpenAI request body: {}", nativeRequest);
+        log.info("LLM_REQUEST_BODY: {}", nativeRequest);
         return webClient.post()
                 .uri(ENDPOINT)
                 .bodyValue(nativeRequest)
@@ -355,7 +355,10 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
                                 tcr.setName(function.get("name").asText());
                             }
                             if (function.has("arguments") && !function.get("arguments").isNull()) {
-                                tcr.setArguments(function.get("arguments").asText());
+                                String rawArgs = function.get("arguments").asText();
+                                String funcName = function.has("name") ? function.get("name").asText() : "?";
+                                log.info("LLM_RAW_TOOL_ARGS tool={} raw_arguments={}", funcName, rawArgs);
+                                tcr.setArguments(rawArgs);
                             }
                         }
                         toolCalls.add(tcr);
