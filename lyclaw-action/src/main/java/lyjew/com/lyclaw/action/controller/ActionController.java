@@ -69,7 +69,7 @@ public class ActionController {
     @PostMapping("/execute-tool")
     public Mono<ToolExecutionResult> executeTool(@RequestBody ToolExecuteRequest request) {
         // 解析沙箱级别，无效时回退到 NONE
-        SandboxLevel level = SandboxLevel.NONE;
+        SandboxLevel level = SandboxLevel.DIRECT;
         if (request.getSandboxLevel() != null && !request.getSandboxLevel().isBlank()) {
             try {
                 level = SandboxLevel.valueOf(request.getSandboxLevel().toUpperCase());

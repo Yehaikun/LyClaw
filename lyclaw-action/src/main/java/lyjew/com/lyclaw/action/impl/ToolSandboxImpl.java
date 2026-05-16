@@ -10,27 +10,22 @@ import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.springframework.stereotype.Component;
 
-import org.springframework.beans.factory.annotation.Value;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 工具沙箱实现，在不同安全隔离级别下执行工具调用。
+ * 工具沙箱实现，在三种执行模式（DIRECT / SANDBOX / PROCESS）下执行工具调用。
  *
- * <p>支持以下安全级别（由低到高严格递增）：
+ * <p>执行模式说明：
  * <ul>
- *   <li><b>NONE</b> - 无隔离，直接在调用线程中执行</li>
- *   <li><b>READ_ONLY</b> - 只读级别，仅允许标记为只读的工具执行（如 calculator、current_time、web_search）</li>
- *   <li><b>RESTRICTED</b> - 受限级别，在临时工作目录中隔离执行，执行后自动清理临时文件</li>
- *   <li><b>CONTAINER</b> - 容器级别，command 工具通过独立进程执行，其他工具降级到 RESTRICTED</li>
- *   <li><b>ISOLATED</b> - 完全隔离，与 CONTAINER 类似但对 command 工具提供更高的进程隔离</li>
+ *   <li><b>DIRECT</b> - 当前线程直接执行（calculator、current_time、web_search 等只读工具）</li>
+ *   <li><b>SANDBOX</b> - 守护线程 + 临时工作目录隔离（可能写文件的工具），执行后自动清理</li>
+ *   <li><b>PROCESS</b> - 独立 OS 进程执行，适配 command/script 类工具</li>
  * </ul>
  * </p>
  *
@@ -57,18 +52,6 @@ public class ToolSandboxImpl implements ToolSandbox {
     /** JSON 序列化工具，用于将参数 map 序列化为 JSON 字符串 */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    /** 配置化的只读工具白名单（可从 application.yml 注入） */
-    @Value("${lyclaw.sandbox.readonly-tools:calculator,current_time,web_search}")
-    private List<String> configReadOnlyTools;
-
-    /**
-     * 设置只读工具列表（仅用于测试时注入）。
-     */
-    // visible for testing
-    void setConfigReadOnlyTools(List<String> tools) {
-        this.configReadOnlyTools = tools;
-    }
-
     /**
      * 在指定沙箱安全级别下执行工具。
      *
@@ -94,17 +77,15 @@ public class ToolSandboxImpl implements ToolSandbox {
         try {
             // 将参数 Map 构建为 ToolCall 对象
             ToolCall toolCall = buildToolCall(tool.getName(), args);
-            SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.NONE;
+            SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.DIRECT;
             log.info("沙箱执行: tool={}, sandboxLevel={}, params={}",
                     tool.getName(), effectiveLevel,
                     args != null ? args.keySet() : "[]");
-            // 根据安全级别分发到不同的执行方法
+            // 根据执行模式分发到不同的执行方法
             return switch (effectiveLevel) {
-                case NONE -> executeNone(tool, toolCall, startTime);
-                case READ_ONLY -> executeReadOnly(tool, toolCall, startTime);
-                case RESTRICTED -> executeRestricted(tool, toolCall, startTime);
-                case CONTAINER -> executeContainer(tool, toolCall, args, startTime);
-                case ISOLATED -> executeIsolated(tool, toolCall, args, startTime);
+                case DIRECT -> executeDirect(tool, toolCall, startTime);
+                case SANDBOX -> executeSandbox(tool, toolCall, startTime);
+                case PROCESS -> executeProcess(tool, toolCall, args, startTime);
             };
         } catch (Exception e) {
             log.error("沙箱执行异常: tool={}, level={}", tool.getName(), level, e);
@@ -151,36 +132,15 @@ public class ToolSandboxImpl implements ToolSandbox {
     }
 
     /**
-     * NONE 级别执行：无隔离，直接在当前线程中执行工具。
+     * DIRECT 模式：当前线程直接执行，无隔离。
      */
-    private ToolExecutionResult executeNone(Tool tool, ToolCall toolCall, long startTime) {
+    private ToolExecutionResult executeDirect(Tool tool, ToolCall toolCall, long startTime) {
         ToolExecutionResult innerResult = tool.execute(toolCall, null);
         return convertResult(tool.getName(), innerResult, startTime);
     }
 
     /**
-     * READ_ONLY 级别执行：仅允许标记为只读的工具。
-     *
-     * <p>检查工具定义中的 isReadOnly 标记和配置的只读工具白名单。两者任一满足即放行。</p>
-     */
-    private ToolExecutionResult executeReadOnly(Tool tool, ToolCall toolCall, long startTime) {
-        // 检查工具是否为只读（工具自身标记 或 在配置白名单中）
-        boolean isReadOnly = (tool.getDefinition() != null && tool.getDefinition().isReadOnly())
-                || (configReadOnlyTools != null && configReadOnlyTools.contains(tool.getName()));
-        if (!isReadOnly) {
-            return ToolExecutionResult.builder()
-                    .toolName(tool.getName())
-                    .success(false)
-                    .error("工具 " + tool.getName() + " 不允许在 READ_ONLY 沙箱中执行")
-                    .elapsedMs(System.currentTimeMillis() - startTime)
-                    .build();
-        }
-        ToolExecutionResult innerResult = tool.execute(toolCall, null);
-        return convertResult(tool.getName(), innerResult, startTime);
-    }
-
-    /**
-     * RESTRICTED 级别执行：在临时工作目录中隔离执行。
+     * SANDBOX 模式：守护线程 + 临时工作目录隔离执行。
      *
      * <p>隔离机制：
      * <ol>
@@ -193,7 +153,7 @@ public class ToolSandboxImpl implements ToolSandbox {
      * </p>
      * <p>工具在独立的守护线程中执行，超时时间 {@value #DEFAULT_TIMEOUT_SECONDS} 秒。</p>
      */
-    private ToolExecutionResult executeRestricted(Tool tool, ToolCall toolCall, long startTime) {
+    private ToolExecutionResult executeSandbox(Tool tool, ToolCall toolCall, long startTime) {
         try {
             Future<ToolExecutionResult> future = sandboxExecutor.submit(() -> {
                 // 创建临时工作目录
@@ -224,7 +184,7 @@ public class ToolSandboxImpl implements ToolSandbox {
                     future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             return convertResult(tool.getName(), innerResult, startTime);
         } catch (TimeoutException e) {
-            log.error("RESTRICTED级别工具执行超时({}秒): tool={}", DEFAULT_TIMEOUT_SECONDS, tool.getName(), e);
+            log.error("SANDBOX模式工具执行超时({}秒): tool={}", DEFAULT_TIMEOUT_SECONDS, tool.getName(), e);
             return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
@@ -232,7 +192,7 @@ public class ToolSandboxImpl implements ToolSandbox {
                     .elapsedMs(System.currentTimeMillis() - startTime)
                     .build();
         } catch (Exception e) {
-            log.error("RESTRICTED 级别执行异常: tool={}", tool.getName(), e);
+            log.error("SANDBOX 模式执行异常: tool={}", tool.getName(), e);
             return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
@@ -243,54 +203,27 @@ public class ToolSandboxImpl implements ToolSandbox {
     }
 
     /**
-     * CONTAINER 级别执行：command 工具通过独立 OS 进程执行，实现进程级隔离。
+     * PROCESS 模式：command 工具通过独立 OS 进程执行，其他工具降级到 SANDBOX。
      *
-     * <p>对于 command 工具，使用 {@link #executeCommandInProcess} 创建独立 Shell 进程执行。
-     * 其他不支持进程隔离的工具降级到 RESTRICTED 级别。</p>
+     * <p>对 command 工具使用 {@link #executeCommandInProcess} 创建独立 Shell 进程，
+     * 并通过 CommandExecutor 提供超时保护和输出截断。</p>
      */
-    private ToolExecutionResult executeContainer(Tool tool, ToolCall toolCall,
-                                         Map<String, Object> args, long startTime) {
-        try {
-            // command 工具：通过独立进程执行
-            if ("command".equals(tool.getName()) && args.containsKey("command")) {
-                return executeCommandInProcess(tool.getName(),
-                        (String) args.get("command"), startTime);
-            }
-            // 其他工具：降级到 RESTRICTED
-            log.debug("工具 {} 不支持进程隔离，降级到 RESTRICTED", tool.getName());
-            return executeRestricted(tool, toolCall, startTime);
-        } catch (Exception e) {
-            log.error("CONTAINER 级别执行异常: tool={}", tool.getName(), e);
-            return ToolExecutionResult.builder()
-                    .toolName(tool.getName())
-                    .success(false)
-                    .error("容器沙箱执行异常: " + e.getMessage())
-                    .elapsedMs(System.currentTimeMillis() - startTime)
-                    .build();
-        }
-    }
-
-    /**
-     * ISOLATED 级别执行：最高隔离级别，command 工具通过独立进程执行。
-     *
-     * <p>当前实现与 CONTAINER 类似，对 command 工具提供进程隔离，
-     * 其他工具降级到 RESTRICTED。未来可增强为完整容器/Docker 隔离。</p>
-     */
-    private ToolExecutionResult executeIsolated(Tool tool, ToolCall toolCall,
+    private ToolExecutionResult executeProcess(Tool tool, ToolCall toolCall,
                                         Map<String, Object> args, long startTime) {
         try {
             if ("command".equals(tool.getName()) && args.containsKey("command")) {
                 return executeCommandInProcess(tool.getName(),
                         (String) args.get("command"), startTime);
             }
-            log.debug("工具 {} 不支持完全隔离，降级到 RESTRICTED", tool.getName());
-            return executeRestricted(tool, toolCall, startTime);
+            // 其他工具：降级到 SANDBOX
+            log.debug("工具 {} 不需要进程隔离，降级到 SANDBOX", tool.getName());
+            return executeSandbox(tool, toolCall, startTime);
         } catch (Exception e) {
-            log.error("ISOLATED 级别执行异常: tool={}", tool.getName(), e);
+            log.error("PROCESS 模式执行异常: tool={}", tool.getName(), e);
             return ToolExecutionResult.builder()
                     .toolName(tool.getName())
                     .success(false)
-                    .error("隔离沙箱执行异常: " + e.getMessage())
+                    .error("进程执行异常: " + e.getMessage())
                     .elapsedMs(System.currentTimeMillis() - startTime)
                     .build();
         }

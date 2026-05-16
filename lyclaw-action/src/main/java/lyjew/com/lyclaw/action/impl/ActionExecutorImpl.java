@@ -29,7 +29,7 @@ import java.util.concurrent.*;
  * <p>该类是工具/技能执行的核心调度器，提供以下能力：
  * <ul>
  *   <li>遍历 TaskPlan 中的 TaskNode，按类型分发到工具执行或技能执行</li>
- *   <li>通过 {@link ToolSandbox} 在不同安全级别（NONE/READ_ONLY/RESTRICTED/CONTAINER/ISOLATED）下执行工具</li>
+ *   <li>通过 {@link ToolSandbox} 在三种执行模式（DIRECT/SANDBOX/PROCESS）下执行工具</li>
  *   <li>在执行前通过 {@link ToolCallPolicy} 检查是否允许执行</li>
  *   <li>技能执行委托给 {@link SkillExecutor}</li>
  *   <li>所有异步任务在固定大小（4线程）的后台守护线程池中运行</li>
@@ -168,7 +168,7 @@ public class ActionExecutorImpl implements ActionExecutor {
                 }
 
                 // 3. 确定沙箱级别（默认 NONE）
-                SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.NONE;
+                SandboxLevel effectiveLevel = level != null ? level : SandboxLevel.DIRECT;
                 // 4. 在沙箱中执行
                 ToolExecutionResult result = toolSandbox.execute(tool, args, effectiveLevel);
 
@@ -295,7 +295,7 @@ public class ActionExecutorImpl implements ActionExecutor {
                 Map<String, Object> args = new HashMap<>();
                 args.put("description", node.getDescription());
 
-                CompletableFuture<ToolExecutionResult> future = executeTool(toolName, args, SandboxLevel.NONE);
+                CompletableFuture<ToolExecutionResult> future = executeTool(toolName, args, SandboxLevel.DIRECT);
                 // 阻塞等待最多 30 秒
                 ToolExecutionResult toolResult = future.get(30, TimeUnit.SECONDS);
 

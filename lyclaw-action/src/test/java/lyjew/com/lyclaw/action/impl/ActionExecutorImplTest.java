@@ -88,7 +88,7 @@ class ActionExecutorImplTest {
             lenient().when(mockTool.getName()).thenReturn("calculator");
             when(toolRegistry.get("calculator")).thenReturn(mockTool);
 
-            when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.NONE)))
+            when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.DIRECT)))
                     .thenReturn(ToolExecutionResult.builder()
                             .toolName("calculator")
                             .success(true)
@@ -208,7 +208,7 @@ class ActionExecutorImplTest {
             Tool mockTool = mock(Tool.class);
             lenient().when(mockTool.getName()).thenReturn("calculator");
             when(toolRegistry.get("calculator")).thenReturn(mockTool);
-            when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.NONE)))
+            when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.DIRECT)))
                     .thenReturn(ToolExecutionResult.builder()
                             .toolName("calculator").success(true).result("ok").build());
 
@@ -247,12 +247,12 @@ class ActionExecutorImplTest {
             Tool mockTool = mock(Tool.class);
             lenient().when(mockTool.getName()).thenReturn("calculator");
             when(toolRegistry.get("calculator")).thenReturn(mockTool);
-            when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.NONE)))
+            when(toolSandbox.execute(eq(mockTool), anyMap(), eq(SandboxLevel.DIRECT)))
                     .thenReturn(ToolExecutionResult.builder()
                             .toolName("calculator").success(true).result("42").build());
 
             CompletableFuture<ToolExecutionResult> future =
-                    executor.executeTool("calculator", Map.of(), SandboxLevel.NONE);
+                    executor.executeTool("calculator", Map.of(), SandboxLevel.DIRECT);
             ToolExecutionResult result = future.get();
 
             assertTrue(result.isSuccess());
@@ -265,7 +265,7 @@ class ActionExecutorImplTest {
             when(toolRegistry.get("no_such_tool")).thenReturn(null);
 
             CompletableFuture<ToolExecutionResult> future =
-                    executor.executeTool("no_such_tool", Map.of(), SandboxLevel.NONE);
+                    executor.executeTool("no_such_tool", Map.of(), SandboxLevel.DIRECT);
             ToolExecutionResult result = future.get();
 
             assertFalse(result.isSuccess());

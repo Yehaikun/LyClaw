@@ -244,9 +244,9 @@ public class LyClawProperties {
      * 沙箱配置域，控制工具执行的安全隔离级别和只读工具白名单。
      */
     public static class SandboxProperties {
-        /** 沙箱隔离级别：NONE/READ_ONLY/RESTRICTED/CONTAINER/ISOLATED */
-        private String level = "READ_ONLY";
-        /** 只读工具白名单，仅 level=READ_ONLY 时生效 */
+        /** 沙箱执行模式：DIRECT/SANDBOX/PROCESS */
+        private String level = "SANDBOX";
+        /** 保留字段，未来可复用 */
         private List<String> readonlyTools = new ArrayList<>();
 
         public String getLevel() {

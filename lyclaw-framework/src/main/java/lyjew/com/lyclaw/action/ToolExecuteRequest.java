@@ -22,7 +22,7 @@ public class ToolExecuteRequest {
     private String toolName;
     /** 工具调用参数，键值对形式传递 */
     private Map<String, Object> args;
-    /** 沙箱等级，控制工具的执行权限（如 READ_ONLY、FULL_ACCESS 等） */
+    /** 沙箱执行模式字符串，控制工具的执行方式（DIRECT/SANDBOX/PROCESS） */
     private String sandboxLevel;
     /** 当前会话标识，用于关联工具执行日志 */
     private String sessionId;

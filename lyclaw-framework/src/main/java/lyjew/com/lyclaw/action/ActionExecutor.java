@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture;
  *
  * <p>该接口将编排层的抽象计划（TaskPlan）落地为具体的工具调用和技能执行。
  * 支持以响应式流的方式逐步返回执行结果，也支持异步获取单次工具/技能的执行结果。
- * 沙箱等级参数确保敏感工具在受限环境中执行。
+ * 沙箱执行模式参数确保敏感工具在受限环境中执行。
  */
 public interface ActionExecutor {
 
@@ -34,7 +34,7 @@ public interface ActionExecutor {
      *
      * @param toolName 工具名称
      * @param args     工具调用参数
-     * @param level    沙箱安全等级
+     * @param level    沙箱执行模式
      * @return 异步返回工具执行结果
      */
     CompletableFuture<ToolExecutionResult> executeTool(String toolName, Map<String, Object> args, SandboxLevel level);

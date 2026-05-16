@@ -62,7 +62,7 @@ class ActionControllerTest {
             ToolExecuteRequest req = ToolExecuteRequest.builder()
                     .toolName("calculator")
                     .args(Map.of("expression", "1+1"))
-                    .sandboxLevel("read_only")
+                    .sandboxLevel("sandbox")
                     .build();
 
             ToolExecutionResult toolResult = ToolExecutionResult.builder()
@@ -70,7 +70,7 @@ class ActionControllerTest {
                     .success(true)
                     .result("2")
                     .build();
-            when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.READ_ONLY)))
+            when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.SANDBOX)))
                     .thenReturn(CompletableFuture.completedFuture(toolResult));
 
             StepVerifier.create(controller.executeTool(req))
@@ -91,7 +91,7 @@ class ActionControllerTest {
 
             ToolExecutionResult toolResult = ToolExecutionResult.builder()
                     .toolName("calculator").success(true).build();
-            when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.NONE)))
+            when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.DIRECT)))
                     .thenReturn(CompletableFuture.completedFuture(toolResult));
 
             StepVerifier.create(controller.executeTool(req))
@@ -106,7 +106,7 @@ class ActionControllerTest {
 
             ToolExecutionResult toolResult = ToolExecutionResult.builder()
                     .toolName("calculator").success(true).build();
-            when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.NONE)))
+            when(actionExecutorImpl.executeTool(eq("calculator"), any(), eq(SandboxLevel.DIRECT)))
                     .thenReturn(CompletableFuture.completedFuture(toolResult));
 
             StepVerifier.create(controller.executeTool(req))

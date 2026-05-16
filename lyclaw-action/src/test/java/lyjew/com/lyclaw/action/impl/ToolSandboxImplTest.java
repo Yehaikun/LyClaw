@@ -8,7 +8,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,9 +15,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * 测试 ToolSandboxImpl 的 5 级沙箱隔离
+ * 测试 ToolSandboxImpl 的 3 种执行模式
  */
-@DisplayName("ToolSandboxImpl 5级沙箱隔离测试")
+@DisplayName("ToolSandboxImpl 3模式沙箱测试")
 class ToolSandboxImplTest {
 
     private ToolSandboxImpl sandbox;
@@ -26,7 +25,6 @@ class ToolSandboxImplTest {
     @BeforeEach
     void setUp() {
         sandbox = new ToolSandboxImpl();
-        sandbox.setConfigReadOnlyTools(List.of("calculator", "current_time", "web_search"));
     }
 
     // 用完立即销毁，避免 daemon 线程残留影响后续测试
@@ -58,25 +56,25 @@ class ToolSandboxImplTest {
             sandbox.destroy();
             Tool mockTool = mock(Tool.class);
             lenient().when(mockTool.getName()).thenReturn("calc");
-            ToolExecutionResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.NONE);
+            ToolExecutionResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.DIRECT);
             assertFalse(result.isSuccess());
             assertTrue(result.getError().contains("沙箱不可用"));
         }
     }
 
     @Nested
-    @DisplayName("NONE 级别")
-    class NoneLevel {
+    @DisplayName("DIRECT 模式")
+    class DirectMode {
 
         @Test
-        void testNoneLevelExecutesDirectly() {
+        void testDirectExecutesInCurrentThread() {
             try {
                 Tool mockTool = mock(Tool.class);
                 when(mockTool.getName()).thenReturn("calculator");
                 when(mockTool.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
                         .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
 
-                ToolExecutionResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.NONE);
+                ToolExecutionResult result = sandbox.execute(mockTool, Map.of(), SandboxLevel.DIRECT);
                 assertTrue(result.isSuccess());
                 assertEquals("42", result.getResult());
                 assertTrue(result.getElapsedMs() >= 0);
@@ -87,81 +85,18 @@ class ToolSandboxImplTest {
     }
 
     @Nested
-    @DisplayName("READ_ONLY 级别")
-    class ReadOnlyLevel {
+    @DisplayName("SANDBOX 模式")
+    class SandboxMode {
 
         @Test
-        void testReadOnlyAllowsBuiltinReadTools() {
-            try {
-                Tool calc = mock(Tool.class);
-                when(calc.getName()).thenReturn("calculator");
-                when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(ToolExecutionResult.builder().success(true).result("ok").elapsedMs(5).build());
-
-                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.READ_ONLY);
-                assertTrue(result.isSuccess());
-            } finally {
-                destroySandbox();
-            }
-        }
-
-        @Test
-        void testReadOnlyBlocksCommandTool() {
-            try {
-                Tool cmd = mock(Tool.class);
-                when(cmd.getName()).thenReturn("command");
-                ToolExecutionResult result = sandbox.execute(cmd, Map.of(), SandboxLevel.READ_ONLY);
-                assertFalse(result.isSuccess());
-                assertTrue(result.getError().contains("不允许在 READ_ONLY"));
-            } finally {
-                destroySandbox();
-            }
-        }
-
-        @Test
-        void testReadOnlyAllowsCurrentTime() {
-            try {
-                Tool time = mock(Tool.class);
-                when(time.getName()).thenReturn("current_time");
-                when(time.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(ToolExecutionResult.builder().success(true).result("2025-01-01").elapsedMs(5).build());
-
-                ToolExecutionResult result = sandbox.execute(time, Map.of(), SandboxLevel.READ_ONLY);
-                assertTrue(result.isSuccess());
-            } finally {
-                destroySandbox();
-            }
-        }
-
-        @Test
-        void testReadOnlyAllowsWebSearch() {
-            try {
-                Tool search = mock(Tool.class);
-                when(search.getName()).thenReturn("web_search");
-                when(search.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(ToolExecutionResult.builder().success(true).result("results").elapsedMs(5).build());
-
-                ToolExecutionResult result = sandbox.execute(search, Map.of(), SandboxLevel.READ_ONLY);
-                assertTrue(result.isSuccess());
-            } finally {
-                destroySandbox();
-            }
-        }
-    }
-
-    @Nested
-    @DisplayName("RESTRICTED 级别")
-    class RestrictedLevel {
-
-        @Test
-        void testRestrictedHandlesToolError() {
+        void testSandboxHandlesToolError() {
             try {
                 Tool calc = mock(Tool.class);
                 when(calc.getName()).thenReturn("calculator");
                 when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
                         .thenThrow(new RuntimeException("test error"));
 
-                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.RESTRICTED);
+                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.SANDBOX);
                 assertFalse(result.isSuccess());
                 assertTrue(result.getError().contains("受限沙箱执行异常"));
             } finally {
@@ -171,33 +106,18 @@ class ToolSandboxImplTest {
     }
 
     @Nested
-    @DisplayName("CONTAINER/ISOLATED 级别 (回退到 RESTRICTED)")
-    class ContainerAndIsolated {
+    @DisplayName("PROCESS 模式 (非command工具降级到 SANDBOX)")
+    class ProcessMode {
 
         @Test
-        void testContainerFallsBackToRestrictedForNonCommand() {
+        void testProcessFallsBackToSandboxForNonCommand() {
             try {
                 Tool calc = mock(Tool.class);
                 when(calc.getName()).thenReturn("calculator");
                 when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
                         .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
 
-                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.CONTAINER);
-                assertTrue(result.isSuccess());
-            } finally {
-                destroySandbox();
-            }
-        }
-
-        @Test
-        void testIsolatedFallsBackToRestrictedForNonCommand() {
-            try {
-                Tool calc = mock(Tool.class);
-                when(calc.getName()).thenReturn("calculator");
-                when(calc.execute(any(), nullable(lyjew.com.lyclaw.context.ChatContext.class)))
-                        .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
-
-                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.ISOLATED);
+                ToolExecutionResult result = sandbox.execute(calc, Map.of(), SandboxLevel.PROCESS);
                 assertTrue(result.isSuccess());
             } finally {
                 destroySandbox();
@@ -206,11 +126,11 @@ class ToolSandboxImplTest {
     }
 
     @Nested
-    @DisplayName("级别覆盖")
-    class LevelCoverage {
+    @DisplayName("null级别回退")
+    class NullLevel {
 
         @Test
-        void testNullLevelDefaultsToNone() {
+        void testNullLevelDefaultsToDirect() {
             try {
                 Tool calc = mock(Tool.class);
                 when(calc.getName()).thenReturn("calculator");
@@ -218,7 +138,7 @@ class ToolSandboxImplTest {
                         .thenReturn(ToolExecutionResult.builder().success(true).result("42").elapsedMs(5).build());
 
                 ToolExecutionResult result = sandbox.execute(calc, Map.of(), null);
-                assertTrue(result.isSuccess(), "null级别应回退到NONE并成功执行: " + result.getError());
+                assertTrue(result.isSuccess(), "null级别应回退到DIRECT并成功执行: " + result.getError());
             } finally {
                 destroySandbox();
             }

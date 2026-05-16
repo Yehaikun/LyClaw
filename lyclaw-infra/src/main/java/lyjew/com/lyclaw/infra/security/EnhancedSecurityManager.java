@@ -400,14 +400,14 @@ public class EnhancedSecurityManager implements SecurityManager,
         };
     }
 
-    /** 将权限级别映射到对应的沙箱隔离级别 */
+    /** 将权限级别映射到对应的沙箱执行模式 */
     private SandboxLevel mapToSandboxLevel(PermissionLevel p) {
         return switch (p) {
-            case DENY -> SandboxLevel.ISOLATED;
-            case READ -> SandboxLevel.READ_ONLY;
-            case EXECUTE_SAFE, EXECUTE_MODIFY -> SandboxLevel.RESTRICTED;
-            case EXECUTE_DESTRUCTIVE -> SandboxLevel.CONTAINER;
-            case ADMIN -> SandboxLevel.NONE;
+            case DENY -> SandboxLevel.PROCESS;
+            case READ -> SandboxLevel.DIRECT;
+            case EXECUTE_SAFE, EXECUTE_MODIFY -> SandboxLevel.SANDBOX;
+            case EXECUTE_DESTRUCTIVE -> SandboxLevel.PROCESS;
+            case ADMIN -> SandboxLevel.DIRECT;
         };
     }
 
