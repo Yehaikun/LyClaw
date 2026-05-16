@@ -204,6 +204,7 @@ export async function postSSE(
   onError: (err: Error) => void,
   onStatus?: (text: string) => void,
   onToolCall?: (data: string) => void,
+  onApprovalRequired?: (data: string) => void,
 ): Promise<void> {
   const controller = new AbortController()
   // 每次成功收到数据块后重置的读取超时，确保只有真正停滞超过60秒才判定为超时。
@@ -310,6 +311,8 @@ export async function postSSE(
           if (text && onStatus) onStatus(text)
         } else if (currentEvent === 'tool_call') {
           if (text && onToolCall) onToolCall(text)
+        } else if (currentEvent === 'tool_approval') {
+          if (text && onApprovalRequired) onApprovalRequired(text)
         }
       }
       dataBuffer = []

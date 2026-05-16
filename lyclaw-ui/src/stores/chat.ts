@@ -35,7 +35,14 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Message, ChatRequest, ChatResult, ToolCall } from '@/types'
 import { postChat, postChatStream, createSession } from '@/api/chat'
-import { ApiError } from '@/api/client'
+import { post, ApiError } from '@/api/client'
+
+interface PendingApproval {
+  toolCallId: string
+  toolName: string
+  arguments: string
+  message: string
+}
 
 export const useChatStore = defineStore('chat', () => {
   // ====================================================================
@@ -62,6 +69,9 @@ export const useChatStore = defineStore('chat', () => {
   const toolStatus = ref<string>('')
   /** 流式进行中的工具调用列表：tool_call 事件驱动，用于展示加载动画卡片 */
   const liveToolCalls = ref<ToolCall[]>([])
+
+  /** 等待用户审批的工具调用信息，非null时前端显示确认对话框 */
+  const pendingApproval = ref<PendingApproval | null>(null)
 
   // ====================================================================
   // 计算属性（Getters）
@@ -138,6 +148,7 @@ export const useChatStore = defineStore('chat', () => {
     currentStreamingText.value = ''
     toolStatus.value = ''
     liveToolCalls.value = []
+    pendingApproval.value = null
 
     try {
       await postChatStream(
@@ -161,6 +172,7 @@ export const useChatStore = defineStore('chat', () => {
           currentStreamingText.value = ''
           toolStatus.value = ''
           liveToolCalls.value = []
+          pendingApproval.value = null
           isStreaming.value = false
         },
         // 错误回调：保存已接收的部分内容，记录错误信息
@@ -176,6 +188,7 @@ export const useChatStore = defineStore('chat', () => {
           }
           currentStreamingText.value = ''
           liveToolCalls.value = []
+          pendingApproval.value = null
           isStreaming.value = false
           // 提取ApiError中的traceId用于错误追踪
           if (err instanceof ApiError) {
@@ -240,6 +253,18 @@ export const useChatStore = defineStore('chat', () => {
                   }),
                 }],
               })
+            }
+          } catch { /* ignore malformed JSON */ }
+        },
+        // tool_approval 事件回调：非只读工具需要用户确认，弹出审批对话框
+        (data: string) => {
+          try {
+            const event = JSON.parse(data)
+            pendingApproval.value = {
+              toolCallId: event.toolCallId || '',
+              toolName: event.toolName || '',
+              arguments: event.arguments || '',
+              message: event.message || `AI 请求执行 ${event.toolName || '未知工具'}`,
             }
           } catch { /* ignore malformed JSON */ }
         },
@@ -308,6 +333,7 @@ export const useChatStore = defineStore('chat', () => {
    */
   function stopGeneration(): void {
     isStreaming.value = false
+    pendingApproval.value = null
   }
 
   /**
@@ -321,6 +347,7 @@ export const useChatStore = defineStore('chat', () => {
     currentStreamingText.value = ''
     error.value = null
     errorTraceId.value = undefined
+    pendingApproval.value = null
   }
 
   /**
@@ -394,6 +421,25 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(msg)
   }
 
+  /**
+   * 响应工具执行审批请求：用户点击允许/拒绝后，POST到后端完成CompletableFuture。
+   *
+   * @param approved true=允许执行，false=拒绝
+   */
+  async function respondToApproval(approved: boolean): Promise<void> {
+    const approval = pendingApproval.value
+    if (!approval) return
+    try {
+      await post('/api/approval/respond', {
+        toolCallId: approval.toolCallId,
+        approved,
+      })
+    } catch {
+      // 网络错误不阻塞，后端有超时自动拒绝兜底
+    }
+    pendingApproval.value = null
+  }
+
   // ====================================================================
   // 内部辅助函数（Internal Helpers）
   // ====================================================================
@@ -438,6 +484,7 @@ export const useChatStore = defineStore('chat', () => {
     currentSessionId,
     toolStatus,
     liveToolCalls,
+    pendingApproval,
     // 计算属性
     messageCount,
     lastMessage,
@@ -450,5 +497,6 @@ export const useChatStore = defineStore('chat', () => {
     setModel,
     setSessionId,
     addToolCallMessage,
+    respondToApproval,
   }
 })

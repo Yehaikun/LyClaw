@@ -18,6 +18,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * ReAct 引擎默认实现，提供 LLM 多轮推理-行动循环。
@@ -40,7 +44,28 @@ import java.util.Map;
 public class DefaultReActEngine implements ReActEngine {
 
     private static final int MAX_TOOL_ROUNDS = 30;
+    private static final long APPROVAL_TIMEOUT_SECONDS = 60;
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final ApprovalStore approvalStore;
+
+    /** 需要用户审批的工具名集合（通常是 readonly=false 的工具） */
+    private final Set<String> approvalRequired = ConcurrentHashMap.newKeySet();
+
+    public DefaultReActEngine(ApprovalStore approvalStore) {
+        this.approvalStore = approvalStore;
+    }
+
+    /**
+     * 设置需要用户审批的工具名集合。RespondStage 根据工具定义中的 readonly 标记调用此方法。
+     */
+    @Override
+    public void setApprovalRequired(Set<String> toolNames) {
+        this.approvalRequired.clear();
+        if (toolNames != null) {
+            this.approvalRequired.addAll(toolNames);
+        }
+    }
 
     // ── 非流式 ReAct ────────────────────────────────────────────────
 
@@ -221,6 +246,7 @@ public class DefaultReActEngine implements ReActEngine {
     }
 
     /** 对工具调用列表逐项执行并发出 tool_call SSE 事件（executing → done）。
+     *  <p>需用户审批的工具先发 tool_approval 事件，等待用户响应后再执行。</p>
      *  <p>工具执行（含阻塞 Feign 调用）通过 boundedElastic 隔离，避免阻塞
      *  WebClient 的 epoll/netty 事件循环线程。</p> */
     private Flux<ServerSentEvent<String>> emitRoundToolCallEvents(
@@ -229,6 +255,11 @@ public class DefaultReActEngine implements ReActEngine {
         return Flux.fromIterable(toolCalls)
                 .concatMap(req -> {
                     String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
+                    // 需要用户审批时走审批流程
+                    if (approvalRequired.contains(req.getName())) {
+                        return emitApprovalFlow(req, toolExecutor, messages, toolArgs);
+                    }
+                    // 无需审批：直接执行
                     String execJson = toolCallEventJson(req.getId(), req.getName(),
                             "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
                     Mono<ServerSentEvent<String>> doneEvent = Mono.fromCallable(() -> {
@@ -250,6 +281,73 @@ public class DefaultReActEngine implements ReActEngine {
                     }).subscribeOn(Schedulers.boundedElastic());
                     return Flux.just(sseEvent("tool_call", execJson)).concatWith(doneEvent);
                 });
+    }
+
+    /** 审批流程：先创建 future 注册到 ApprovalStore → 发 tool_approval 事件 →
+     *  发 tool_call executing 事件 → 等待用户响应 → 执行或拒绝 → 发 tool_call done 事件。
+     *
+     *  <p>关键：future 必须在 Flux 返回之前创建，否则前端可能在 create() 之前就调用
+     *  approve()，导致匹配不到 pending future（竞态条件）。</p> */
+    private Flux<ServerSentEvent<String>> emitApprovalFlow(
+            ModelResponse.ToolCallRequest req, ToolExecutor toolExecutor,
+            List<Message> messages, String toolArgs) {
+        // 必须在 Flux 返回前创建 future，消除竞态：保证前端 approve() 时 future 已就绪
+        CompletableFuture<Boolean> future = approvalStore.create(req.getId());
+        log.info("APPROVAL_DEBUG create: toolCallId={} pendingCount={} storeHash={}",
+                req.getId(), approvalStore.pendingCount(),
+                Integer.toHexString(System.identityHashCode(approvalStore)));
+
+        String approvalJson = toolApprovalEventJson(req.getId(), req.getName(), toolArgs);
+        ServerSentEvent<String> approvalEvent = sseEvent("tool_approval", approvalJson);
+
+        String execJson = toolCallEventJson(req.getId(), req.getName(),
+                "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
+
+        Mono<ServerSentEvent<String>> doneEvent = Mono.fromCallable(() -> {
+            boolean approved;
+            try {
+                approved = future.get(APPROVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.warn("审批超时或异常: toolCallId={} error={}", req.getId(), e.getMessage());
+                approved = false;
+            }
+            log.info("APPROVAL_DEBUG resolved: toolCallId={} approved={}", req.getId(), approved);
+            String output;
+            boolean success;
+            if (approved) {
+                try {
+                    output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                    success = true;
+                } catch (Exception e) {
+                    log.error("Tool execution failed: name={} error={}", req.getName(), e.getMessage(), e);
+                    output = "Tool error: " + e.getMessage();
+                    success = false;
+                }
+            } else {
+                output = "用户拒绝了工具执行";
+                success = false;
+            }
+            messages.add(Message.tool(req.getId(), output));
+            String doneJson = toolCallEventJson(req.getId(), req.getName(),
+                    "done", req.getName() + " 完成", toolArgs, output, success);
+            return sseEvent("tool_call", doneJson);
+        }).subscribeOn(Schedulers.boundedElastic());
+
+        return Flux.just(approvalEvent, sseEvent("tool_call", execJson)).concatWith(doneEvent);
+    }
+
+    /** 构建 tool_approval SSE 事件的 JSON */
+    private String toolApprovalEventJson(String toolCallId, String name, String arguments) {
+        try {
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("toolCallId", toolCallId);
+            event.put("toolName", name);
+            event.put("arguments", arguments);
+            event.put("message", "AI 请求执行 " + name);
+            return objectMapper.writeValueAsString(event);
+        } catch (Exception e) {
+            return "{\"error\":\"json\"}";
+        }
     }
 
     /**

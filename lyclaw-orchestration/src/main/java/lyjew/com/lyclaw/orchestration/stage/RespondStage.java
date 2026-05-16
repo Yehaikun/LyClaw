@@ -23,6 +23,8 @@ import reactor.core.publisher.Flux;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 响应生成阶段 — 集成 ReAct 工具调用循环。
@@ -174,6 +176,13 @@ public class RespondStage extends PipelineStageBase {
                 return "Tool error: " + e.getMessage();
             }
         };
+
+        // 将非只读工具标记为需要用户审批
+        Set<String> approvalTools = toolDefs.stream()
+                .filter(def -> !def.isReadOnly())
+                .map(ToolDefinition::getName)
+                .collect(Collectors.toSet());
+        reActEngine.setApprovalRequired(approvalTools);
 
         return reActEngine.executeStream(chatFacade, request, toolExecutor);
     }

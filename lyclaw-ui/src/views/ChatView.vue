@@ -47,6 +47,7 @@ import WelcomeHero from '@/components/WelcomeHero.vue'
 import MessageBubble from '@/components/MessageBubble.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ToolCallCard from '@/components/ToolCallCard.vue'
+import ToolApprovalDialog from '@/components/ToolApprovalDialog.vue'
 import TraceIdBadge from '@/components/TraceIdBadge.vue'
 import type { Message } from '@/types'
 
@@ -337,6 +338,9 @@ watch(
       </div>
 
     </template>
+
+    <!-- 工具审批对话框：AI请求执行非只读工具时弹出 -->
+    <ToolApprovalDialog />
 
     <!-- 输入栏：始终在底部可见，用户可以随时输入 -->
     <MessageInput

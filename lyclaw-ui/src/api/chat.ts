@@ -36,8 +36,9 @@ export function postChatStream(
   onError: (err: Error) => void,
   onStatus?: (text: string) => void,
   onToolCall?: (data: string) => void,
+  onApprovalRequired?: (data: string) => void,
 ): Promise<void> {
-  return postSSE('/api/chat/stream', req, onChunk, onDone, onError, onStatus, onToolCall)
+  return postSSE('/api/chat/stream', req, onChunk, onDone, onError, onStatus, onToolCall, onApprovalRequired)
 }
 
 /**

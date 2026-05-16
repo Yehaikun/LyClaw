@@ -1,5 +1,7 @@
 package lyjew.com.lyclaw.react;
 
+import java.util.Set;
+
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.model.ChatRequest;
 
@@ -57,4 +59,14 @@ public interface ReActEngine {
      */
     Flux<ServerSentEvent<String>> executeStream(ChatFacade chatFacade, ChatRequest request,
                                                 ToolExecutor toolExecutor);
+
+    /**
+     * 设置需要用户审批的工具名集合（通常是非只读工具）。
+     * 引擎在执行这些工具前会通过 SSE 推送 tool_approval 事件并等待用户确认。
+     *
+     * @param toolNames 需要审批的工具名集合
+     */
+    default void setApprovalRequired(Set<String> toolNames) {
+        // 默认空实现，子类可按需覆写
+    }
 }
