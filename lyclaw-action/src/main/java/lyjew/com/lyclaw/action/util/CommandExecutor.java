@@ -3,6 +3,7 @@ package lyjew.com.lyclaw.action.util;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -32,13 +33,22 @@ public final class CommandExecutor {
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
+            // 并发消费输出流，防止管道缓冲区写满导致进程阻塞死锁
+            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return readOutput(process, maxOutputLength);
+                } catch (Exception e) {
+                    return "（读取输出异常: " + e.getMessage() + "）";
+                }
+            });
+
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
                 return new CommandResult(-1, "", true);
             }
 
-            String output = readOutput(process, maxOutputLength);
+            String output = outputFuture.get(5, TimeUnit.SECONDS);
             return new CommandResult(process.exitValue(), output, false);
         } catch (Exception e) {
             return new CommandResult(-1, "进程执行异常: " + e.getMessage(), false);

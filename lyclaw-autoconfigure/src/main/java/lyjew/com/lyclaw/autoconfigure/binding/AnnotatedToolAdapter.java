@@ -5,6 +5,7 @@ import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
+import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -41,6 +42,7 @@ import java.util.Map;
  * 业务逻辑抛出异常等），适配器会捕获异常并返回一个标记为失败的 ToolExecutionResult，
  * 其中包含异常信息，确保异常不会中断管道执行。</p>
  */
+@Slf4j
 public class AnnotatedToolAdapter implements Tool {
 
     private final Object target;
@@ -83,11 +85,13 @@ public class AnnotatedToolAdapter implements Tool {
                     .build();
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - start;
-             return ToolExecutionResult.builder()
-                     .success(false)
-                     .error(e.getMessage())
-                     .elapsedMs(elapsed)
-                     .build();
+            log.error("工具执行异常: tool={}, args={}, error={}", name, toolCall.getArguments(),
+                    e.getMessage(), e);
+            return ToolExecutionResult.builder()
+                    .success(false)
+                    .error(e.getMessage() != null ? e.getMessage() : e.getClass().getName())
+                    .elapsedMs(elapsed)
+                    .build();
         }
     }
 

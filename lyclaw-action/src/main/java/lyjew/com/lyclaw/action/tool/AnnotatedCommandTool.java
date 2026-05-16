@@ -8,12 +8,11 @@ import lyjew.com.lyclaw.error.ToolExecuteException;
 /**
  * 系统命令执行工具，在子进程中通过 {@code sh -c} 执行 Shell 命令。
  *
- * <p>该工具具有写入能力（readonly = false），因此受沙箱安全级别限制，
- * 仅在 CONTAINER 或 ISOLATED 级别下通过独立进程执行。
+ * <p>该工具具有写入能力（readonly = false），因此受沙箱安全级别限制。
  * 命令执行有 30 秒超时，输出限制在 10000 字符以内，超出部分截断。</p>
  *
- * <p>退出码 0 表示成功；非 0 或超时时抛出 {@link ToolExecuteException}，
- * 令上层框架正确标记 success=false，而非将错误文本包装为成功结果。</p>
+ * <p>命令执行完成即返回输出（含退出码），不因非零退出码判定工具失败——
+ * 工具只负责执行并透明传递结果，由 LLM 根据输出文本自行理解命令执行情况。</p>
  */
 @Tool(name = "command",
       description = "在本机环境中执行系统命令，主意不要执行危险命令",
@@ -29,9 +28,13 @@ public class AnnotatedCommandTool {
     /**
      * 执行系统命令，委托给 {@link CommandExecutor}。
      *
+     * <p>命令执行完成即透明返回输出文本，不因非零退出码判定失败。
+     * 由于 {@link CommandExecutor} 已合并 stderr 到 stdout，
+     * 错误信息自然包含在输出中，无需额外标注。</p>
+     *
      * @param command 要执行的 Shell 命令
-     * @return 执行结果
-     * @throws ToolExecuteException 命令为空、超时或退出码非0时抛出
+     * @return 命令输出原文（合并 stdout/stderr）
+     * @throws ToolExecuteException 命令为空或执行超时时抛出
      */
     public String execute(
         @Param(name = "command", description = "要执行的shell命令")
@@ -48,10 +51,7 @@ public class AnnotatedCommandTool {
             throw ToolExecuteException.of("command",
                     "命令执行超时（" + TIMEOUT_SECONDS + "秒）");
         }
-        if (cr.isSuccess()) {
-            return cr.output().isEmpty() ? "命令执行成功，无输出" : cr.output();
-        }
-        throw ToolExecuteException.of("command",
-                "退出码 " + cr.exitCode() + ": " + cr.output());
+
+        return cr.output().isEmpty() ? "(无输出)" : cr.output();
     }
 }

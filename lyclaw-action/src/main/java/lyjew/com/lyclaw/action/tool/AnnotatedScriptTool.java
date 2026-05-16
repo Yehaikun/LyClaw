@@ -55,18 +55,12 @@ public class AnnotatedScriptTool {
      * </ol>
      * </p>
      *
-     * <p>返回值格式：
-     * <ul>
-     *   <li>正常完成：{@code [exit=退出码] 标准输出和标准错误的内容}</li>
-     *   <li>执行超时：{@code "脚本执行超时（30秒）"}</li>
-     *   <li>发生异常：{@code "脚本执行异常: 异常消息"}</li>
-     *   <li>语言不支持：{@code "不支持的语言: xxx。支持: python, node, bash"}</li>
-     * </ul>
-     * </p>
+     * <p>透明返回脚本的标准输出和标准错误内容（stderr 已合并到 stdout）。
+     * 仅超时或发生异常时返回错误描述，不根据退出码判断成败。</p>
      *
      * @param language 编程语言标识，支持 {@code "python"}、{@code "node"}、{@code "bash"}（不区分大小写）
      * @param script   要执行的脚本源代码完整内容，应为合法的对应语言脚本
-     * @return 脚本执行结果字符串，包含退出码和输出内容，出错时返回错误描述信息
+     * @return 脚本执行的原始输出文本，超时或异常时返回错误描述
      */
     public String executeScript(
             @Param(name = "language", description = "编程语言: python, node, bash", required = true)
@@ -95,7 +89,7 @@ public class AnnotatedScriptTool {
             if (result.timedOut()) {
                 return "脚本执行超时（" + TIMEOUT_SECONDS + "秒）";
             }
-            return "[exit=" + result.exitCode() + "] " + result.output();
+            return result.output().isEmpty() ? "(无输出)" : result.output();
 
         } catch (Exception e) {
             return "脚本执行异常: " + e.getMessage();

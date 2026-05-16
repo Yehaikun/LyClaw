@@ -318,20 +318,12 @@ public class ToolSandboxImpl implements ToolSandbox {
                     .elapsedMs(elapsed)
                     .build();
         }
-        if (cr.isSuccess()) {
-            String out = cr.output().isEmpty() ? "命令执行成功，无输出" : cr.output();
-            return ToolExecutionResult.builder()
-                    .toolName(toolName)
-                    .success(true)
-                    .result(out)
-                    .elapsedMs(elapsed)
-                    .build();
-        }
+        // 透明返回命令输出，不根据退出码判断成败——AI 像人一样阅读结果
+        String out = cr.output().isEmpty() ? "(无输出)" : cr.output();
         return ToolExecutionResult.builder()
                 .toolName(toolName)
-                .success(false)
-                .error("退出码 " + cr.exitCode())
-                .result(cr.output())
+                .success(true)
+                .result(out)
                 .elapsedMs(elapsed)
                 .build();
     }
