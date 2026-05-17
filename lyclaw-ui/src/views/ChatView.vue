@@ -49,6 +49,8 @@ import MessageInput from '@/components/MessageInput.vue'
 import ToolCallCard from '@/components/ToolCallCard.vue'
 import ToolApprovalDialog from '@/components/ToolApprovalDialog.vue'
 import TraceIdBadge from '@/components/TraceIdBadge.vue'
+import MessageNav from '@/components/MessageNav.vue'
+import type { NavItem } from '@/components/MessageNav.vue'
 import type { Message } from '@/types'
 
 const route = useRoute()
@@ -123,6 +125,55 @@ const tempStreamingMessage = computed<Message | null>(() => {
 const allMessages = computed<Message[]>(() => {
   return chatStore.messages
 })
+
+/** 导航栏当前高亮的条目索引 */
+const selectedNavIndex = ref<number | null>(null)
+
+/** 标题截断长度：用户消息最多取前 40 个字符 */
+const NAV_TITLE_MAX = 40
+
+/**
+ * 从消息列表中提取用户消息，生成导航条目。
+ * 每条用户消息映射为一个 NavItem，label 为截断后的文本。
+ */
+const navItems = computed<NavItem[]>(() => {
+  const items: NavItem[] = []
+  for (let i = 0; i < chatStore.messages.length; i++) {
+    const msg = chatStore.messages[i]
+    if (msg.role === 'user') {
+      const text = msg.content.trim()
+      const label = text.length > NAV_TITLE_MAX
+        ? text.slice(0, NAV_TITLE_MAX) + '...'
+        : text
+      items.push({ index: i, label })
+    }
+  }
+  return items
+})
+
+/** 自动跟踪最新用户消息：新消息到达时选中最后一条 */
+watch(
+  () => navItems.value.length,
+  (len) => {
+    if (len > 0) {
+      selectedNavIndex.value = navItems.value[len - 1].index
+    }
+  },
+)
+
+/**
+ * 点击导航条目时滚动到对应的消息位置。
+ * 通过 data-msg-index 属性定位目标消息 DOM 元素并 scrollIntoView。
+ */
+function scrollToMessage(index: number) {
+  selectedNavIndex.value = index
+  nextTick(() => {
+    const el = document.querySelector(`[data-msg-index="${index}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
+}
 
 /**
  * 消息列表的动态内联样式：流式输出时为底部留出额外空间（15vh视口高度），
@@ -272,72 +323,81 @@ watch(
       @select-prompt="handleSelectPrompt"
     />
 
-    <!-- 消息视图（有消息或流式输出中） -->
-    <template v-if="hasMessages || chatStore.isStreaming">
-      <div ref="messageListRef" class="message-list" :style="messageListStyle" @scroll="onMessageListScroll">
-        <MessageBubble
-          v-for="(msg, index) in allMessages"
-          :key="index"
-          :message="msg"
-          :is-last="index === allMessages.length - 1 && !chatStore.isStreaming"
-          :is-streaming="false"
-        />
+    <!-- 消息视图（有消息或流式输出中）：消息列表 + 右侧导航 -->
+    <div v-if="hasMessages || chatStore.isStreaming" class="chat-body">
+      <div class="chat-main">
+        <div ref="messageListRef" class="message-list" :style="messageListStyle" @scroll="onMessageListScroll">
+          <MessageBubble
+            v-for="(msg, index) in allMessages"
+            :key="index"
+            :data-msg-index="index"
+            :message="msg"
+            :is-last="index === allMessages.length - 1 && !chatStore.isStreaming"
+            :is-streaming="false"
+          />
 
-        <!-- 思考气泡：流式输出中但尚未产生文本时显示跳动圆点动画 -->
-        <div v-if="isThinking" class="thinking-bubble">
-          <div class="thinking-bubble-inner">
-            <div class="message-role-icon thinking-avatar">
-              <span class="role-letter">L</span>
-            </div>
-            <div class="message-body">
-              <div class="message-header">
-                <span class="message-role-label">LyClaw</span>
-                <span class="message-model-badge">{{ chatStore.currentModel }}</span>
+          <!-- 思考气泡：流式输出中但尚未产生文本时显示跳动圆点动画 -->
+          <div v-if="isThinking" class="thinking-bubble">
+            <div class="thinking-bubble-inner">
+              <div class="message-role-icon thinking-avatar">
+                <span class="role-letter">L</span>
               </div>
-              <div class="thinking-indicator">
-                <span class="thinking-dot" />
-                <span class="thinking-dot" />
-                <span class="thinking-dot" />
-                <span class="thinking-text">{{ statusLabel }}</span>
+              <div class="message-body">
+                <div class="message-header">
+                  <span class="message-role-label">LyClaw</span>
+                  <span class="message-model-badge">{{ chatStore.currentModel }}</span>
+                </div>
+                <div class="thinking-indicator">
+                  <span class="thinking-dot" />
+                  <span class="thinking-dot" />
+                  <span class="thinking-dot" />
+                  <span class="thinking-text">{{ statusLabel }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- 实时工具调用卡片：tool_call SSE 事件驱动，展示加载动画 -->
-        <div v-if="chatStore.liveToolCalls.length > 0" class="live-tool-calls">
-          <ToolCallCard
-            v-for="tc in chatStore.liveToolCalls"
-            :key="tc.toolCallId"
-            :tool-call="tc"
+          <!-- 实时工具调用卡片：tool_call SSE 事件驱动，展示加载动画 -->
+          <div v-if="chatStore.liveToolCalls.length > 0" class="live-tool-calls">
+            <ToolCallCard
+              v-for="tc in chatStore.liveToolCalls"
+              :key="tc.toolCallId"
+              :tool-call="tc"
+            />
+          </div>
+
+          <!-- 流式临时气泡：显示实时累积的流式输出文本 -->
+          <MessageBubble
+            v-if="tempStreamingMessage"
+            :message="tempStreamingMessage"
+            :is-last="true"
+            :is-streaming="true"
           />
         </div>
 
-        <!-- 流式临时气泡：显示实时累积的流式输出文本 -->
-        <MessageBubble
-          v-if="tempStreamingMessage"
-          :message="tempStreamingMessage"
-          :is-last="true"
-          :is-streaming="true"
-        />
-      </div>
-
-      <!-- 错误栏：显示错误信息、TraceId和操作按钮（Retry/Dismiss） -->
-      <div v-if="chatStore.error" class="error-bar">
-        <div class="error-bar-content">
-          <span class="error-text">{{ chatStore.error }}</span>
-          <TraceIdBadge
-            v-if="chatStore.errorTraceId"
-            :trace-id="chatStore.errorTraceId"
-          />
-        </div>
-        <div class="error-bar-actions">
-          <button class="error-retry-btn" @click="handleRetry">Retry</button>
-          <button class="error-dismiss-btn" @click="chatStore.error = null">Dismiss</button>
+        <!-- 错误栏：显示错误信息、TraceId和操作按钮（Retry/Dismiss） -->
+        <div v-if="chatStore.error" class="error-bar">
+          <div class="error-bar-content">
+            <span class="error-text">{{ chatStore.error }}</span>
+            <TraceIdBadge
+              v-if="chatStore.errorTraceId"
+              :trace-id="chatStore.errorTraceId"
+            />
+          </div>
+          <div class="error-bar-actions">
+            <button class="error-retry-btn" @click="handleRetry">Retry</button>
+            <button class="error-dismiss-btn" @click="chatStore.error = null">Dismiss</button>
+          </div>
         </div>
       </div>
 
-    </template>
+      <!-- 右侧消息导航栏 -->
+      <MessageNav
+        :items="navItems"
+        :selected-index="selectedNavIndex"
+        @select="scrollToMessage"
+      />
+    </div>
 
     <!-- 工具审批对话框：AI请求执行非只读工具时弹出 -->
     <ToolApprovalDialog />
@@ -360,6 +420,18 @@ watch(
   flex: 1;
   min-height: 0;
   background: var(--color-canvas);
+}
+
+.chat-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .message-list {
@@ -385,6 +457,10 @@ watch(
 
 .message-list::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+.message-list :deep([data-msg-index]) {
+  scroll-margin-top: 12px;
 }
 
 .error-bar {
@@ -534,6 +610,10 @@ watch(
 @media (max-width: 768px) {
   .message-list {
     padding: var(--spacing-xs) 0;
+  }
+
+  .message-list :deep([data-msg-index]) {
+    scroll-margin-top: 8px;
   }
 
   .error-bar {
