@@ -391,12 +391,15 @@ watch(
         </div>
       </div>
 
-      <!-- 右侧消息导航栏 -->
-      <MessageNav
-        :items="navItems"
-        :selected-index="selectedNavIndex"
-        @select="scrollToMessage"
-      />
+      <!-- 右侧消息导航栏：仅左侧栏折叠时可见 -->
+      <Transition name="nav-slide">
+        <MessageNav
+          v-if="settingsStore.sidebarCollapsed"
+          :items="navItems"
+          :selected-index="selectedNavIndex"
+          @select="scrollToMessage"
+        />
+      </Transition>
     </div>
 
     <!-- 工具审批对话框：AI请求执行非只读工具时弹出 -->
@@ -627,5 +630,26 @@ watch(
   .thinking-bubble-inner {
     gap: var(--spacing-xs);
   }
+}
+</style>
+
+<style>
+/* 右侧导航栏滑入滑出动画（unscoped，用于 Vue Transition 组件） */
+.nav-slide-enter-active {
+  transition: opacity 0.3s ease, transform 0.35s var(--transition-ease-out-expo);
+}
+
+.nav-slide-leave-active {
+  transition: opacity 0.25s ease, transform 0.3s var(--transition-ease-out-expo);
+}
+
+.nav-slide-enter-from {
+  opacity: 0;
+  transform: translateX(32px);
+}
+
+.nav-slide-leave-to {
+  opacity: 0;
+  transform: translateX(24px);
 }
 </style>
