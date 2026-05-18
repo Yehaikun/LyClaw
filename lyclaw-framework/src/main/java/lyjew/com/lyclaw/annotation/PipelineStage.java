@@ -48,7 +48,7 @@ import java.lang.annotation.Target;
  * }
  * }</pre>
  *
- * @see lyjew.com.lyclaw.pipeline.PipelineContext
+ * @see lyjew.com.lyclaw.react.AgentContext
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)

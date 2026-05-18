@@ -16,6 +16,7 @@ lyclaw:
         api-key: ${DEEPSEEK_API_KEY:}
         model: deepseek-v4-flash
   storage:
+    base-path: /home/lyjew/Documents/Unicom/LyClaw/LyClaw  # 文件存储根目录，默认为 ${user.dir}/data/storage
     stores:
       session: file
       entity: file

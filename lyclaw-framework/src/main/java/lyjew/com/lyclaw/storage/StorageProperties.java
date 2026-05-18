@@ -14,6 +14,9 @@ import java.util.Map;
  */
 public class StorageProperties {
 
+    /** 文件存储基路径，默认 {@code ${user.dir}/data/storage} */
+    private String basePath;
+
     /** 全局默认后端 */
     private String defaultBackend = "file";
 
@@ -30,6 +33,8 @@ public class StorageProperties {
         stores.put("memory", "inmemory");
     }
 
+    public String getBasePath() { return basePath; }
+    public void setBasePath(String basePath) { this.basePath = basePath; }
     public String getDefaultBackend() { return defaultBackend; }
     public void setDefaultBackend(String defaultBackend) { this.defaultBackend = defaultBackend; }
     public Map<String, BackendConfig> getBackends() { return backends; }

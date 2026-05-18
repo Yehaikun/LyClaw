@@ -111,9 +111,14 @@ public class StorageAutoConfiguration {
     public StorageBackend fileBackend(StorageProperties properties) {
         FileBackend backend = new FileBackend();
         java.util.Map<String, Object> config = new java.util.HashMap<>();
-        StorageProperties.BackendConfig backendConfig = properties.getBackends().get("file");
-        if (backendConfig != null && backendConfig.getUrl() != null) {
-            config.put("dataDir", backendConfig.getUrl());
+        // base-path 优先级最高，其次是 backends.file.url，未配置则用 FileBackend 内置默认值
+        if (properties.getBasePath() != null && !properties.getBasePath().isBlank()) {
+            config.put("dataDir", properties.getBasePath());
+        } else {
+            StorageProperties.BackendConfig backendConfig = properties.getBackends().get("file");
+            if (backendConfig != null && backendConfig.getUrl() != null) {
+                config.put("dataDir", backendConfig.getUrl());
+            }
         }
         backend.initialize(config);
         return backend;

@@ -53,9 +53,7 @@ public class RespondStage extends PipelineStageBase {
             int fc = ctx.getFailCount().get();
             List<String> toolResults = ctx.getToolResults();
 
-            log.info("\n\n══════════════════════════════════");
-            log.info("  [阶段 3/5] 响应生成 - ReAct循环 [RESPOND]");
-            log.info("══════════════════════════════════");
+            log.info("\n\n========== [阶段 3/5] 响应生成 - ReAct循环 [RESPOND] ==========");
             log.info(logJson("INFO", "stage_start", "RESPOND", traceId,
                     "Starting response generation", null));
             ctx.getCurrentStage().set("RESPOND");

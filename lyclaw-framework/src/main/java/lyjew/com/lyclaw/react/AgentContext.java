@@ -20,8 +20,7 @@ import lyjew.com.lyclaw.tracing.TraceContext;
 /**
  * Agent 调用上下文，聚合一次 Agent 调用的全部运行时数据和状态。
  *
- * <p>合并了原 PipelineContext（流水线状态）和 ChatContext（聊天上下文）的全部字段，
- * 作为 Stage 管线、AgentHook 链、ReAct 循环之间的统一数据总线。</p>
+ * <p>聚合了原 ChatContext 的全部字段，作为 Stage 管线、AgentHook 链、ReAct 循环之间的统一数据总线。</p>
  *
  * <h3>生命周期</h3>
  * <ul>

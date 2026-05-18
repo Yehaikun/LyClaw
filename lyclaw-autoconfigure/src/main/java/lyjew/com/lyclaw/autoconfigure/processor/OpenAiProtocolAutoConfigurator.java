@@ -167,7 +167,7 @@ public class OpenAiProtocolAutoConfigurator implements InitializingBean, Applica
         ChatModel chatModel;
         if ("deepseek".equalsIgnoreCase(configKey)) {
             chatModel = new lyjew.com.lyclaw.adapter.DeepSeekChatModel(modelConfig);
-            log.info("使用 DeepSeekChatModel (带 @RetryPolicy/@Fallback/@CircuitBreaker)");
+            log.info("使用 DeepSeekChatModel (带 @RetryPolicy/@CircuitBreaker)");
         } else {
             chatModel = new lyjew.com.lyclaw.adapter.OpenAiProtocolChatModel(configKey, modelConfig);
         }

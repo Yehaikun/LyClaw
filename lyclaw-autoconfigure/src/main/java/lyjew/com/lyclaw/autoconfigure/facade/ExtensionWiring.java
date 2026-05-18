@@ -98,11 +98,11 @@ public class ExtensionWiring implements SmartInitializingSingleton, ApplicationC
             }
 
             if (extensionFacade != null) {
-                // process() 返回 List<T>，T 由 registrar 的泛型决定，运行时类型擦除是安全的
+                int pendingSize = registrar.getPending().size();
                 List<?> accepted = extensionFacade.process(registrar.getPending(), registrar.category());
                 ((DeferredRegistrar) registrar).applyFiltered(accepted);
                 log.info("[{}] 过滤后注册: {}/{} 个通过",
-                        registrar.category(), accepted.size(), registrar.getPending().size());
+                        registrar.category(), accepted.size(), pendingSize);
             } else {
                 List<?> pending = registrar.getPending();
                 ((DeferredRegistrar) registrar).applyFiltered(pending);

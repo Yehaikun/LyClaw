@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.adapter;
 
 import lyjew.com.lyclaw.annotation.chat.ChatModel;
 import lyjew.com.lyclaw.annotation.chat.CircuitBreaker;
-import lyjew.com.lyclaw.annotation.chat.Fallback;
 import lyjew.com.lyclaw.annotation.chat.ModelCapability;
 import lyjew.com.lyclaw.annotation.chat.RetryPolicy;
 import lyjew.com.lyclaw.chat.ModelCapabilities;
@@ -29,15 +28,12 @@ import org.springframework.context.annotation.Bean;
  *   <li>{@code @RetryPolicy(maxAttempts=3, backoff=EXPONENTIAL)} — 配置指数退避的自动
  *       重试策略，最多重试 3 次，在遇到 429（请求过多）、503（服务不可用）、504（网关
  *       超时）等临时性错误时自动触发</li>
- *   <li>{@code @Fallback(chain={"openai:gpt-4o-mini", "groq:llama-4"})} — 配置降级链，
- *       当 DeepSeek 服务不可用时，自动按顺序尝试 OpenAI 的 gpt-4o-mini 和 Groq 的
- *       llama-4 作为备用模型，确保业务连续性</li>
  *   <li>{@code @CircuitBreaker(failureThreshold=5, halfOpenAfterSeconds=30)} — 配置
  *       熔断保护，连续 5 次失败后自动熔断，30 秒后进入半开状态进行探测性恢复</li>
  * </ul>
  * 框架的 ChatModelPostProcessor（Bean 后置处理器）在 Spring 容器启动时扫描这些注解，
- * 自动构建装饰器链：CircuitBreakerChatModel → RetryChatModel → FallbackChatModel →
- * DeepSeekChatModel，形成层层保护的弹性调用链路，开发者无需编写任何装饰器包装代码。
+ * 自动构建装饰器链：CircuitBreakerChatModel → RetryChatModel →
+ * DeepSeekChatModel，形成层层保护的弹性调用链路。
  *
  * <p>特别说明：DeepSeek 的思考模式（Thinking/思维链）目前仅在非流式调用时可用，
  * 即 {@code @ModelCapability} 中 toolCallStreaming 设置为 false。这意味着当启用
@@ -75,7 +71,6 @@ import org.springframework.context.annotation.Bean;
         RetryPolicy.HttpStatusHint.GATEWAY_TIMEOUT
     }
 )
-@Fallback(chain = {"openai:gpt-4o-mini", "groq:llama-4"})
 @CircuitBreaker(failureThreshold = 5, halfOpenAfterSeconds = 30)
 public class DeepSeekChatModel extends OpenAiProtocolChatModel {
 

@@ -18,7 +18,7 @@ public interface ReactivePipelineStage {
     /**
      * 执行当前阶段的处理逻辑，产生 SSE 事件流。
      *
-     * @param ctx Agent 上下文（聚合了原 ChatContext + PipelineContext 的全部字段）
+     * @param ctx Agent 上下文（聚合了流水线状态和聊天上下文的全部字段）
      * @return 本阶段产生的 SSE 事件流；若流水线已终止则返回空 Flux
      */
     Flux<ServerSentEvent<String>> execute(AgentContext ctx);
