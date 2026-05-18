@@ -2,9 +2,11 @@ package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.autoconfigure.facade.ExtensionFacade;
 import lyjew.com.lyclaw.autoconfigure.processor.PipelineStageProcessor;
+import lyjew.com.lyclaw.config.PipelineProperties;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
 /**
@@ -47,6 +49,13 @@ public class PipelineAutoConfiguration {
      *
      * @return PipelineStageProcessor 实例，负责管道阶段的自动发现和排序
      */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConfigurationProperties(prefix = "lyclaw.pipeline")
+    public PipelineProperties pipelineProperties() {
+        return new PipelineProperties();
+    }
+
     @Bean
     @ConditionalOnMissingBean
     public PipelineStageProcessor pipelineStageProcessor() {

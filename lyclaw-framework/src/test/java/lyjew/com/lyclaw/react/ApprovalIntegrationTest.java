@@ -3,6 +3,7 @@ package lyjew.com.lyclaw.react;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.chat.ChatModel;
 import lyjew.com.lyclaw.chat.RoutingDecision;
+import lyjew.com.lyclaw.config.AgentProperties;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
@@ -46,7 +47,7 @@ class ApprovalIntegrationTest {
 
         @BeforeEach
         void setUp() {
-            store = new ApprovalStore();
+            store = new ApprovalStore(new AgentProperties());
         }
 
         @Test
@@ -144,8 +145,8 @@ class ApprovalIntegrationTest {
 
         @BeforeEach
         void setUp() {
-            approvalStore = new ApprovalStore();
-            engine = new DefaultReActEngine(approvalStore);
+            approvalStore = new ApprovalStore(new AgentProperties());
+            engine = new DefaultReActEngine(approvalStore, new AgentProperties());
             chatFacade = mock(ChatFacade.class);
             chatModel = mock(ChatModel.class);
 

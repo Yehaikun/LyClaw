@@ -1,9 +1,11 @@
 package lyjew.com.lyclaw.plan.impl;
 
+import lyjew.com.lyclaw.config.PlanProperties;
 import lyjew.com.lyclaw.task.PlanValidator;
 import lyjew.com.lyclaw.task.TaskNode;
 import lyjew.com.lyclaw.task.TaskPlan;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayDeque;
@@ -44,11 +46,14 @@ import java.util.Set;
 @Service
 public class PlanValidatorImpl implements PlanValidator {
 
-    /** 默认最大节点数 */
-    private static final int DEFAULT_MAX_NODES = 50;
+    private int maxNodes = 50;
+    private long timeBudgetMs = 600_000L;
 
-    /** 默认时间预算（毫秒，默认 10 分钟） */
-    private static final long DEFAULT_TIME_BUDGET_MS = 600_000L;
+    @Autowired
+    public void setPlanProperties(PlanProperties props) {
+        this.maxNodes = props.getMaxNodes();
+        this.timeBudgetMs = props.getTimeBudgetMs();
+    }
 
     /**
      * 验证任务计划的完整性和可行性。
@@ -166,17 +171,17 @@ public class PlanValidatorImpl implements PlanValidator {
 
         // 8. 预算检查
         long estimatedTime = plan.getEstimatedCompletionTime();
-        if (estimatedTime > DEFAULT_TIME_BUDGET_MS) {
+        if (estimatedTime > timeBudgetMs) {
             errors.add(String.format(
                     "Estimated completion time (%d ms) exceeds budget (%d ms)",
-                    estimatedTime, DEFAULT_TIME_BUDGET_MS));
+                    estimatedTime, timeBudgetMs));
         }
 
         // 9. 规模检查
-        if (nodes.size() > DEFAULT_MAX_NODES) {
+        if (nodes.size() > maxNodes) {
             errors.add(String.format(
                     "Plan has %d nodes, exceeding maximum allowed (%d)",
-                    nodes.size(), DEFAULT_MAX_NODES));
+                    nodes.size(), maxNodes));
         }
 
         return buildResult(errors);

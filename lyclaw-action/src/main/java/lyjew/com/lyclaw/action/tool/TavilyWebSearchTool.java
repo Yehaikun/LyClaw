@@ -4,13 +4,14 @@ package lyjew.com.lyclaw.action.tool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lyjew.com.lyclaw.annotation.tool.Tool;
+import lyjew.com.lyclaw.config.ToolProperties;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -34,9 +35,13 @@ import java.util.Map;
 public class TavilyWebSearchTool implements lyjew.com.lyclaw.tool.Tool {
 
     private static final Logger log = LoggerFactory.getLogger(TavilyWebSearchTool.class);
-    // 换成成员变量
-    @Value("${lyclaw.tool.tavily.api-key:}")
-    private String TAVILY_API_KEY;
+
+    private String tavilyApiKey;
+
+    @Autowired
+    public void setToolProperties(ToolProperties props) {
+        this.tavilyApiKey = props.getTavilyApiKey();
+    }
 
     private static final String TAVILY_API_URL = "https://api.tavily.com/search";
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(15);
@@ -72,7 +77,7 @@ public class TavilyWebSearchTool implements lyjew.com.lyclaw.tool.Tool {
      *       若解析失败或没有该字段，则将整个 arguments 字符串作为关键词</li>
      *   <li><b>关键词校验</b> — 检查关键词是否为 null 或空白字符串，若是则返回失败结果，
      *       错误信息为 "搜索关键词为空"</li>
-     *   <li><b>API 密钥检查</b> — 从环境变量 {@code TAVILY_API_KEY} 读取 API 密钥，
+     *   <li><b>API 密钥检查</b> — 从环境变量 {@code tavilyApiKey} 读取 API 密钥，
      *       若未配置（为 null 或空白）则返回失败结果，同时提示用户设置该环境变量</li>
      *   <li><b>构建请求</b> — 构造 HTTP POST 请求体（JSON 格式），包含以下字段：
      *       {@code api_key}（密钥）、{@code query}（关键词）、{@code search_depth="basic"}、
@@ -107,10 +112,10 @@ public class TavilyWebSearchTool implements lyjew.com.lyclaw.tool.Tool {
                 return ToolExecutionResult.failure("搜索关键词为空", "web_search");
             }
 
-            String apiKey = TAVILY_API_KEY;
+            String apiKey = tavilyApiKey;
             if (apiKey == null || apiKey.isBlank()) {
                 return ToolExecutionResult.failure(
-                        "Tavily API Key 未配置，请设置环境变量 TAVILY_API_KEY", "web_search");
+                        "Tavily API Key 未配置，请设置环境变量 tavilyApiKey", "web_search");
             }
 
             Map<String, Object> body = new LinkedHashMap<>();

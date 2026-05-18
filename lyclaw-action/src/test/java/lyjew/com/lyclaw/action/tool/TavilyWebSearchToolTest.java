@@ -17,13 +17,13 @@ class TavilyWebSearchToolTest {
 
     private TavilyWebSearchTool tool;
 
-    private static final String TAVILY_API_KEY = "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";
+    private static final String tavilyApiKey = "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";
 
     @BeforeEach
     void setUp() {
         tool = new TavilyWebSearchTool();
         // 绕过 @Value 注入：单元测试不走 Spring 容器，手动设置 API key
-        ReflectionTestUtils.setField(tool, "TAVILY_API_KEY", TAVILY_API_KEY);
+        ReflectionTestUtils.setField(tool, "tavilyApiKey", tavilyApiKey);
     }
 
     @Nested
@@ -51,15 +51,15 @@ class TavilyWebSearchToolTest {
     }
 
     @Nested
-    @DisplayName("execute 集成测试（需 TAVILY_API_KEY）")
+    @DisplayName("execute 集成测试（需 tavilyApiKey）")
     class Execute {
 
         @Test
         @DisplayName("真实搜索返回成功结果")
         void realSearch() {
-            String apiKey = TAVILY_API_KEY;
+            String apiKey = tavilyApiKey;
             assumeTrue(apiKey != null && !apiKey.isBlank(),
-                    "跳过：未设置 TAVILY_API_KEY 环境变量");
+                    "跳过：未设置 tavilyApiKey 环境变量");
 
             ToolCall call = ToolCall.builder()
                     .name("web_search")
@@ -95,9 +95,9 @@ class TavilyWebSearchToolTest {
         @Test
         @DisplayName("纯文本参数也能提取查询")
         void plainTextQuery() {
-            String apiKey = TAVILY_API_KEY;
+            String apiKey = tavilyApiKey;
             assumeTrue(apiKey != null && !apiKey.isBlank(),
-                    "跳过：未设置 TAVILY_API_KEY 环境变量");
+                    "跳过：未设置 tavilyApiKey 环境变量");
 
             // arguments 是纯文本而非 JSON 时，直接作为 query 使用
             ToolCall call = ToolCall.builder()

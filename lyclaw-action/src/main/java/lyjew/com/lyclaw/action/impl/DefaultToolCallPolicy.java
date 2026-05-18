@@ -1,10 +1,12 @@
 package lyjew.com.lyclaw.action.impl;
 
+import lyjew.com.lyclaw.config.ToolProperties;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
 import lyjew.com.lyclaw.tool.ToolErrorAction;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -23,19 +25,23 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>错误重试（默认最多3次）</li>
  *   <li>错误处理动作（默认 ABORT，即终止）</li>
  * </ul>
+ * 初始值从 {@link ToolProperties} 注入，运行时可动态修改。
  * </p>
  */
 @Slf4j
 @Component
 public class DefaultToolCallPolicy implements ToolCallPolicy {
 
-    private static final int DEFAULT_MAX_ROUNDS = 10;
-    private static final int DEFAULT_MAX_RETRIES = 3;
-    private static final int DEFAULT_MAX_CALLS_PER_TOOL = 20;
+    private volatile int maxRounds = 10;
+    private volatile int maxRetries = 3;
+    private volatile int maxCallsPerTool = 20;
 
-    private volatile int maxRounds = DEFAULT_MAX_ROUNDS;
-    private volatile int maxRetries = DEFAULT_MAX_RETRIES;
-    private volatile int maxCallsPerTool = DEFAULT_MAX_CALLS_PER_TOOL;
+    @Autowired
+    public void setToolProperties(ToolProperties props) {
+        this.maxRounds = Math.max(1, props.getMaxRounds());
+        this.maxRetries = Math.max(1, props.getMaxRetries());
+        this.maxCallsPerTool = Math.max(1, props.getMaxCallsPerTool());
+    }
     /** 默认错误处理动作，默认为终止执行 */
     private volatile ToolErrorAction defaultErrorAction = ToolErrorAction.ABORT;
 

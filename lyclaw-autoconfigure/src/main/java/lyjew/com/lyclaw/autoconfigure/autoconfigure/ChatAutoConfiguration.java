@@ -1,6 +1,7 @@
 package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.chat.*;
+import lyjew.com.lyclaw.config.PlanProperties;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -27,6 +28,13 @@ public class ChatAutoConfiguration {
      *
      * @return ChatProperties 实例，其字段值由 Spring Boot 从配置文件中自动填充
      */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConfigurationProperties(prefix = "lyclaw.plan")
+    public PlanProperties planProperties() {
+        return new PlanProperties();
+    }
+
     @Bean
     @ConditionalOnMissingBean
     @ConfigurationProperties(prefix = "lyclaw.chat")

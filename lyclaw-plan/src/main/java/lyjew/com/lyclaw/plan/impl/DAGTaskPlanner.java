@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.plan.impl;
 
+import lyjew.com.lyclaw.config.PlanProperties;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.AgentResult;
 import lyjew.com.lyclaw.task.DecompositionStrategy;
@@ -11,6 +12,7 @@ import lyjew.com.lyclaw.task.AbstractTaskPlanner;
 import lyjew.com.lyclaw.task.TaskDecomposer;
 import lyjew.com.lyclaw.task.TaskPlan;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import lombok.extern.slf4j.Slf4j;
@@ -74,14 +76,16 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
     private static final Pattern SIMPLE_PATTERN = Pattern.compile(
             "(?i)\\b(what is|who is|when|where|how to|define|explain|describe|list|show|get|fetch)\\b");
 
-    /** 默认任务超时时间（毫秒） */
-    private static final long DEFAULT_TIMEOUT_MS = 30_000L;
+    private long defaultTimeoutMs = 30_000L;
+    private long simpleTimeoutMs = 10_000L;
+    private int maxNodes = 50;
 
-    /** 单节点超时 */
-    private static final long SIMPLE_TIMEOUT_MS = 10_000L;
-
-    /** 计划中允许的最大节点数 */
-    private static final int MAX_NODES = 50;
+    @Autowired
+    public void setPlanProperties(PlanProperties props) {
+        this.defaultTimeoutMs = props.getDefaultTimeoutMs();
+        this.simpleTimeoutMs = props.getSimpleTimeoutMs();
+        this.maxNodes = props.getMaxNodes();
+    }
 
     /**
      * 根据用户意图进行 DAG 规划。
@@ -177,7 +181,7 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
         TaskNode optimizeNode = new TaskNode(
                 nodeId, "OPTIMIZE",
                 "Optimize based on previous result: " + summary,
-                List.of(), List.of(), DEFAULT_TIMEOUT_MS);
+                List.of(), List.of(), defaultTimeoutMs);
 
         return new SimpleTaskPlan(List.of(optimizeNode));
     }
@@ -256,7 +260,7 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
     private TaskPlan buildSimplePlan(String intent) {
         String nodeId = "task-" + UUID.randomUUID().toString().substring(0, 8);
         TaskNode node = new TaskNode(nodeId, "EXECUTE", intent,
-                List.of(), List.of(), SIMPLE_TIMEOUT_MS);
+                List.of(), List.of(), simpleTimeoutMs);
         return new SimpleTaskPlan(List.of(node));
     }
 
@@ -271,22 +275,22 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
 
         TaskNode analyze = new TaskNode(prefix + "-ana", "ANALYZE",
                 "Analyze: " + intent, List.of("knowledge_search"),
-                List.of(), DEFAULT_TIMEOUT_MS);
+                List.of(), defaultTimeoutMs);
         nodes.add(analyze);
 
         TaskNode planStep = new TaskNode(prefix + "-pln", "PLAN",
                 "Plan approach for: " + intent, List.of(),
-                List.of(analyze.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of(analyze.getNodeId()), defaultTimeoutMs);
         nodes.add(planStep);
 
         TaskNode execute = new TaskNode(prefix + "-exe", "EXECUTE",
                 "Execute: " + intent, List.of(),
-                List.of(planStep.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of(planStep.getNodeId()), defaultTimeoutMs);
         nodes.add(execute);
 
         TaskNode verify = new TaskNode(prefix + "-vfy", "VERIFY",
                 "Verify result of: " + intent, List.of(),
-                List.of(execute.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of(execute.getNodeId()), defaultTimeoutMs);
         nodes.add(verify);
 
         return new SimpleTaskPlan(nodes);
@@ -310,42 +314,42 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
         // 根节点：分析理解
         TaskNode root = new TaskNode(prefix + "-root", "ANALYZE",
                 "Analyze complex task: " + intent,
-                List.of("knowledge_search"), List.of(), DEFAULT_TIMEOUT_MS);
+                List.of("knowledge_search"), List.of(), defaultTimeoutMs);
         nodes.add(root);
 
         // 并行分支
         TaskNode branchA = new TaskNode(prefix + "-a", "RESEARCH",
                 "Research domain knowledge for: " + intent,
-                List.of("web_search"), List.of(root.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of("web_search"), List.of(root.getNodeId()), defaultTimeoutMs);
         nodes.add(branchA);
 
         TaskNode branchB = new TaskNode(prefix + "-b", "DESIGN",
                 "Design solution architecture for: " + intent,
-                List.of(), List.of(root.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of(), List.of(root.getNodeId()), defaultTimeoutMs);
         nodes.add(branchB);
 
         TaskNode branchC = new TaskNode(prefix + "-c", "PREPARE",
                 "Prepare resources for: " + intent,
-                List.of("file_read"), List.of(root.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of("file_read"), List.of(root.getNodeId()), defaultTimeoutMs);
         nodes.add(branchC);
 
         // 合并节点：依赖所有并行分支
         TaskNode merge = new TaskNode(prefix + "-merge", "INTEGRATE",
                 "Integrate results for: " + intent,
                 List.of(), List.of(branchA.getNodeId(), branchB.getNodeId(), branchC.getNodeId()),
-                DEFAULT_TIMEOUT_MS);
+                defaultTimeoutMs);
         nodes.add(merge);
 
         // 最终执行
         TaskNode execute = new TaskNode(prefix + "-exe", "EXECUTE",
                 "Execute integrated plan: " + intent,
-                List.of(), List.of(merge.getNodeId()), DEFAULT_TIMEOUT_MS * 2);
+                List.of(), List.of(merge.getNodeId()), defaultTimeoutMs * 2);
         nodes.add(execute);
 
         // 验证
         TaskNode verify = new TaskNode(prefix + "-vfy", "VERIFY",
                 "Verify complete result for: " + intent,
-                List.of(), List.of(execute.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of(), List.of(execute.getNodeId()), defaultTimeoutMs);
         nodes.add(verify);
 
         return new SimpleTaskPlan(nodes);
@@ -422,7 +426,7 @@ public class DAGTaskPlanner extends AbstractTaskPlanner {
         List<String> deps = prevId != null ? List.of(prevId) : List.of();
 
         TaskNode inserted = new TaskNode(insertId, "VERIFY", insertDesc,
-                List.of("validation"), deps, DEFAULT_TIMEOUT_MS);
+                List.of("validation"), deps, defaultTimeoutMs);
         nodes.add(insertPos, inserted);
 
         // 更新后续节点的依赖

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.chat.ChatModel;
+import lyjew.com.lyclaw.config.AgentProperties;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
@@ -43,17 +44,19 @@ import java.util.concurrent.TimeUnit;
 @InteractionMode(name = "react", description = "Reasoning-Acting loop with tool execution", isDefault = true)
 public class DefaultReActEngine implements ReActEngine {
 
-    private static final int MAX_TOOL_ROUNDS = 30;
-    private static final long APPROVAL_TIMEOUT_SECONDS = 60;
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ApprovalStore approvalStore;
+    private final int maxToolRounds;
+    private final long approvalTimeoutSeconds;
 
     /** 需要用户审批的工具名集合（通常是 readonly=false 的工具） */
     private final Set<String> approvalRequired = ConcurrentHashMap.newKeySet();
 
-    public DefaultReActEngine(ApprovalStore approvalStore) {
+    public DefaultReActEngine(ApprovalStore approvalStore, AgentProperties agentProperties) {
         this.approvalStore = approvalStore;
+        this.maxToolRounds = agentProperties.getMaxToolRounds();
+        this.approvalTimeoutSeconds = agentProperties.getApprovalStoreTimeoutSeconds();
     }
 
     /**
@@ -86,8 +89,8 @@ public class DefaultReActEngine implements ReActEngine {
             }
         }
 
-        for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
-            log.debug("ReAct round {}/{}", round + 1, MAX_TOOL_ROUNDS);
+        for (int round = 0; round < maxToolRounds; round++) {
+            log.debug("ReAct round {}/{}", round + 1, maxToolRounds);
             ModelResponse response;
             try {
                 response = chatFacade.chat(request);
@@ -129,7 +132,7 @@ public class DefaultReActEngine implements ReActEngine {
             }
         }
 
-        return "[已达最大工具调用轮数(" + MAX_TOOL_ROUNDS + ")]";
+        return "[已达最大工具调用轮数(" + maxToolRounds + ")]";
     }
 
     // ── 流式 ReAct（工具检测）────────────────────────────────────────
@@ -306,7 +309,7 @@ public class DefaultReActEngine implements ReActEngine {
         Mono<ServerSentEvent<String>> doneEvent = Mono.fromCallable(() -> {
             boolean approved;
             try {
-                approved = future.get(APPROVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                approved = future.get(approvalTimeoutSeconds, TimeUnit.SECONDS);
             } catch (Exception e) {
                 log.warn("审批超时或异常: toolCallId={} error={}", req.getId(), e.getMessage());
                 approved = false;
@@ -351,19 +354,19 @@ public class DefaultReActEngine implements ReActEngine {
     }
 
     /**
-     * 后续 ReAct 轮次（第 1..MAX_TOOL_ROUNDS-1 轮）。
+     * 后续 ReAct 轮次（第 1..maxToolRounds-1 轮）。
      *
      * <p>使用 stream=true 调用 LLM 进行工具检测：若检测到 tool_calls 则处理并继续；
      * 若无工具调用，文本通过真流式逐 token 推送给前端，不再走 splitIntoEvents 模拟。</p>
      */
     private Flux<ServerSentEvent<String>> continueReActRounds(
             ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor, int round) {
-        if (round >= MAX_TOOL_ROUNDS) {
-            return Flux.just(sseEvent("message", "[已达最大工具调用轮数(" + MAX_TOOL_ROUNDS + ")]"));
+        if (round >= maxToolRounds) {
+            return Flux.just(sseEvent("message", "[已达最大工具调用轮数(" + maxToolRounds + ")]"));
         }
 
         return Flux.defer(() -> {
-            log.debug("ReAct stream round {}/{}", round + 1, MAX_TOOL_ROUNDS);
+            log.debug("ReAct stream round {}/{}", round + 1, maxToolRounds);
             request.setStream(true);
             ChatModel model = chatFacade.resolveModel(chatFacade.route(request, null));
 

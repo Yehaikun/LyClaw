@@ -1,3 +1,9 @@
+# ============================================================
+#   LyClaw 框架完整配置参考
+#   所有配置项均包含框架默认值，未显式配置时使用默认值
+#   优先级: 命令行参数 > 环境变量 > application.yml > 框架默认值
+# ============================================================
+
 spring:
   application:
     name: lyclaw-web-service
@@ -5,24 +11,272 @@ server:
   port: 8082
 
 lyclaw:
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.chat  —  聊天模型配置  (ChatProperties)          ║
+  # ║  AutoConfiguration: ChatAutoConfiguration                ║
+  # ║  必须配置至少一个 models.* 才能调用 LLM                   ║
+  # ╚══════════════════════════════════════════════════════════╝
   chat:
-    legacy: false
+    # 默认 Provider 名称，对应 models 下的 key
+    # 默认: deepseek
     default-provider: deepseek
+
+    # 默认模型名称，请求中未指定 model 时使用
+    # 默认: deepseek-v4-flash
     default-model: deepseek-v4-flash
+
+    # 是否启用路由选择（多模型负载/故障转移）
+    # 默认: false
+    routing-enabled: false
+
+    # 是否兼容旧版配置格式（lyclaw.llm.* 前缀）
+    # 默认: true（向后兼容），新项目建议设为 false
+    legacy: false
+
+    # ── 模型配置（key 为 Provider 名称，可配多个） ──────────
     models:
       deepseek:
+        # 协议类型
+        #   openai-protocol — OpenAI 兼容协议（DeepSeek/Groq/通义千问等）
+        #   anthropic       — Anthropic Messages API
+        #   ollama          — Ollama 本地模型
+        #   gemini          — Google Gemini API
         provider: openai-protocol
+
+        # API 端点 Base URL
         base-url: https://api.deepseek.com
+
+        # API 密钥，支持 ${ENV_VAR:默认值} 占位符
         api-key: ${DEEPSEEK_API_KEY:sk-b1da578246114c2383616f49b5651f1d}
+
+        # 模型名称（DeepSeek: deepseek-v4-flash / deepseek-v4-pro）
         model: deepseek-v4-flash
+
+        # ── 重试策略（per-model） ─────────────────────
+        retry:
+          # 最大重试次数，默认 3
+          max-attempts: 3
+          # 退避策略: exponential（指数退避）| fixed（固定间隔）
+          # 默认: exponential
+          backoff: exponential
+          # 基础延迟（毫秒），仅 fixed 策略生效，默认 1000
+          base-delay-ms: 1000
+
+        # ── 降级链（此模型不可用时依次尝试的 Provider） ──
+        # 例如: ["groq", "ollama-local"] 表示 deepseek→groq→ollama
+        fallback: []
+
+        # ── 扩展参数（传递给底层 HTTP 请求的额外字段） ──
+        options: {}
+
+    # ── 全局降级链（所有模型的兜底降级顺序） ───────────
+    # 单模型级别的 fallback 优先于全局 fallbackChain
+    fallback-chain: []
+
+    # ── 全局熔断器配置 ─────────────────────────────────
+    # 当某个模型连续失败达到阈值后，自动熔断一段时间
+    circuit-breaker:
+      # 连续失败多少次后触发熔断，默认 5
+      failure-threshold: 5
+      # 熔断后多久进入半开状态（秒），默认 30
+      half-open-after-seconds: 30
+      # 半开状态最多放行多少个请求试探，默认 3
+      half-open-max-requests: 3
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.tool  —  工具执行配置  (ToolProperties)          ║
+  # ║  AutoConfiguration: ToolAutoConfiguration                ║
+  # ╚══════════════════════════════════════════════════════════╝
+  tool:
+    # 单次工具调用超时（毫秒），超时后强制中断
+    # 默认: 30000（30秒）
+    default-timeout-ms: 30000
+
+    # 工具输出最大字符数，超出部分截断
+    # 默认: 10000
+    max-output-length: 10000
+
+    # 同一工具在单个会话中最多调用次数，防止滥用
+    # 默认: 20
+    max-calls-per-tool: 20
+
+    # 工具调用失败后最大重试次数
+    # 默认: 3
+    max-retries: 3
+
+    # 单次 ReAct 循环中最多执行多少轮工具调用
+    # 默认: 10
+    max-rounds: 10
+
+    # 沙箱隔离级别
+    #   DIRECT  — 直接在调用线程中执行（最快，无隔离，仅可信工具）
+    #   SANDBOX — 守护线程 + 临时工作目录隔离（推荐）
+    #   PROCESS — 独立 OS 进程执行（最强隔离，仅 command 类工具）
+    # 默认: PROCESS
+    sandbox-level: PROCESS
+
+    # Tavily 搜索 API 密钥（用于 web_search 工具）
+    # 不配则 web_search 工具不可用
+    tavily-api-key: ${TAVILY_API_KEY:}
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.agent  —  Agent 行为配置  (AgentProperties)      ║
+  # ║  AutoConfiguration: ReActAutoConfiguration               ║
+  # ╚══════════════════════════════════════════════════════════╝
+  agent:
+    # 默认交互模式
+    #   react        — ReAct 推理-行动循环（默认）
+    #   cot          — 思维链模式
+    #   hierarchical — 层级多 Agent 协作
+    # 默认: react
+    default-mode: react
+
+    # ReAct 循环最大工具调用轮数
+    # 默认: 30
+    max-tool-rounds: 30
+
+    # 工具审批超时（秒），前端弹窗等待用户确认的时间
+    # 超时自动拒绝，默认: 30
+    approval-timeout-seconds: 30
+
+    # 审批存储条目超时（秒）
+    # 默认: 60
+    approval-store-timeout-seconds: 60
+
+    # 单次 Agent 调用总超时（毫秒）
+    # 默认: 300000（5分钟）
+    timeout-ms: 300000
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.plan  —  任务规划配置  (PlanProperties)          ║
+  # ║  AutoConfiguration: ChatAutoConfiguration                ║
+  # ╚══════════════════════════════════════════════════════════╝
+  plan:
+    # 规划生成默认超时（毫秒）
+    # 默认: 30000（30秒）
+    default-timeout-ms: 30000
+
+    # 简单单节点任务超时（毫秒）
+    # 默认: 10000（10秒）
+    simple-timeout-ms: 10000
+
+    # 计划中最大节点数，超出触发验证警告
+    # 默认: 50
+    max-nodes: 50
+
+    # 计划执行总时间预算（毫秒）
+    # 默认: 600000（10分钟）
+    time-budget-ms: 600000
+
+    # 混合规划器置信度阈值（0.0 ~ 1.0）
+    #   ≥ 阈值: 规则直接生成 DAG 计划（快速）
+    #   < 阈值: 回退到 LLM 驱动的任务分解（慢但准确）
+    # 默认: 0.5
+    hybrid-confidence-threshold: 0.5
+
+    # ReAct 模式最大循环次数
+    # 默认: 5
+    max-cycles: 5
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.pipeline  —  阶段管道配置  (PipelineProperties)   ║
+  # ║  AutoConfiguration: PipelineAutoConfiguration            ║
+  # ╚══════════════════════════════════════════════════════════╝
+  pipeline:
+    # 是否启用 Stage 管道（ContextBuild → SecurityCheck →
+    #   PlanExecution → Respond → Metrics）
+    # 默认: true
+    enabled: true
+
+    # 管道执行总超时（毫秒）
+    # 默认: 300000（5分钟）
+    timeout-ms: 300000
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.storage  —  存储层配置  (StorageProperties)       ║
+  # ║  AutoConfiguration: StorageAutoConfiguration             ║
+  # ╚══════════════════════════════════════════════════════════╝
   storage:
-    base-path: /home/lyjew/Documents/Unicom/LyClaw/LyClaw  # 文件存储根目录，默认为 ${user.dir}/data/storage
+    # 文件存储根目录（仅 file 后端使用）
+    # 默认: ${user.dir}/data/storage
+    base-path: /home/lyjew/Documents/Unicom/LyClaw/LyClaw
+
+    # 全局默认后端
+    # 默认: file
+    default-backend: file
+
+    # ── 各层后端绑定 ─────────────────────────────────
+    # key: session / entity / memory
+    # value: 后端名称（见 backends 配置）
+    # 默认: session=file, entity=file, memory=inmemory
     stores:
       session: file
       entity: file
       memory: inmemory
-  llm:
-    deepseek:
-      api-key: ${DEEPSEEK_API_KEY:}
-      base-url: https://api.deepseek.com
-      model: deepseek-v4-flash
+
+    # ── 各后端详细配置 — 当前使用 file + inmemory，无需额外 backends ─
+    # 如需切换数据库/缓存后端，在此添加并修改 stores 绑定即可
+    backends: {}
+    #
+    # 配置示例（取消注释并修改即可启用）:
+    #
+    # backends:
+    #   sqlite:
+    #     type: sqlite
+    #     url: jdbc:sqlite:/data/lyclaw.db
+    #     enabled: true
+    #     pool:
+    #       max-size: 10
+    #       min-idle: 2
+    #       idle-timeout-ms: 300000
+    #       connection-timeout-ms: 10000
+    #     ttl: 3600
+    #
+    #   postgresql:
+    #     type: postgresql
+    #     url: jdbc:postgresql://localhost:5432/lyclaw
+    #     username: lyclaw
+    #     password: ${PG_PASSWORD:}
+    #     enabled: true
+    #     pool:
+    #       max-size: 10
+    #       min-idle: 2
+    #       idle-timeout-ms: 300000
+    #       connection-timeout-ms: 10000
+    #     vector:
+    #       enabled: true
+    #       dimension: 1536
+    #       index-type: hnsw
+    #     ttl: 3600
+    #
+    #   redis:
+    #     type: redis
+    #     url: redis://localhost:6379
+    #     enabled: false
+    #     pool:
+    #       max-size: 10
+    #       min-idle: 2
+    #       idle-timeout-ms: 300000
+    #       connection-timeout-ms: 10000
+    #     ttl: 3600
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.extension  —  扩展注册配置  (ExtensionProperties) ║
+  # ║  AutoConfiguration: ProcessorAutoConfiguration           ║
+  # ╚══════════════════════════════════════════════════════════╝
+  extension:
+    # 是否启用扩展过滤链（根据条件过滤工具、管道阶段等）
+    # 默认: true
+    filtering-enabled: true
+
+    # 扩展排序策略
+    #   topology — 拓扑排序（根据 after/before 依赖推导，推荐）
+    #   numeric  — 数值排序（按 order 字段升序）
+    # 默认: topology
+    ordering-strategy: topology
+
+    # 遇到异常时是否立即中断注册
+    #   false — 跳过失败的，继续注册剩余的（默认，开发/测试友好）
+    #   true  — 立即中断整个注册流程（生产环境推荐）
+    # 默认: false
+    fail-fast: false

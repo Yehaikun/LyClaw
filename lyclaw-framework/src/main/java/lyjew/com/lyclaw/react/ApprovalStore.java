@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.react;
 
+import lyjew.com.lyclaw.config.AgentProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
@@ -11,15 +12,19 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>每个待审批请求对应一个 {@link CompletableFuture}，
  * 用户通过 {@link #approve}/{@link #deny} 响应后完成 Future。
- * 60 秒无响应自动拒绝。</p>
+ * 超时时间由 {@link AgentProperties#getApprovalStoreTimeoutSeconds()} 控制，默认 60 秒。
  */
 @Component
 public class ApprovalStore {
 
-    private static final long APPROVAL_TIMEOUT_SECONDS = 60;
+    private final long approvalTimeoutSeconds;
 
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> pending =
             new ConcurrentHashMap<>();
+
+    public ApprovalStore(AgentProperties agentProperties) {
+        this.approvalTimeoutSeconds = agentProperties.getApprovalStoreTimeoutSeconds();
+    }
 
     /**
      * 创建一个待审批请求。
@@ -31,7 +36,7 @@ public class ApprovalStore {
         pending.put(toolCallId, future);
 
         // 超时自动拒绝
-        CompletableFuture.delayedExecutor(APPROVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        CompletableFuture.delayedExecutor(approvalTimeoutSeconds, TimeUnit.SECONDS)
                 .execute(() -> {
                     CompletableFuture<Boolean> f = pending.remove(toolCallId);
                     if (f != null) {

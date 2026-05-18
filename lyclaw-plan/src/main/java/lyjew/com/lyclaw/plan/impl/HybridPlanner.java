@@ -2,6 +2,7 @@ package lyjew.com.lyclaw.plan.impl;
 
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.chat.ChatModel;
+import lyjew.com.lyclaw.config.PlanProperties;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.AgentResult;
 import lyjew.com.lyclaw.memory.MemoryEntry;
@@ -12,6 +13,7 @@ import lyjew.com.lyclaw.task.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -58,8 +60,14 @@ public class HybridPlanner implements TaskPlanner {
     private static final Pattern SIMPLE_PATTERN = Pattern.compile(
             "(?i)\\b(what is|who is|when|where|how to|define|explain|describe|list|show|get|fetch)\\b");
 
-    private static final long DEFAULT_TIMEOUT_MS = 30_000L;
-    private static final double CONFIDENCE_THRESHOLD = 0.5;
+    private long defaultTimeoutMs = 30_000L;
+    private double confidenceThreshold = 0.5;
+
+    @Autowired
+    public void setPlanProperties(PlanProperties props) {
+        this.defaultTimeoutMs = props.getDefaultTimeoutMs();
+        this.confidenceThreshold = props.getHybridConfidenceThreshold();
+    }
 
     @Override
     public TaskPlan plan(ChatContext context, String userIntent) {
@@ -69,7 +77,7 @@ public class HybridPlanner implements TaskPlanner {
         log.info("HybridPlanner: intent={}, confidence={}",
                 intent.length() > 80 ? intent.substring(0, 80) + "..." : intent, confidence);
 
-        if (confidence >= CONFIDENCE_THRESHOLD) {
+        if (confidence >= confidenceThreshold) {
             return buildRulesBasedPlan(intent);
         }
 
@@ -107,7 +115,7 @@ public class HybridPlanner implements TaskPlanner {
         String nodeId = "opt-" + UUID.randomUUID().toString().substring(0, 8);
         return new SimpleTaskPlan(List.of(new TaskNode(nodeId, "OPTIMIZE",
                 "Optimize: " + previousResult.getSummary(),
-                List.of(), List.of(), DEFAULT_TIMEOUT_MS)));
+                List.of(), List.of(), defaultTimeoutMs)));
     }
 
     @Override
@@ -176,16 +184,16 @@ public class HybridPlanner implements TaskPlanner {
         String prefix = "mid-" + UUID.randomUUID().toString().substring(0, 8);
         List<TaskNode> nodes = new ArrayList<>();
         TaskNode analyze = new TaskNode(prefix + "-ana", "ANALYZE",
-                "Analyze: " + intent, List.of("knowledge_search"), List.of(), DEFAULT_TIMEOUT_MS);
+                "Analyze: " + intent, List.of("knowledge_search"), List.of(), defaultTimeoutMs);
         nodes.add(analyze);
         TaskNode plan = new TaskNode(prefix + "-pln", "PLAN",
-                "Plan approach for: " + intent, List.of(), List.of(analyze.getNodeId()), DEFAULT_TIMEOUT_MS);
+                "Plan approach for: " + intent, List.of(), List.of(analyze.getNodeId()), defaultTimeoutMs);
         nodes.add(plan);
         TaskNode execute = new TaskNode(prefix + "-exe", "EXECUTE",
-                "Execute: " + intent, List.of(), List.of(plan.getNodeId()), DEFAULT_TIMEOUT_MS);
+                "Execute: " + intent, List.of(), List.of(plan.getNodeId()), defaultTimeoutMs);
         nodes.add(execute);
         TaskNode verify = new TaskNode(prefix + "-vfy", "VERIFY",
-                "Verify result of: " + intent, List.of(), List.of(execute.getNodeId()), DEFAULT_TIMEOUT_MS);
+                "Verify result of: " + intent, List.of(), List.of(execute.getNodeId()), defaultTimeoutMs);
         nodes.add(verify);
         return new SimpleTaskPlan(nodes);
     }
@@ -194,26 +202,26 @@ public class HybridPlanner implements TaskPlanner {
         String prefix = "cx-" + UUID.randomUUID().toString().substring(0, 8);
         List<TaskNode> nodes = new ArrayList<>();
         TaskNode root = new TaskNode(prefix + "-root", "ANALYZE",
-                "Analyze complex task: " + intent, List.of("knowledge_search"), List.of(), DEFAULT_TIMEOUT_MS);
+                "Analyze complex task: " + intent, List.of("knowledge_search"), List.of(), defaultTimeoutMs);
         nodes.add(root);
         TaskNode branchA = new TaskNode(prefix + "-a", "RESEARCH",
-                "Research: " + intent, List.of("web_search"), List.of(root.getNodeId()), DEFAULT_TIMEOUT_MS);
+                "Research: " + intent, List.of("web_search"), List.of(root.getNodeId()), defaultTimeoutMs);
         nodes.add(branchA);
         TaskNode branchB = new TaskNode(prefix + "-b", "DESIGN",
-                "Design: " + intent, List.of(), List.of(root.getNodeId()), DEFAULT_TIMEOUT_MS);
+                "Design: " + intent, List.of(), List.of(root.getNodeId()), defaultTimeoutMs);
         nodes.add(branchB);
         TaskNode branchC = new TaskNode(prefix + "-c", "PREPARE",
-                "Prepare: " + intent, List.of("file_read"), List.of(root.getNodeId()), DEFAULT_TIMEOUT_MS);
+                "Prepare: " + intent, List.of("file_read"), List.of(root.getNodeId()), defaultTimeoutMs);
         nodes.add(branchC);
         TaskNode merge = new TaskNode(prefix + "-merge", "INTEGRATE",
                 "Integrate: " + intent, List.of(),
-                List.of(branchA.getNodeId(), branchB.getNodeId(), branchC.getNodeId()), DEFAULT_TIMEOUT_MS);
+                List.of(branchA.getNodeId(), branchB.getNodeId(), branchC.getNodeId()), defaultTimeoutMs);
         nodes.add(merge);
         TaskNode execute = new TaskNode(prefix + "-exe", "EXECUTE",
-                "Execute: " + intent, List.of(), List.of(merge.getNodeId()), DEFAULT_TIMEOUT_MS * 2);
+                "Execute: " + intent, List.of(), List.of(merge.getNodeId()), defaultTimeoutMs * 2);
         nodes.add(execute);
         TaskNode verify = new TaskNode(prefix + "-vfy", "VERIFY",
-                "Verify: " + intent, List.of(), List.of(execute.getNodeId()), DEFAULT_TIMEOUT_MS);
+                "Verify: " + intent, List.of(), List.of(execute.getNodeId()), defaultTimeoutMs);
         nodes.add(verify);
         return new SimpleTaskPlan(nodes);
     }
@@ -282,7 +290,7 @@ public class HybridPlanner implements TaskPlanner {
                     n.get("dependencies").forEach(d -> deps.add(prefix + "-" + d.asText()));
                 }
                 nodes.add(new TaskNode(prefix + "-" + i, type.toUpperCase(), desc,
-                        List.of(), deps, DEFAULT_TIMEOUT_MS));
+                        List.of(), deps, defaultTimeoutMs));
             }
 
             if (nodes.isEmpty()) {

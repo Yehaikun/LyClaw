@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.plan.impl;
 
+import lyjew.com.lyclaw.config.PlanProperties;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.AgentResult;
 import lyjew.com.lyclaw.task.DecompositionStrategy;
@@ -10,7 +11,7 @@ import lyjew.com.lyclaw.task.TaskNode;
 import lyjew.com.lyclaw.task.TaskPlan;
 import lyjew.com.lyclaw.task.TaskPlanner;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -44,12 +45,13 @@ import java.util.UUID;
 @Service("reActPlanner")
 public class ReActPlanner implements TaskPlanner {
 
-    /** 默认最大 ReAct 循环次数 */
-    private static final int DEFAULT_MAX_CYCLES = 5;
+    /** 最大 ReAct 循环次数，由 PlanProperties 注入 */
+    private int maxCycles = 5;
 
-    /** 可配置的最大循环次数 */
-    @Value("${lyclaw.plan.react.max-cycles:" + DEFAULT_MAX_CYCLES + "}")
-    private int maxCycles;
+    @Autowired
+    public void setPlanProperties(PlanProperties props) {
+        this.maxCycles = props.getMaxCycles();
+    }
 
     /** 默认超时（毫秒） */
     private static final long DEFAULT_TIMEOUT_MS = 60_000L;

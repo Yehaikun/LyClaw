@@ -2,12 +2,14 @@ package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.autoconfigure.facade.ConditionFilter;
 import lyjew.com.lyclaw.autoconfigure.processor.ToolAnnotationProcessor;
+import lyjew.com.lyclaw.config.ToolProperties;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
 
@@ -35,6 +37,13 @@ public class ToolAutoConfiguration {
      *                 所有发现的工具最终注册到此注册表中
      * @return ToolAnnotationProcessor 实例，负责发现和注册 @Tool 注解的 Spring Bean
      */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConfigurationProperties(prefix = "lyclaw.tool")
+    public ToolProperties toolProperties() {
+        return new ToolProperties();
+    }
+
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(ToolRegistry.class)
