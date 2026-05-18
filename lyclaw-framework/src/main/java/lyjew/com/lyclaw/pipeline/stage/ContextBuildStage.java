@@ -52,6 +52,11 @@ public class ContextBuildStage extends PipelineStageBase {
                 long memCallDuration = System.currentTimeMillis() - memCallStart;
                 int memoryHits = memoryResult != null ? memoryResult.getTotalHits() : 0;
 
+                // 存储记忆结果到 AgentContext，供下游 Stage 使用
+                if (memoryResult != null && memoryResult.getEntries() != null) {
+                    ctx.setAttribute("memoryEntries", memoryResult.getEntries());
+                }
+
                 log.info(logJson("INFO", "memory_call", "CONTEXT_BUILD", traceId,
                         "memorySystem.retrieve completed: " + memoryHits + " entries", memCallDuration));
                 sink.next(sseEvent("context_build_complete",

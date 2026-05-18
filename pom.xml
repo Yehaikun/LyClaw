@@ -21,9 +21,6 @@
         <module>lyclaw-framework</module>
         <module>lyclaw-autoconfigure</module>
 
-        <!-- L0 基础设施层 -->
-        <module>lyclaw-infra</module>
-
         <!-- L3 协议层 -->
         <module>lyclaw-protocol</module>
 
@@ -76,12 +73,6 @@
             <dependency>
                 <groupId>lyjew.com</groupId>
                 <artifactId>lyclaw-autoconfigure</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <!-- 新增模块 -->
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-infra</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

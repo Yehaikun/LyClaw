@@ -28,7 +28,7 @@ public class PlanExecutionStage extends PipelineStageBase {
     private final MetricsCollector metricsCollector;
 
     public PlanExecutionStage(
-            @org.springframework.beans.factory.annotation.Qualifier("DAGTaskPlanner") TaskPlanner taskPlanner,
+            @org.springframework.beans.factory.annotation.Qualifier("hybridPlanner") TaskPlanner taskPlanner,
             @org.springframework.lang.Nullable PlanValidator planValidator,
             @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
         this.taskPlanner = taskPlanner;
@@ -42,7 +42,9 @@ public class PlanExecutionStage extends PipelineStageBase {
         List<Message> messages = ctx.getChatRequest() != null && ctx.getChatRequest().getMessages() != null
                 ? ctx.getChatRequest().getMessages() : List.of();
         session.setMessages(new ArrayList<>(messages));
-        return new ChatContext(ctx.getChatRequest(), session, null, List.of(), null, null);
+        ChatContext chatCtx = new ChatContext(ctx.getChatRequest(), session, null, List.of(), null, null);
+        chatCtx.setAttribute("memoryEntries", ctx.getAttribute("memoryEntries"));
+        return chatCtx;
     }
 
     @Override

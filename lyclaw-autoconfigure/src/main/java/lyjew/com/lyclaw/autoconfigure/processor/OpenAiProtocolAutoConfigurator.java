@@ -155,6 +155,10 @@ public class OpenAiProtocolAutoConfigurator implements InitializingBean, Applica
         String baseUrl = props.getBaseUrl();
         String apiKey = props.getApiKey();
         String model = props.getModel();
+
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Provider {} 的 api-key 为空 —— 请设置环境变量 DEEPSEEK_API_KEY 或直接在配置中填写", configKey);
+        }
         if (model == null) model = configKey + "-default";
         if (baseUrl == null) baseUrl = "https://api." + configKey + ".com";
 

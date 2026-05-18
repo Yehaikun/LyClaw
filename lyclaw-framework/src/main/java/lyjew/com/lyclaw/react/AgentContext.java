@@ -133,4 +133,88 @@ public class AgentContext {
     @SuppressWarnings("unchecked")
     public <T> T getAttribute(String key) { return (T) attributes.get(key); }
     public void setAttribute(String key, Object value) { attributes.put(key, value); }
+    public Map<String, Object> getAttributes() { return attributes; }
+
+    // ========== 生命周期：检查点 ==========
+
+    /**
+     * 将当前上下文序列化为快照 Map，用于 SESSION/PERSISTENT 模式的检查点保存。
+     * 包含会话ID、用户消息、Stage 进度、工具结果等关键状态。
+     */
+    public Map<String, Object> toSnapshot() {
+        Map<String, Object> snapshot = new HashMap<>();
+        snapshot.put("sessionId", sessionId);
+        snapshot.put("userMessage", userMessage);
+        snapshot.put("systemPrompt", systemPrompt);
+        snapshot.put("sandboxLevel", sandboxLevel != null ? sandboxLevel.name() : null);
+        snapshot.put("lifecycle", lifecycle.name());
+        snapshot.put("currentStage", currentStage.get());
+        snapshot.put("successCount", successCount.get());
+        snapshot.put("failCount", failCount.get());
+        snapshot.put("pipelineOk", pipelineOk.get());
+        snapshot.put("terminated", terminated.get());
+        snapshot.put("reflectScore", reflectScoreRef.get());
+        snapshot.put("toolResults", new ArrayList<>(toolResults));
+        snapshot.put("tracing", Map.of("traceId", tracing.getTraceId()));
+        return snapshot;
+    }
+
+    /**
+     * 从快照恢复 AgentContext。仅恢复可序列化的关键状态，
+     * toolRegistry、method、args 等运行时引用需要调用方重新注入。
+     */
+    @SuppressWarnings("unchecked")
+    public void restoreFromSnapshot(Map<String, Object> snapshot) {
+        if (snapshot == null) return;
+        if (snapshot.get("sandboxLevel") != null) {
+            this.sandboxLevel = SandboxLevel.valueOf((String) snapshot.get("sandboxLevel"));
+        }
+        if (snapshot.get("lifecycle") != null) {
+            this.lifecycle = Lifecycle.valueOf((String) snapshot.get("lifecycle"));
+        }
+        if (snapshot.get("currentStage") != null) {
+            this.currentStage.set((String) snapshot.get("currentStage"));
+        }
+        if (snapshot.get("successCount") != null) {
+            this.successCount.set(((Number) snapshot.get("successCount")).intValue());
+        }
+        if (snapshot.get("failCount") != null) {
+            this.failCount.set(((Number) snapshot.get("failCount")).intValue());
+        }
+        if (snapshot.get("pipelineOk") != null) {
+            this.pipelineOk.set((Boolean) snapshot.get("pipelineOk"));
+        }
+        if (snapshot.get("terminated") != null) {
+            this.terminated.set((Boolean) snapshot.get("terminated"));
+        }
+        if (snapshot.get("reflectScore") != null) {
+            this.reflectScoreRef.set(((Number) snapshot.get("reflectScore")).doubleValue());
+        }
+        if (snapshot.get("toolResults") instanceof List<?> list) {
+            this.toolResults.clear();
+            for (Object item : list) this.toolResults.add((String) item);
+        }
+    }
+
+    // ========== 便捷工厂 ==========
+
+    /** 创建 SESSION 生命周期的上下文（跨多次调用共享状态） */
+    public static AgentContext sessionScoped(String sessionId, String userMessage,
+                                             String systemPrompt, ToolRegistry toolRegistry,
+                                             Method method, Object[] args) {
+        AgentContext ctx = new AgentContext(sessionId, userMessage, systemPrompt,
+                toolRegistry, method, args);
+        ctx.setLifecycle(Lifecycle.SESSION);
+        return ctx;
+    }
+
+    /** 创建 PERSISTENT 生命周期的上下文（重启后仍可恢复） */
+    public static AgentContext persistentScoped(String sessionId, String userMessage,
+                                                String systemPrompt, ToolRegistry toolRegistry,
+                                                Method method, Object[] args) {
+        AgentContext ctx = new AgentContext(sessionId, userMessage, systemPrompt,
+                toolRegistry, method, args);
+        ctx.setLifecycle(Lifecycle.PERSISTENT);
+        return ctx;
+    }
 }

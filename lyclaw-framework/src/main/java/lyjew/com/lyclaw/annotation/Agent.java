@@ -80,4 +80,22 @@ public @interface Agent {
      * 为空时使用系统默认提供商。
      */
     String provider() default "";
+
+    /**
+     * 扩展配置键值对，用于为 Agent 注入框架级配置而不修改注解定义。
+     *
+     * <p>支持的功能键包括（不限于）：
+     * <ul>
+     *   <li>{@code planning.enabled} — 是否启用任务规划</li>
+     *   <li>{@code planning.strategy} — 规划策略（dag/cot/react/hierarchical）</li>
+     *   <li>{@code memory.topK} — 记忆检索数量</li>
+     *   <li>{@code tool.dynamicFiltering} — 是否启用动态工具筛选</li>
+     *   <li>{@code mcp.servers} — MCP Server 地址列表（逗号分隔）</li>
+     *   <li>{@code outputGuard.enabled} — 是否启用输出护栏</li>
+     *   <li>{@code communication.protocol} — Agent 通信协议</li>
+     *   <li>{@code maxToolRounds} — 最大工具调用轮数</li>
+     *   <li>{@code sandbox} — 沙箱级别</li>
+     * </ul>
+     */
+    Extension[] extensions() default {};
 }

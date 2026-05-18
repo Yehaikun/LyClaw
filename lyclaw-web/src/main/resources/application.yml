@@ -13,7 +13,7 @@ lyclaw:
       deepseek:
         provider: openai-protocol
         base-url: https://api.deepseek.com
-        api-key: ${DEEPSEEK_API_KEY:}
+        api-key: ${DEEPSEEK_API_KEY:sk-b1da578246114c2383616f49b5651f1d}
         model: deepseek-v4-flash
   storage:
     base-path: /home/lyjew/Documents/Unicom/LyClaw/LyClaw  # 文件存储根目录，默认为 ${user.dir}/data/storage

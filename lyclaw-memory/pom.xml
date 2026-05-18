@@ -22,10 +22,6 @@
             <artifactId>lyclaw-framework</artifactId>
         </dependency>
         <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-infra</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
