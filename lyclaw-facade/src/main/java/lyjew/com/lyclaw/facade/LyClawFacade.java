@@ -41,7 +41,6 @@ import java.util.stream.Collectors;
  * @author lyjew
  */
 @Slf4j
-@Component
 @RequiredArgsConstructor
 public class LyClawFacade {
 

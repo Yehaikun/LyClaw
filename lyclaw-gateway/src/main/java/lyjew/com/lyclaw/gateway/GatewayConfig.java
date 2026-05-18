@@ -33,16 +33,16 @@ public class GatewayConfig {
         return builder.routes()
                 .route("chat-api", r -> r
                         .path("/api/chat", "/api/chat/stream")
-                        .uri("lb://lyclaw-orchestration-service"))
+                        .uri("lb://lyclaw-facade-service"))
                 .route("sessions-api", r -> r
                         .path("/api/sessions/**")
-                        .uri("lb://lyclaw-orchestration-service"))
+                        .uri("lb://lyclaw-facade-service"))
                 .route("approval-api", r -> r
                         .path("/api/approval/**")
-                        .uri("lb://lyclaw-orchestration-service"))
-                .route("orchestration-api", r -> r
-                        .path("/api/orchestration/**")
-                        .uri("lb://lyclaw-orchestration-service"))
+                        .uri("lb://lyclaw-facade-service"))
+                .route("facade-api", r -> r
+                        .path("/api/facade/**")
+                        .uri("lb://lyclaw-facade-service"))
                 .route("memory-api", r -> r
                         .path("/api/memory/**")
                         .uri("lb://lyclaw-memory-service"))

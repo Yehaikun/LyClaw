@@ -1,9 +1,13 @@
 package lyjew.com.lyclaw.action.impl;
 
 import lyjew.com.lyclaw.context.ChatContext;
+import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
+import lyjew.com.lyclaw.react.ToolExecutor;
 import lyjew.com.lyclaw.tool.Tool;
+import lyjew.com.lyclaw.tool.ToolProvider;
+import lyjew.com.lyclaw.tool.ToolProviderRequest;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +15,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 默认工具注册表，管理所有已注册的 {@link Tool} 实例。
@@ -24,8 +30,11 @@ import java.util.stream.Collectors;
 @Component
 public class DefaultToolRegistry implements ToolRegistry {
 
-    /** 工具存储，以工具名为键 */
+    /** 静态工具存储，以工具名为键 */
     private final ConcurrentHashMap<String, Tool> tools = new ConcurrentHashMap<>();
+
+    /** 动态工具提供者列表（线程安全） */
+    private final List<ToolProvider> toolProviders = new CopyOnWriteArrayList<>();
 
     /**
      * 构造函数，接收 Spring 容器中所有 Tool 类型的 Bean 并自动注册。
@@ -84,19 +93,84 @@ public class DefaultToolRegistry implements ToolRegistry {
     }
 
     /**
+     * 注册一个动态工具提供者。
+     *
+     * @param provider 工具提供者
+     */
+    public void registerProvider(ToolProvider provider) {
+        toolProviders.add(provider);
+        log.info("注册 ToolProvider: {}", provider.getClass().getSimpleName());
+    }
+
+    /**
      * 获取所有已注册工具的定义信息（名称、描述、参数等）。
+     * 合并静态工具和动态提供者的工具定义。
      *
      * @return 不可修改的工具定义列表
      */
     @Override
     public List<ToolDefinition> getAllDefinitions() {
-        return tools.values().stream()
-                .map(Tool::getDefinition)
+        return getAllDefinitions(null);
+    }
+
+    /**
+     * 获取适用于指定请求的所有工具定义。
+     * 合并静态工具和动态提供者（根据请求上下文动态决定）的工具定义。
+     *
+     * @param request 当前聊天请求，为 null 时只返回静态工具
+     * @return 工具定义列表
+     */
+    public List<ToolDefinition> getAllDefinitions(ChatRequest request) {
+        Stream<ToolDefinition> staticDefs = tools.values().stream()
+                .map(Tool::getDefinition);
+
+        if (request == null || toolProviders.isEmpty()) {
+            return staticDefs.collect(Collectors.toUnmodifiableList());
+        }
+
+        ToolProviderRequest providerRequest = new ToolProviderRequest(request);
+        Stream<ToolDefinition> dynamicDefs = toolProviders.stream()
+                .flatMap(p -> p.provideTools(providerRequest).getDefinitions().stream());
+
+        return Stream.concat(staticDefs, dynamicDefs)
                 .collect(Collectors.toUnmodifiableList());
     }
 
     /**
-     * 执行指定工具的调用。
+     * 合并所有工具执行器（静态 + 动态）用于查找。
+     */
+    private Tool resolveExecutor(String toolName, ChatRequest request) {
+        // 优先查静态工具
+        Tool tool = tools.get(toolName);
+        if (tool != null) return tool;
+
+        // 查动态提供者
+        if (request != null) {
+            ToolProviderRequest providerRequest = new ToolProviderRequest(request);
+            for (ToolProvider provider : toolProviders) {
+                ToolProvider.ToolProviderResult result = provider.provideTools(providerRequest);
+                ToolExecutor executor = result.getExecutor(toolName);
+                if (executor != null) {
+                    // 将 ToolExecutor 包装为 Tool 接口
+                    ToolDefinition def = result.getDefinition(toolName);
+                    return new Tool() {
+                        @Override public String getName() { return toolName; }
+                        @Override public ToolDefinition getDefinition() { return def; }
+                        @Override public ToolExecutionResult execute(ToolCall tc, ChatContext ctx) {
+                            String output = executor.execute(toolName, tc.getToolCallId(), tc.getArguments());
+                            return output.startsWith("Error:")
+                                    ? ToolExecutionResult.failure(output.substring(7), toolName)
+                                    : ToolExecutionResult.success(output, toolName);
+                        }
+                    };
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 执行指定工具的调用。先查静态注册表，再查动态提供者。
      *
      * @param toolCall 工具调用信息（包含工具名和参数）
      * @param context  对话上下文
@@ -105,13 +179,42 @@ public class DefaultToolRegistry implements ToolRegistry {
      */
     @Override
     public ToolExecutionResult execute(ToolCall toolCall, ChatContext context) {
-        Tool tool = tools.get(toolCall.getName());
+        ChatRequest request = context != null ? context.getRequest() : null;
+        Tool tool = resolveExecutor(toolCall.getName(), request);
         if (tool == null) {
             throw new IllegalArgumentException(
                     "Tool not found: " + toolCall.getName()
-                            + ". 可用工具: " + tools.keySet());
+                            + ". 可用工具: " + getAllToolNames(request));
         }
         return tool.execute(toolCall, context);
+    }
+
+    /**
+     * 通过 ToolExecutor 直接执行工具（不需要 ChatContext）。
+     * 先查静态注册表，再查动态提供者。
+     */
+    public ToolExecutionResult executeByName(String toolName, String toolCallId,
+                                              String argumentsJson, ChatRequest request) {
+        Tool tool = resolveExecutor(toolName, request);
+        if (tool == null) {
+            return ToolExecutionResult.failure(
+                    "Tool not found: " + toolName + ". 可用工具: " + getAllToolNames(request),
+                    toolName);
+        }
+        ToolCall toolCall = ToolCall.builder()
+                .toolCallId(toolCallId).name(toolName).arguments(argumentsJson).build();
+        return tool.execute(toolCall, null);
+    }
+
+    private Set<String> getAllToolNames(ChatRequest request) {
+        Set<String> names = new HashSet<>(tools.keySet());
+        if (request != null) {
+            ToolProviderRequest providerRequest = new ToolProviderRequest(request);
+            for (ToolProvider provider : toolProviders) {
+                names.addAll(provider.provideTools(providerRequest).getToolNames());
+            }
+        }
+        return names;
     }
 
     /** @return 是否包含指定名称的工具 */

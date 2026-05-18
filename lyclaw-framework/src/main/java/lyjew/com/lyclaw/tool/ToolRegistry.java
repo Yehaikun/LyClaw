@@ -1,6 +1,7 @@
 package lyjew.com.lyclaw.tool;
 
 import lyjew.com.lyclaw.context.ChatContext;
+import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 
@@ -12,39 +13,53 @@ import java.util.List;
  * <p>作为工具的管理中心，负责注册、查找和执行工具。
  * 在系统启动时通过 ToolAnnotationProcessor 自动收集 @Tool 注解的工具，
  * 运行时根据模型发起的工具调用请求查找对应工具并执行。
+ *
+ * <p>支持两种工具来源：
+ * <ul>
+ *   <li><b>静态工具</b> — 通过 {@link #register(Tool)} 注册，启动时确定</li>
+ *   <li><b>动态工具</b> — 通过 {@link ToolProvider} 提供，每次调用时动态决定</li>
+ * </ul>
  */
 public interface ToolRegistry {
 
     /**
      * 向注册表中注册一个新工具。
-     *
-     * @param tool 要注册的工具实例
      */
     void register(Tool tool);
 
     /**
      * 根据工具名称查找已注册的工具实例。
-     *
-     * @param name 工具名称
-     * @return 对应的工具实例，未找到时返回 null
      */
     Tool get(String name);
 
     /**
-     * 获取所有已注册工具的定义列表。
-     * 通常用于构造发送给 AI 模型的 tools 字段，让模型知道有哪些可用工具。
-     *
-     * @return 所有工具定义的列表
+     * 获取所有已注册工具的定义列表（仅静态工具）。
      */
     List<ToolDefinition> getAllDefinitions();
 
     /**
-     * 根据工具调用请求执行对应的工具。
-     * 先通过工具名称查找注册的工具，再调用其 execute 方法。
+     * 获取适用于指定请求的所有工具定义（静态 + 动态）。
+     * 默认实现退回 {@link #getAllDefinitions()}，子类可覆写以支持 ToolProvider。
      *
-     * @param toolCall 模型发起的工具调用请求
-     * @param context  聊天上下文
-     * @return 工具执行结果
+     * @param request 当前聊天请求，为 null 时等同 getAllDefinitions()
+     */
+    default List<ToolDefinition> getAllDefinitions(ChatRequest request) {
+        return getAllDefinitions();
+    }
+
+    /**
+     * 根据工具调用请求执行对应的工具。
      */
     ToolExecutionResult execute(ToolCall toolCall, ChatContext context);
+
+    /**
+     * 通过工具名称和参数直接执行（不需要 ChatContext），支持动态工具。
+     * 默认实现退回 {@link #execute(ToolCall, ChatContext)}。
+     */
+    default ToolExecutionResult executeByName(String toolName, String toolCallId,
+                                               String argumentsJson, ChatRequest request) {
+        ToolCall toolCall = ToolCall.builder()
+                .toolCallId(toolCallId).name(toolName).arguments(argumentsJson).build();
+        return execute(toolCall, null);
+    }
 }

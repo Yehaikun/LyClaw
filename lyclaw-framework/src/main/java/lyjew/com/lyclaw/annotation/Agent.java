@@ -68,4 +68,16 @@ public @interface Agent {
      * @return Agent 的版本号字符串，默认为 "1.0.0"
      */
     String version() default "1.0.0";
+
+    /**
+     * 指定该 Agent 使用的模型名称（如 "deepseek-v4-flash"）。
+     * 为空时使用系统默认模型。
+     */
+    String model() default "";
+
+    /**
+     * 指定该 Agent 使用的模型提供商（如 "deepseek"、"openai"）。
+     * 为空时使用系统默认提供商。
+     */
+    String provider() default "";
 }

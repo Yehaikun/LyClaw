@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -49,4 +50,8 @@ public class ToolDefinition {
     /** 是否为只读工具，只读工具不会产生副作用 */
     @Builder.Default
     private boolean readOnly = false;
+
+    /** 扩展元数据，用于传递提供商特定的信息（如 cache_control、strict 等） */
+    @Builder.Default
+    private Map<String, Object> metadata = new HashMap<>();
 }
