@@ -2,7 +2,9 @@ package lyjew.com.lyclaw.orchestration.stage;
 
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.context.ChatContext;
-import lyjew.com.lyclaw.feign.PlanFeignClient;
+import lyjew.com.lyclaw.task.PlanValidator;
+import lyjew.com.lyclaw.task.TaskPlanner;
+import lyjew.com.lyclaw.task.TaskPlan;
 import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
 import lyjew.com.lyclaw.task.PlanRequest;
@@ -18,14 +20,14 @@ import java.util.*;
  *
  * <h3>核心职责</h3>
  * 本阶段是编排管线中的任务规划环节，负责将用户的自然语言意图转化为结构化的任务分解方案。
- * 它通过远程调用规划服务（PlanFeignClient）生成一组有序的任务节点（TaskNode），
+ * 它通过任务规划器（TaskPlanner）生成一组有序的任务节点（TaskNode），
  * 每个节点包含节点 ID、任务类型、描述、所需工具列表、依赖关系和超时时间等元数据。
  * 这些任务节点随后被推入 PipelineContext 中，供下游阶段（ReflectionStage、RespondStage）使用。
  *
  * <h3>不属于本阶段的职责</h3>
  * 需要特别澄清以下误解：<b>本阶段不执行任何工具调用</b>。
  * 具体的工具执行逻辑已完全内嵌在 RespondStage 的 ReAct（推理-行动）循环中。
- * 在 ReAct 循环中，LLM 会根据通过 ActionFeignClient.listTools() 获取的完整工具列表，
+ * 在 ReAct 循环中，LLM 会根据通过 ToolRegistry.getAllDefinitions() 获取的完整工具列表，
  * 自主推理决定调用哪个工具、传递什么参数、何时停止迭代。
  * 这种设计将"规划"与"执行"解耦——PlanExecutionStage 只负责生成宏观任务计划，
  * 而微观的工具调用决策完全由 LLM 在 RespondStage 中动态完成。
@@ -36,7 +38,7 @@ import java.util.*;
  * <ol>
  *   <li>检查流水线是否已被上游终止（terminated），若是则跳过本阶段。</li>
  *   <li>子阶段 PLAN：构建 PlanRequest（包含 sessionId、userIntent、strategy），
- *       通过 PlanFeignClient.plan() 调用远程规划服务，获取规划结果。</li>
+ *       通过 TaskPlanner.plan() 进行任务规划，获取 TaskPlan。</li>
  *   <li>安全解析规划结果中的原始节点列表（rawNodes），对每个节点提取 nodeId、type、
  *       description、requiredTools、dependencies、timeoutMs 等字段。</li>
  *   <li>将所有解析后的 TaskNode 推入 PipelineContext，并逐个向前端推送节点详情 SSE 事件。</li>
@@ -50,7 +52,7 @@ import java.util.*;
  * 而是记录错误日志并以降级模式（degraded）继续，允许后续 RespondStage 给出降级响应。
  * 这种设计保证了即使远程规划服务不可用，用户仍能收到有意义的反馈。
  *
- * @see lyjew.com.lyclaw.feign.PlanFeignClient
+ * @see lyjew.com.lyclaw.task.TaskPlanner
  * @see lyjew.com.lyclaw.orchestration.stage.RespondStage
  * @see lyjew.com.lyclaw.task.TaskNode
  */
@@ -59,22 +61,27 @@ import java.util.*;
 @PipelineStage(name = "PlanExecution", after = SecurityCheckStage.class, group = "CORE")
 public class PlanExecutionStage extends PipelineStageBase {
 
-    private final PlanFeignClient planFeignClient;
+    private final TaskPlanner taskPlanner;
+    private final PlanValidator planValidator;
     private final MetricsCollector metricsCollector;
 
     /**
      * 构造计划执行阶段实例。
      *
-     * <p>通过 Spring 依赖注入接收规划服务的 Feign 客户端和可选的指标采集器。
+     * <p>通过 Spring 依赖注入接收任务规划器和可选的计划校验器、指标采集器。
      * MetricsCollector 使用 @Nullable 标记，允许在无指标采集器的环境下正常运行，
      * 此时仅跳过指标记录逻辑，不影响核心规划流程。
      *
-     * @param planFeignClient 远程规划服务的 Feign 客户端，用于调用 /plan 接口进行任务分解
+     * @param taskPlanner 任务规划器（通过 @Qualifier("DAGTaskPlanner") 注入），用于将用户意图分解为 TaskPlan
+     * @param planValidator 计划校验器，可为 null，用于校验规划结果
      * @param metricsCollector 指标采集器，可为 null，用于记录子阶段 PLAN 的耗时指标
      */
-    public PlanExecutionStage(PlanFeignClient planFeignClient,
-                               @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
-        this.planFeignClient = planFeignClient;
+    public PlanExecutionStage(
+            @org.springframework.beans.factory.annotation.Qualifier("DAGTaskPlanner") TaskPlanner taskPlanner,
+            @org.springframework.lang.Nullable PlanValidator planValidator,
+            @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
+        this.taskPlanner = taskPlanner;
+        this.planValidator = planValidator;
         this.metricsCollector = metricsCollector;
     }
 
@@ -83,7 +90,7 @@ public class PlanExecutionStage extends PipelineStageBase {
      *
      * <p>本方法实现了从用户意图到结构化任务列表的完整转换流程。首先检查流水线是否已被
      * 上游阶段终止，若不终止则进入 PLAN 子阶段：构建包含 sessionId、userIntent 和
-     * strategy 的 PlanRequest 对象，通过 PlanFeignClient 调用远程规划服务获取任务分解结果。
+     * strategy 的 PlanRequest 对象，通过 TaskPlanner 直接进行任务规划获取 TaskPlan。
      * 解析返回的原始节点数据（rawNodes），安全地提取每个节点的 nodeId、type、description、
      * requiredTools、dependencies 和 timeoutMs 等字段，构造 TaskNode 对象并推入
      * PipelineContext 中。随后逐个向前端推送节点详情的 SSE 事件，便于用户界面展示任务列表。
@@ -91,7 +98,7 @@ public class PlanExecutionStage extends PipelineStageBase {
      * 的 ReAct 循环中执行。</p>
      *
      * <p>特别注意：工具调用不在此阶段执行。编排模块中不存在名为 ToolCallLoop 的独立类或阶段，
-     * 工具调用是 RespondStage 内部 ReAct 循环的实现细节。LLM 通过 ActionFeignClient.listTools()
+     * 工具调用是 RespondStage 内部 ReAct 循环的实现细节。LLM 通过 ToolRegistry.getAllDefinitions()
      * 获取所有可用工具定义后自主决定调用策略，编排器不做预设的工具映射。</p>
      *
      * <p>异常处理策略为降级继续（degrade-and-continue）：当规划服务调用失败或节点解析异常时，
@@ -124,7 +131,7 @@ public class PlanExecutionStage extends PipelineStageBase {
                         "Planning task decomposition", null));
                 sink.next(sseEvent("plan_start", "Planning task decomposition"));
 
-                // 构建规划请求并调用远程规划服务
+                // 构建规划请求并使用 TaskPlanner 直接规划（替代原 PlanFeignClient 远程调用）
                 PlanRequest planReq = PlanRequest.builder()
                         .sessionId(sessionId)
                         .userIntent(userMessage)
@@ -132,16 +139,29 @@ public class PlanExecutionStage extends PipelineStageBase {
                         .context(Map.of("sessionId", sessionId, "timestamp", System.currentTimeMillis()))
                         .build();
                 long planCallStart = System.currentTimeMillis();
-                Map<String, Object> planResult = planFeignClient.plan(planReq);
+                // TaskPlanner.plan() 需要 ChatContext 和 userIntent 字符串
+                TaskPlan taskPlan = taskPlanner.plan(context, userMessage);
+                // 校验计划（如果校验器可用）
+                if (planValidator != null) {
+                    planValidator.validate(taskPlan);
+                }
+                // 将 TaskPlan 节点转换为下游代码期望的格式
+                List<Map<String, Object>> rawNodes = new ArrayList<>();
+                if (taskPlan != null && taskPlan.getNodes() != null) {
+                    for (TaskNode node : taskPlan.getNodes()) {
+                        Map<String, Object> raw = new LinkedHashMap<>();
+                        raw.put("nodeId", node.getNodeId());
+                        raw.put("type", node.getType());
+                        raw.put("description", node.getDescription());
+                        raw.put("requiredTools", node.getRequiredTools());
+                        raw.put("dependencies", node.getDependencies());
+                        raw.put("timeoutMs", node.getTimeoutMs());
+                        rawNodes.add(raw);
+                    }
+                }
                 long planCallDuration = System.currentTimeMillis() - planCallStart;
-                log.info(logJson("INFO", "feign_call", "PLAN", traceId,
-                        "planFeignClient.plan completed", planCallDuration));
-
-                // 安全地解析原始节点数据，避免类型转换异常
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> rawNodes = planResult != null && planResult.get("nodes") instanceof List
-                        ? (List<Map<String, Object>>) planResult.get("nodes")
-                        : Collections.emptyList();
+                log.info(logJson("INFO", "planner_call", "PLAN", traceId,
+                        "taskPlanner.plan completed, " + rawNodes.size() + " nodes", planCallDuration));
                 for (Map<String, Object> raw : rawNodes) {
                     // 安全解析 requiredTools 列表
                     @SuppressWarnings("unchecked")
@@ -185,7 +205,7 @@ public class PlanExecutionStage extends PipelineStageBase {
 
                 // ==================== EXECUTE 子阶段已由 RespondStage 的 ReAct 循环接管 ====================
                 // 工具调用不再由编排器预设映射（node.getType() 不是工具名），
-                // 而是由 RespondStage 通过 ActionFeignClient.listTools() 获取所有可用工具定义，传入 LLM，
+                // 而是由 RespondStage 通过 ToolRegistry.getAllDefinitions() 获取所有可用工具定义，传入 LLM，
                 // LLM 在 ReAct 循环中自主决定调用哪个工具、传什么参数。
                 pipelineCtx.getCurrentStage().set("EXECUTE");
                 sink.next(sseEvent("action_complete",

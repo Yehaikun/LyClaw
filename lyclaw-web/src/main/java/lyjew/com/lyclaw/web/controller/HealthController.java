@@ -1,4 +1,4 @@
-package lyjew.com.lyclaw.facade.controller;
+package lyjew.com.lyclaw.web.controller;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -16,10 +16,10 @@ import reactor.core.publisher.Mono;
 @RestController
 public class HealthController {
 
-    private final String serviceName = "lyclaw-facade-service";
+    private final String serviceName = "lyclaw-web-service";
     private final Instant startTime = Instant.now();
 
-    @GetMapping("/api/facade/health/liveness")
+    @GetMapping("/api/web/health/liveness")
     public Mono<Map<String, Object>> liveness() {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("status", "UP");
@@ -27,7 +27,7 @@ public class HealthController {
         return Mono.just(status);
     }
 
-    @GetMapping("/api/facade/health/readiness")
+    @GetMapping("/api/web/health/readiness")
     public Mono<Map<String, Object>> readiness() {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("status", "UP");
@@ -36,7 +36,7 @@ public class HealthController {
         return Mono.just(status);
     }
 
-    @GetMapping("/api/facade/health")
+    @GetMapping("/api/web/health")
     public Mono<Map<String, Object>> health() {
         String traceId = UUID.randomUUID().toString().replace("-", "");
         Map<String, Object> status = new LinkedHashMap<>();

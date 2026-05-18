@@ -2,19 +2,30 @@ package lyjew.com.lyclaw.orchestration.stage;
 
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.context.ChatContext;
-import lyjew.com.lyclaw.feign.ReflectFeignClient;
 import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
+import lyjew.com.lyclaw.reflect.DetectedError;
+import lyjew.com.lyclaw.reflect.ErrorDetector;
+import lyjew.com.lyclaw.reflect.QualityAssessment;
+import lyjew.com.lyclaw.reflect.QualityCriteria;
 import lyjew.com.lyclaw.reflect.ReflectRequest;
+import lyjew.com.lyclaw.reflect.ReflectionEngine;
 import lyjew.com.lyclaw.reflect.ReflectionReport;
+import lyjew.com.lyclaw.reflect.StrategyAdjuster;
+import lyjew.com.lyclaw.reflect.StrategyAdjustment;
 import org.springframework.http.codec.ServerSentEvent;
 import lyjew.com.lyclaw.annotation.PipelineStage;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+
 /**
  * 反思评估阶段，属于核心（CORE）组，在 PlanExecutionStage 之后执行。
  *
- * <p>职责：收集执行阶段产生的所有工具输出结果，调用远程反思服务进行评估和打分，
+ * <p>职责：收集执行阶段产生的所有工具输出结果，通过反思引擎进行质量评估、错误检测和打分，
  * 生成 ReflectionReport（包含整体评分和质量维度指标）。反思结果会存入 PipelineContext，
  * 供后续 RespondStage 和 MetricsStage 使用。
  *
@@ -27,27 +38,38 @@ import reactor.core.publisher.Flux;
 @PipelineStage(name = "Reflection", after = PlanExecutionStage.class, group = "CORE")
 public class ReflectionStage extends PipelineStageBase {
 
-    /** 反思服务 Feign 客户端，用于远程调用评估服务 */
-    private final ReflectFeignClient reflectFeignClient;
+    /** 反思引擎，用于质量评估、错误检测和策略建议 */
+    private final ReflectionEngine reflectionEngine;
+    /** 错误检测器，用于检测幻觉和逻辑矛盾 */
+    private final ErrorDetector errorDetector;
+    /** 策略调整器，用于生成策略调整建议 */
+    private final StrategyAdjuster strategyAdjuster;
     /** 指标采集器，用于记录反思阶段耗时 */
     private final MetricsCollector metricsCollector;
 
     /**
      * 构造反思评估阶段。
      *
-     * @param reflectFeignClient 反思服务远程调用客户端
-     * @param metricsCollector   指标采集器，可为 null
+     * @param reflectionEngine 反思引擎，可为 null（降级时生成最低评分报告）
+     * @param errorDetector    错误检测器，可为 null
+     * @param strategyAdjuster 策略调整器，可为 null
+     * @param metricsCollector 指标采集器，可为 null
      */
-    public ReflectionStage(ReflectFeignClient reflectFeignClient,
-                            @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
-        this.reflectFeignClient = reflectFeignClient;
+    public ReflectionStage(
+            @org.springframework.lang.Nullable ReflectionEngine reflectionEngine,
+            @org.springframework.lang.Nullable ErrorDetector errorDetector,
+            @org.springframework.lang.Nullable StrategyAdjuster strategyAdjuster,
+            @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
+        this.reflectionEngine = reflectionEngine;
+        this.errorDetector = errorDetector;
+        this.strategyAdjuster = strategyAdjuster;
         this.metricsCollector = metricsCollector;
     }
 
     /**
      * 执行反思评估流程。
      *
-     * <p>将所有工具执行结果拼接为文本，发送给远程反思服务进行评估。
+     * <p>将所有工具执行结果拼接为文本，通过反思引擎进行质量评估和错误检测。
      * 如果 toolResults 为空，则回退使用原始用户消息作为评估输入。
      * 反思完成后将报告和评分存入 PipelineContext，并标记流水线正常完成（pipelineOk=true），
      * 同时记录 respondStartMs 供 MetricsStage 计算响应耗时。
@@ -87,10 +109,52 @@ public class ReflectionStage extends PipelineStageBase {
                         .context("Orchestration pipeline execution - " + pipelineCtx.getNodes().size() + " tasks processed")
                         .build();
                 long reflectCallStart = System.currentTimeMillis();
-                ReflectionReport r = reflectFeignClient.reflect(reflectReq);
+
+                ReflectionReport r = null;
+                if (reflectionEngine != null) {
+                    // 构建质量评估标准
+                    QualityCriteria criteria = QualityCriteria.builder()
+                            .taskDescription(reflectReq.getContext() != null ? reflectReq.getContext() : "")
+                            .expectedOutput(reflectReq.getExpectedOutput() != null ? reflectReq.getExpectedOutput() : "")
+                            .checkAccuracy(true)
+                            .checkCompleteness(true)
+                            .checkSafety(true)
+                            .checkUserExperience(true)
+                            .build();
+                    // 评估质量
+                    QualityAssessment quality = reflectionEngine.assessQuality(reflectReq.getOutput(), criteria);
+                    // 检测错误
+                    List<DetectedError> errors = new ArrayList<>();
+                    if (errorDetector != null) {
+                        errors.addAll(errorDetector.detectHallucination(reflectReq.getOutput(), Collections.emptyList()));
+                        errors.addAll(errorDetector.detectLogicContradiction(reflectReq.getOutput()));
+                    }
+                    double overall = quality.getOverall();
+                    r = ReflectionReport.builder()
+                            .reflectionId(UUID.randomUUID().toString())
+                            .sessionId(sessionId)
+                            .quality(quality)
+                            .errors(errors)
+                            .overallScore(overall)
+                            .timestamp(System.currentTimeMillis())
+                            .build();
+                    // 如果需要，生成策略调整建议
+                    if ((!errors.isEmpty() || overall < 0.6) && strategyAdjuster != null) {
+                        StrategyAdjustment suggestion = strategyAdjuster.adjust(r);
+                        r.setSuggestion(suggestion);
+                    }
+                } else {
+                    // 降级：反思引擎不可用时创建最低评分报告
+                    r = ReflectionReport.builder()
+                            .reflectionId("degraded")
+                            .sessionId(sessionId)
+                            .overallScore(0.0)
+                            .timestamp(System.currentTimeMillis())
+                            .build();
+                }
                 long reflectCallDuration = System.currentTimeMillis() - reflectCallStart;
-                log.info(logJson("INFO", "feign_call", "REFLECT", traceId,
-                        "reflectFeignClient.reflect completed", reflectCallDuration));
+                log.info(logJson("INFO", "reflect_call", "REFLECT", traceId,
+                        "reflectionEngine completed, score=" + r.getOverallScore(), reflectCallDuration));
 
                 // 将反思报告和评分存入流水线上下文，供后续阶段使用
                 pipelineCtx.getReportRef().set(r);

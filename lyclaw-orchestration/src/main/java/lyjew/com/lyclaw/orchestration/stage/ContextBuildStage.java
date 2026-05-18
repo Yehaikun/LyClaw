@@ -2,7 +2,7 @@ package lyjew.com.lyclaw.orchestration.stage;
 
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.context.ChatContext;
-import lyjew.com.lyclaw.feign.MemoryFeignClient;
+import lyjew.com.lyclaw.memory.MemorySystem;
 import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.memory.MemoryQuery;
 import lyjew.com.lyclaw.memory.MemoryQueryResult;
@@ -17,7 +17,7 @@ import reactor.core.publisher.Flux;
  * <p>职责：在进入核心编排流程之前，加载必要的上下文信息：
  * <ol>
  *   <li><b>获取用户消息</b>：从 ChatContext 中提取用户最新消息。</li>
- *   <li><b>检索记忆</b>：将用户消息作为查询文本，调用 MemoryFeignClient.retrieve 从记忆服务中
+ *   <li><b>检索记忆</b>：将用户消息作为查询文本，调用 MemorySystem.retrieve 从记忆服务中
  *       检索相关的历史记忆条目（topK=10），为后续任务规划提供背景知识。</li>
  * </ol>
  *
@@ -29,20 +29,20 @@ import reactor.core.publisher.Flux;
 @PipelineStage(name = "ContextBuild", group = "PREPROCESSING")
 public class ContextBuildStage extends PipelineStageBase {
 
-    /** 记忆服务 Feign 客户端，用于检索相关历史记忆 */
-    private final MemoryFeignClient memoryFeignClient;
+    /** 记忆系统服务，用于检索相关历史记忆 */
+    private final MemorySystem memorySystem;
     /** 指标采集器，用于记录记忆检索和阶段耗时指标 */
     private final MetricsCollector metricsCollector;
 
     /**
      * 构造上下文构建阶段。
      *
-     * @param memoryFeignClient 记忆服务远程调用客户端
+     * @param memorySystem 记忆系统服务
      * @param metricsCollector  指标采集器，可为 null
      */
-    public ContextBuildStage(MemoryFeignClient memoryFeignClient,
+    public ContextBuildStage(MemorySystem memorySystem,
                              @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
-        this.memoryFeignClient = memoryFeignClient;
+        this.memorySystem = memorySystem;
         this.metricsCollector = metricsCollector;
     }
 
@@ -85,12 +85,12 @@ public class ContextBuildStage extends PipelineStageBase {
                         .queryText(userMessage)
                         .topK(10) // 返回最相关的 10 条记忆
                         .build();
-                MemoryQueryResult memoryResult = memoryFeignClient.retrieve(memoryQuery);
+                MemoryQueryResult memoryResult = memorySystem.retrieve(memoryQuery);
                 long memCallDuration = System.currentTimeMillis() - memCallStart;
                 int memoryHits = memoryResult != null ? memoryResult.getTotalHits() : 0;
 
-                log.info(logJson("INFO", "feign_call", "CONTEXT_BUILD", traceId,
-                        "memoryFeignClient.retrieve completed: " + memoryHits + " entries",
+                log.info(logJson("INFO", "memory_call", "CONTEXT_BUILD", traceId,
+                        "memorySystem.retrieve completed: " + memoryHits + " entries",
                         memCallDuration));
                 sink.next(sseEvent("context_build_complete",
                         "Loaded session, retrieved " + memoryHits + " memory entries"));

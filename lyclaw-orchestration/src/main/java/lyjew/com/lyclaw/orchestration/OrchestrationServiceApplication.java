@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.orchestration;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
  * LyClaw 编排服务启动入口。
@@ -12,7 +11,6 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  * Feign 客户端由 facade 模块统一管理，编排模块独立部署时需自行启用。
  */
 @SpringBootApplication(scanBasePackages = "lyjew.com.lyclaw")
-@EnableDiscoveryClient  // 启用服务注册与发现，注册到 Nacos/Consul 注册中心
 public class OrchestrationServiceApplication {
 
     /**

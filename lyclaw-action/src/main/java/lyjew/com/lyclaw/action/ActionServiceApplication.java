@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.action;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
  * LyClaw 动作服务的 Spring Boot 启动类。
@@ -12,7 +11,6 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  * 通过 {@link EnableDiscoveryClient} 注册到服务发现中心（如 Nacos/Consul/Eureka）。</p>
  */
 @SpringBootApplication(scanBasePackages = "lyjew.com.lyclaw")
-@EnableDiscoveryClient
 public class ActionServiceApplication {
 
     /**

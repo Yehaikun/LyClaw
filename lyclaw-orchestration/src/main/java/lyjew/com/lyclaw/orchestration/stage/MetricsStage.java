@@ -2,7 +2,8 @@ package lyjew.com.lyclaw.orchestration.stage;
 
 import lombok.extern.slf4j.Slf4j;
 import lyjew.com.lyclaw.context.ChatContext;
-import lyjew.com.lyclaw.feign.MemoryFeignClient;
+import lyjew.com.lyclaw.memory.MemoryEntry;
+import lyjew.com.lyclaw.memory.MemorySystem;
 import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
 import lyjew.com.lyclaw.memory.PerceptionData;
 import lyjew.com.lyclaw.pipeline.PipelineContext;
@@ -19,7 +20,7 @@ import java.util.Map;
  *
  * <p>职责：编排流程的最后一个阶段，负责以下收尾工作：
  * <ol>
- *   <li><b>持久化记忆</b>：将本次编排的摘要信息（任务数、成功/失败数、反思评分等）通过 MemoryFeignClient 写入记忆服务。</li>
+ *   <li><b>持久化记忆</b>：将本次编排的摘要信息（任务数、成功/失败数、反思评分等）通过 MemorySystem 写入记忆服务。</li>
  *   <li><b>记录指标</b>：收集整个编排的生命周期指标（总耗时、阶段耗时、成功率和反思评分），通过 MetricsCollector 上报。</li>
  *   <li><b>发送汇总 SSE 事件</b>：向前端推送 metrics 和 done 事件，包含完整的执行统计数据。</li>
  * </ol>
@@ -33,20 +34,20 @@ import java.util.Map;
 @PipelineStage(name = "Metrics", after = RespondStage.class, group = "POSTPROCESSING")
 public class MetricsStage extends PipelineStageBase {
 
-    /** 记忆服务 Feign 客户端，用于持久化编排摘要 */
-    private final MemoryFeignClient memoryFeignClient;
+    /** 记忆系统服务，用于持久化编排摘要 */
+    private final MemorySystem memorySystem;
     /** 指标采集器，用于记录管道级别和 LLM 调用指标 */
     private final MetricsCollector metricsCollector;
 
     /**
      * 构造指标记录阶段。
      *
-     * @param memoryFeignClient 记忆服务远程调用客户端
+     * @param memorySystem 记忆系统服务
      * @param metricsCollector  指标采集器，可为 null
      */
-    public MetricsStage(MemoryFeignClient memoryFeignClient,
+    public MetricsStage(MemorySystem memorySystem,
                          @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
-        this.memoryFeignClient = memoryFeignClient;
+        this.memorySystem = memorySystem;
         this.metricsCollector = metricsCollector;
     }
 
@@ -119,7 +120,8 @@ public class MetricsStage extends PipelineStageBase {
                                 "failCount", failCount,
                                 "orchestrationDurationMs", now - orchestrationStart))
                         .build();
-                memoryFeignClient.ingest(perception, sessionId, "default");
+                MemoryEntry entry = memorySystem.ingestPerception(sessionId, perception);
+                entry.setUserId("default");
             } catch (Exception e) {
                 log.warn(logJson("WARN", "memory_ingest_failed", "RESPOND", traceId,
                         "Memory ingest failed (non-critical): " + e.getMessage(), null));

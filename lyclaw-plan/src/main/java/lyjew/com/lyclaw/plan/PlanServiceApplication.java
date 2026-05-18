@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.plan;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
  * LyClaw规划服务启动类。
@@ -21,7 +20,6 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  * @see EnableDiscoveryClient
  */
 @SpringBootApplication(scanBasePackages = "lyjew.com.lyclaw")
-@EnableDiscoveryClient
 public class PlanServiceApplication {
 
     /**
