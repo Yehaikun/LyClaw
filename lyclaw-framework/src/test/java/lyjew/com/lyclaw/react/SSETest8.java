@@ -5,7 +5,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
 import java.util.List;
 
 
@@ -46,16 +48,16 @@ public class SSETest8 {
       }
             """, "请给我介绍WebSocket整个握手和数据传输流程");
 
-        webClient.post()
+        Flux<String> stringFlux = webClient.post()
                 .uri("/chat/completions")
                 .bodyValue(jsonBody)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .doOnSubscribe(s->{
+                .doOnSubscribe(s -> {
                     System.out.println("开始发送消息......");
                 })
-                .doOnNext(System.out::println)
-                .subscribe();
+                .doOnNext(System.out::println).retryWhen(Retry.fixedDelay(3, Duration.ofMillis(500)));
+        stringFlux.subscribe(System.out::println);
         Thread.sleep(1000000);
     }
 }
