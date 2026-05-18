@@ -47,7 +47,7 @@ lyclaw:
         base-url: https://api.deepseek.com
 
         # API 密钥，支持 ${ENV_VAR:默认值} 占位符
-        api-key: ${DEEPSEEK_API_KEY:sk-b1da578246114c2383616f49b5651f1d}
+        api-key: ${DEEPSEEK_API_KEY:}
 
         # 模型名称（DeepSeek: deepseek-v4-flash / deepseek-v4-pro）
         model: deepseek-v4-flash

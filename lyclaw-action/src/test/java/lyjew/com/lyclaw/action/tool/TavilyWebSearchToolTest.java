@@ -17,7 +17,7 @@ class TavilyWebSearchToolTest {
 
     private TavilyWebSearchTool tool;
 
-    private static final String tavilyApiKey = "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";
+    private static final String tavilyApiKey = System.getenv().getOrDefault("TAVILY_API_KEY", "");
 
     @BeforeEach
     void setUp() {
