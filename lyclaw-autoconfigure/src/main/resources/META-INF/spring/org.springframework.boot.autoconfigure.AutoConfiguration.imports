@@ -4,5 +4,6 @@ lyjew.com.lyclaw.autoconfigure.autoconfigure.PipelineAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.InterceptorAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.StorageAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.ChatAutoConfiguration
+lyjew.com.lyclaw.autoconfigure.autoconfigure.ReActAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.ProcessorAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.AgentProxyAutoConfiguration

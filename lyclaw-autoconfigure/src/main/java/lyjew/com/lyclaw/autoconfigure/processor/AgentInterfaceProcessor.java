@@ -5,9 +5,12 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.FactoryBean;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 
@@ -17,66 +20,75 @@ import lyjew.com.lyclaw.react.AgentProxyFactory;
 /**
  * 自动发现 @Agent 注解的接口并注册为 Spring Bean。
  *
- * <p>这是一个 {@link BeanFactoryPostProcessor}，在 Spring 容器刷新早期运行。
- * 它扫描 classpath 上所有带 {@link Agent @Agent} 注解的接口，
- * 通过 {@link AgentProxyFactory} 为每个接口创建 JDK 动态代理，
- * 然后将代理实例注册为 Spring 单例 Bean。
+ * <p>核心策略：不直接创建代理实例（避免在 BFPP 阶段通过 {@code getBean()}
+ * 触发整个依赖树的即时实例化，此时 {@code AutowiredAnnotationBeanPostProcessor}
+ * 尚未注册，无参构造器的 Bean 会失败），而是为每个 @Agent 接口注册一个
+ * {@link FactoryBean} BeanDefinition。代理在 Bean 首次被请求时才创建，
+ * 此时所有 BeanPostProcessor 已就绪。
  *
- * <p>使用 BeanFactoryPostProcessor 而非 BeanPostProcessor 的原因：
- * @Agent 标记的是接口，Spring 无法直接实例化接口。必须在 Bean 实例化之前
- * 将代理 Bean 注册到容器中，替换掉 Spring 扫描到的无效 BeanDefinition。
- *
- * <p>扫描范围由 Spring Boot 的自动配置扫描机制（AutoConfigurationPackages）确定。
+ * <p>独立的 classpath 扫描是必要的，因为 Spring 自身的组件扫描会跳过接口
+ * （{@code isConcrete()} 返回 false），不会为其创建 BeanDefinition。
  */
 public class AgentInterfaceProcessor implements BeanFactoryPostProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentInterfaceProcessor.class);
 
-    private final AgentProxyFactory agentProxyFactory;
-
-    public AgentInterfaceProcessor(AgentProxyFactory agentProxyFactory) {
-        this.agentProxyFactory = agentProxyFactory;
+    public AgentInterfaceProcessor() {
     }
 
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory)
             throws BeansException {
         DefaultListableBeanFactory registry = (DefaultListableBeanFactory) beanFactory;
+        LazyBeanFactoryHolder.setBeanFactory(registry);
 
         ClassPathScanningCandidateComponentProvider scanner =
-                new ClassPathScanningCandidateComponentProvider(false);
+                new ClassPathScanningCandidateComponentProvider(false) {
+                    @Override
+                    protected boolean isCandidateComponent(AnnotatedBeanDefinition bd) {
+                        return bd.getMetadata().isInterface()
+                                || super.isCandidateComponent(bd);
+                    }
+                };
         scanner.addIncludeFilter(new AnnotationTypeFilter(Agent.class));
 
-        String[] basePackages = registry.getBeanDefinitionNames();
-        // Scan from well-known framework/application base packages
-        String[] scanPackages = {"lyjew.com.lyclaw", ""};
+        String[] scanPackages = {"lyjew.com.lyclaw"};
         Set<String> scanned = new java.util.HashSet<>();
 
         for (String basePackage : scanPackages) {
-            if (basePackage.isEmpty()) continue;
             try {
                 for (var bd : scanner.findCandidateComponents(basePackage)) {
                     String className = bd.getBeanClassName();
-                    if (scanned.contains(className)) continue;
-                    scanned.add(className);
+                    if (className == null || !scanned.add(className)) continue;
 
                     try {
                         Class<?> clazz = Class.forName(className);
                         if (!clazz.isInterface()) continue;
 
-                        Object proxy = agentProxyFactory.create(clazz);
                         String beanName = resolveBeanName(clazz);
-                        registerSingleton(registry, beanName, clazz.getName(), proxy);
-                        log.info("Registered @Agent proxy bean: {} → {}", beanName, className);
+                        // 注册 FactoryBean 定义——代理在首次 getBean 时才创建
+                        RootBeanDefinition factoryDef =
+                                new RootBeanDefinition(AgentProxyFactoryBean.class);
+                        factoryDef.getConstructorArgumentValues()
+                                .addGenericArgumentValue(clazz);
+                        factoryDef.setTargetType(clazz);
+                        factoryDef.setPrimary(true);
+
+                        if (registry.containsBeanDefinition(beanName)) {
+                            registry.removeBeanDefinition(beanName);
+                        }
+                        registry.registerBeanDefinition(beanName, factoryDef);
+                        log.info("Registered @Agent proxy factory bean: {} → {}", beanName, className);
                     } catch (ClassNotFoundException e) {
                         log.debug("Cannot load class {}: {}", className, e.getMessage());
                     } catch (Exception e) {
-                        log.warn("Failed to create proxy for @Agent interface {}: {}",
+                        log.warn("Failed to register @Agent interface {}: {}",
                                 className, e.getMessage());
                     }
                 }
             } catch (Exception e) {
-                log.debug("Scanning package {} failed: {}", basePackage, e.getMessage());
+                log.warn("Scanning package '{}' for @Agent interfaces failed: {}",
+                        basePackage, e.getMessage());
             }
         }
     }
@@ -90,12 +102,69 @@ public class AgentInterfaceProcessor implements BeanFactoryPostProcessor {
         return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
     }
 
-    private void registerSingleton(DefaultListableBeanFactory registry,
-                                    String beanName, String alias, Object instance) {
-        // 如果已有同名 Bean，先移除
-        if (registry.containsBeanDefinition(beanName)) {
-            registry.removeBeanDefinition(beanName);
+    /**
+     * 延迟创建 @Agent 代理的 FactoryBean。
+     * 代理只在 Spring 首次请求 Bean 时创建，此时所有 BeanPostProcessor 已就绪。
+     */
+    public static class AgentProxyFactoryBean implements FactoryBean<Object> {
+
+        private final Class<?> agentInterface;
+
+        public AgentProxyFactoryBean(Class<?> agentInterface) {
+            this.agentInterface = agentInterface;
         }
-        registry.registerSingleton(beanName, instance);
+
+        @Override
+        public Object getObject() {
+            DefaultListableBeanFactory registry =
+                    (DefaultListableBeanFactory) LazyBeanFactoryHolder.getBeanFactory();
+            if (registry == null) {
+                throw new IllegalStateException(
+                        "BeanFactory not available for @Agent proxy: " + agentInterface.getName());
+            }
+            AgentProxyFactory factory = registry.getBean(AgentProxyFactory.class);
+            // 替换自身为已创建的代理实例（避免每次调用都走 FactoryBean）
+            Object proxy = factory.create(agentInterface);
+            String beanName = resolveBeanName();
+            registry.destroySingleton(beanName);
+            registry.registerSingleton(beanName, proxy);
+            return proxy;
+        }
+
+        @Override
+        public Class<?> getObjectType() {
+            return agentInterface;
+        }
+
+        @Override
+        public boolean isSingleton() {
+            return true;
+        }
+
+        private String resolveBeanName() {
+            Agent ann = agentInterface.getAnnotation(Agent.class);
+            if (ann != null && !ann.name().isEmpty()) {
+                return ann.name();
+            }
+            String simpleName = agentInterface.getSimpleName();
+            return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
+        }
+    }
+
+    /**
+     * 持有 BeanFactory 引用的静态工具。由任意一个实现了
+     * {@code BeanFactoryAware} 的 Bean 设置，或由该 BFPP 在
+     * {@code postProcessBeanFactory} 中直接设置。
+     */
+    static final class LazyBeanFactoryHolder {
+        private static volatile ConfigurableListableBeanFactory beanFactory;
+
+        static ConfigurableListableBeanFactory getBeanFactory() {
+            return beanFactory;
+        }
+
+        static void setBeanFactory(ConfigurableListableBeanFactory bf) {
+            beanFactory = bf;
+        }
     }
 }

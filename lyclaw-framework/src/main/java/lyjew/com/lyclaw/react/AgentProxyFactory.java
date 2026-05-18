@@ -5,15 +5,14 @@ import java.util.List;
 
 import lyjew.com.lyclaw.annotation.Agent;
 import lyjew.com.lyclaw.chat.ChatFacade;
+import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
 /**
  * Agent 接口的动态代理工厂。
  *
  * <p>通过 JDK {@link Proxy#newProxyInstance} 为标注了 {@link Agent @Agent} 的
- * 接口创建运行时实现，将方法调用透明地转换为 ReAct 循环。</p>
- *
- * <p>支持通过 AgentHook 链注入安全审核、沙箱隔离、工具审批等横切关注点。</p>
+ * 接口创建运行时实现，将方法调用透明地转换为 Stage 管线 + ReAct 循环。</p>
  */
 public class AgentProxyFactory {
 
@@ -24,22 +23,33 @@ public class AgentProxyFactory {
     private final String modelOverride;
     private final String providerOverride;
     private final List<AgentHook> hooks;
+    private final List<ReactivePipelineStage> stages;
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                               ToolRegistry toolRegistry) {
-        this(chatFacade, reActEngine, toolRegistry, null, null, null, List.of());
+        this(chatFacade, reActEngine, toolRegistry, null, null, null, List.of(), List.of());
     }
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                               ToolRegistry toolRegistry, String defaultSystemPrompt,
                               String modelOverride, String providerOverride) {
-        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride, providerOverride, List.of());
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
+                providerOverride, List.of(), List.of());
     }
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                               ToolRegistry toolRegistry, String defaultSystemPrompt,
                               String modelOverride, String providerOverride,
                               List<AgentHook> hooks) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
+                providerOverride, hooks, List.of());
+    }
+
+    public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
+                              ToolRegistry toolRegistry, String defaultSystemPrompt,
+                              String modelOverride, String providerOverride,
+                              List<AgentHook> hooks,
+                              List<ReactivePipelineStage> stages) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
@@ -47,6 +57,7 @@ public class AgentProxyFactory {
         this.modelOverride = modelOverride;
         this.providerOverride = providerOverride;
         this.hooks = hooks != null ? List.copyOf(hooks) : List.of();
+        this.stages = stages != null ? List.copyOf(stages) : List.of();
     }
 
     @SuppressWarnings("unchecked")
@@ -80,7 +91,8 @@ public class AgentProxyFactory {
         }
 
         AgentInvocationHandler handler = new AgentInvocationHandler(
-                chatFacade, reActEngine, toolRegistry, systemPrompt, model, provider, hooks);
+                chatFacade, reActEngine, toolRegistry, systemPrompt, model, provider,
+                hooks, stages);
 
         return (T) Proxy.newProxyInstance(
                 agentInterface.getClassLoader(),

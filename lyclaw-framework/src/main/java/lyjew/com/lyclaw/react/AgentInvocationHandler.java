@@ -3,6 +3,7 @@ package lyjew.com.lyclaw.react;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -20,6 +21,7 @@ import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
+import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import reactor.core.publisher.Flux;
@@ -28,16 +30,16 @@ import reactor.core.publisher.Mono;
 /**
  * Agent 接口的动态代理 InvocationHandler。
  *
- * <p>每次调用 Agent 接口方法时，通过 AgentHook 链执行扩展逻辑，
- * 自动构建 ChatRequest、委托 ReActEngine 执行 ReAct 循环，并将结果解析为方法声明的返回类型。</p>
- *
- * <h3>Hook 执行顺序</h3>
+ * <h3>执行流程</h3>
  * <ol>
- *   <li>AgentHook#beforeRequest — 按 order 升序（安全审核、内容过滤）</li>
- *   <li>AgentHook#wrapToolExecutor — 按 order 升序装饰（沙箱、审批）</li>
- *   <li>ReActEngine 执行</li>
- *   <li>AgentHook#afterResult — 按 order 降序（校验、日志）</li>
+ *   <li>解析注解 → 构建 AgentContext</li>
+ *   <li>beforeRequest hooks（按 order 升序）</li>
+ *   <li>Stage 管线（ContextBuild→SecurityCheck→PlanExecution→Respond→Metrics）</li>
+ *   <li>afterResult hooks（按 order 降序）</li>
  * </ol>
+ *
+ * <p>Stage 管线内嵌了完整的 ReAct 循环（RespondStage），
+ * AgentHook 提供步级拦截（beforeModel/afterModel/wrapToolCall）。</p>
  */
 public class AgentInvocationHandler implements InvocationHandler {
 
@@ -50,11 +52,13 @@ public class AgentInvocationHandler implements InvocationHandler {
     private final String modelOverride;
     private final String providerOverride;
     private final List<AgentHook> hooks;
+    private final List<ReactivePipelineStage> stages;
 
     public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
                                    ToolRegistry toolRegistry, String defaultSystemPrompt,
                                    String modelOverride, String providerOverride,
-                                   List<AgentHook> hooks) {
+                                   List<AgentHook> hooks,
+                                   List<ReactivePipelineStage> stages) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
@@ -62,6 +66,13 @@ public class AgentInvocationHandler implements InvocationHandler {
         this.modelOverride = modelOverride;
         this.providerOverride = providerOverride;
         this.hooks = hooks != null ? List.copyOf(hooks) : List.of();
+        this.stages = stages != null ? sortedStages(stages) : List.of();
+    }
+
+    private static List<ReactivePipelineStage> sortedStages(List<ReactivePipelineStage> stages) {
+        List<ReactivePipelineStage> sorted = new ArrayList<>(stages);
+        sorted.sort(Comparator.comparingInt(ReactivePipelineStage::getOrder));
+        return List.copyOf(sorted);
     }
 
     @Override
@@ -78,13 +89,15 @@ public class AgentInvocationHandler implements InvocationHandler {
         String userMessage = resolveUserMessage(method, args);
 
         ChatRequest request = buildChatRequest(method, userMessage, systemPrompt);
-        String sessionId = request.getSessionId() != null ? request.getSessionId() : UUID.randomUUID().toString().substring(0, 8);
+        String sessionId = request.getSessionId() != null
+                ? request.getSessionId() : UUID.randomUUID().toString().substring(0, 8);
 
         AgentContext ctx = new AgentContext(sessionId, userMessage, systemPrompt,
                 toolRegistry, method, args);
         ctx.setChatRequest(request);
+        ctx.setPipelineOk(true); // 默认流水线正常，安全阶段可设为 false
 
-        // 1. beforeRequest hooks (按 order 排序)
+        // 1. beforeRequest hooks（按 order 升序）
         List<AgentHook> sorted = new ArrayList<>(hooks);
         sorted.sort(Comparator.comparingInt(AgentHook::getOrder));
         for (AgentHook hook : sorted) {
@@ -98,24 +111,43 @@ public class AgentInvocationHandler implements InvocationHandler {
             ctx.setChatRequest(request);
         }
 
-        // 2. 构建 ToolExecutor（通过 wrapToolExecutor 装饰链）
-        ToolExecutor toolExecutor = buildToolExecutor(request);
-        for (AgentHook hook : sorted) {
-            toolExecutor = hook.wrapToolExecutor(toolExecutor, ctx);
-        }
-
-        // 3. 执行 ReAct 循环
         Class<?> returnType = method.getReturnType();
+        boolean returnsSSE = isFluxOfServerSentEvent(method);
+
         String result;
 
-        if (returnType == Flux.class) {
-            return reActEngine.executeStream(chatFacade, request, toolExecutor)
-                    .mapNotNull(event -> "message".equals(event.event()) ? event.data() : null);
+        if (!stages.isEmpty()) {
+            // 2a. Stage 管线路径
+            if (returnType == Flux.class) {
+                Flux<org.springframework.http.codec.ServerSentEvent<String>> stageFlux = executeStages(ctx);
+                if (returnsSSE) {
+                    return stageFlux;
+                }
+                return stageFlux
+                        .mapNotNull(event -> "message".equals(event.event()) ? event.data() : null);
+            }
+            result = executeStagesBlocking(ctx);
+        } else {
+            // 2b. 无 Stage 时的降级路径：直接 ReActEngine（向后兼容）
+            ToolExecutor toolExecutor = buildToolExecutor(ctx);
+            for (AgentHook hook : sorted) {
+                toolExecutor = hook.wrapToolExecutor(toolExecutor, ctx);
+            }
+
+            if (returnType == Flux.class) {
+                Flux<org.springframework.http.codec.ServerSentEvent<String>> reActFlux =
+                        reActEngine.executeStream(chatFacade, ctx.getChatRequest(), toolExecutor);
+                if (returnsSSE) {
+                    return reActFlux;
+                }
+                return reActFlux
+                        .mapNotNull(event -> "message".equals(event.event()) ? event.data() : null);
+            }
+
+            result = reActEngine.execute(chatFacade, ctx.getChatRequest(), toolExecutor);
         }
 
-        result = reActEngine.execute(chatFacade, request, toolExecutor);
-
-        // 4. afterResult hooks (按 order 降序)
+        // 3. afterResult hooks（按 order 降序）
         for (int i = sorted.size() - 1; i >= 0; i--) {
             result = sorted.get(i).afterResult(result, ctx);
         }
@@ -130,6 +162,79 @@ public class AgentInvocationHandler implements InvocationHandler {
 
         return result;
     }
+
+    private ToolExecutor buildToolExecutor(AgentContext ctx) {
+        return (toolName, toolCallId, argumentsJson) -> {
+            try {
+                ToolCall toolCall = ToolCall.builder()
+                        .toolCallId(toolCallId)
+                        .name(toolName)
+                        .arguments(argumentsJson)
+                        .build();
+                ToolExecutionResult result = toolRegistry.execute(toolCall, null);
+                if (!result.isSuccess()) {
+                    result = toolRegistry.executeByName(toolName, toolCallId, argumentsJson, ctx.getChatRequest());
+                }
+                if (result.isSuccess()) {
+                    return result.getResult() != null ? result.getResult() : "";
+                }
+                return "Error: " + (result.getError() != null ? result.getError() : "unknown");
+            } catch (Exception e) {
+                log.error("Tool execution failed: tool={} toolCallId={}", toolName, toolCallId, e);
+                return "Error: " + e.getMessage();
+            }
+        };
+    }
+
+    /**
+     * 流式执行 Stage 管线，返回 SSE 事件流。
+     */
+    private Flux<org.springframework.http.codec.ServerSentEvent<String>> executeStages(AgentContext ctx) {
+        if (stages.isEmpty()) {
+            return Flux.empty();
+        }
+
+        Flux<org.springframework.http.codec.ServerSentEvent<String>> pipeline = stages.get(0).execute(ctx);
+        for (int i = 1; i < stages.size(); i++) {
+            ReactivePipelineStage stage = stages.get(i);
+            pipeline = pipeline.concatWith(stage.execute(ctx));
+        }
+        return pipeline;
+    }
+
+    /**
+     * 阻塞执行 Stage 管线，收集最终响应文本。
+     */
+    private String executeStagesBlocking(AgentContext ctx) {
+        if (stages.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder finalResponse = new StringBuilder();
+        try {
+            Flux<org.springframework.http.codec.ServerSentEvent<String>> pipeline = stages.get(0).execute(ctx);
+            for (int i = 1; i < stages.size(); i++) {
+                pipeline = pipeline.concatWith(stages.get(i).execute(ctx));
+            }
+            pipeline
+                    .doOnNext(event -> {
+                        if ("message".equals(event.event()) && event.data() != null) {
+                            if (finalResponse.length() > 0) finalResponse.append("\n");
+                            finalResponse.append(event.data());
+                        }
+                    })
+                    .doOnComplete(() -> ctx.setAttribute("finalResponse", finalResponse.toString()))
+                    .blockLast();
+        } catch (Exception e) {
+            log.error("Stage pipeline execution failed", e);
+            return "Error: " + e.getMessage();
+        }
+
+        String result = ctx.getAttribute("finalResponse");
+        return result != null ? result : finalResponse.toString();
+    }
+
+    // ========== 注解解析 ==========
 
     private String resolveSystemMessage(Method method, Object[] args) {
         SystemMessage sm = method.getAnnotation(SystemMessage.class);
@@ -176,6 +281,24 @@ public class AgentInvocationHandler implements InvocationHandler {
         return result;
     }
 
+    /**
+     * 检查方法的返回类型是否为 {@code Flux<ServerSentEvent<String>>}。
+     * 若是，则透传所有 SSE 事件类型（message/tool_call/tool_approval 等）；
+     * 否则只提取 "message" 事件中的文本。
+     */
+    private boolean isFluxOfServerSentEvent(Method method) {
+        java.lang.reflect.Type genericReturn = method.getGenericReturnType();
+        if (genericReturn instanceof ParameterizedType pt) {
+            if (pt.getRawType() == Flux.class) {
+                java.lang.reflect.Type[] typeArgs = pt.getActualTypeArguments();
+                if (typeArgs.length == 1 && typeArgs[0] instanceof ParameterizedType inner) {
+                    return inner.getRawType() == org.springframework.http.codec.ServerSentEvent.class;
+                }
+            }
+        }
+        return false;
+    }
+
     private ChatRequest buildChatRequest(Method method, String userMessage, String systemPrompt) {
         ChatRequest.ChatRequestBuilder builder = ChatRequest.builder()
                 .messages(new ArrayList<>(List.of(Message.user(userMessage))))
@@ -195,37 +318,9 @@ public class AgentInvocationHandler implements InvocationHandler {
         }
 
         ChatRequest request = builder.build();
-        List<ToolDefinition> tools = resolveToolDefinitions(request);
+        List<ToolDefinition> tools = toolRegistry.getAllDefinitions(request);
         request.setTools(tools);
 
         return request;
     }
-
-    private List<ToolDefinition> resolveToolDefinitions(ChatRequest request) {
-        return toolRegistry.getAllDefinitions(request);
-    }
-
-    private ToolExecutor buildToolExecutor(ChatRequest request) {
-        return (toolName, toolCallId, argumentsJson) -> {
-            try {
-                ToolCall toolCall = ToolCall.builder()
-                        .toolCallId(toolCallId)
-                        .name(toolName)
-                        .arguments(argumentsJson)
-                        .build();
-                ToolExecutionResult result = toolRegistry.execute(toolCall, null);
-                if (!result.isSuccess()) {
-                    result = toolRegistry.executeByName(toolName, toolCallId, argumentsJson, request);
-                }
-                if (result.isSuccess()) {
-                    return result.getResult() != null ? result.getResult() : "";
-                }
-                return "Error: " + (result.getError() != null ? result.getError() : "unknown");
-            } catch (Exception e) {
-                log.error("Tool execution failed: tool={} toolCallId={}", toolName, toolCallId, e);
-                return "Error: " + e.getMessage();
-            }
-        };
-    }
-
-    }
+}

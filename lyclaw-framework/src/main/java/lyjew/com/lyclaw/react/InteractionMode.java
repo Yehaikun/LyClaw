@@ -1,7 +1,5 @@
 package lyjew.com.lyclaw.react;
 
-import org.springframework.stereotype.Component;
-
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -12,8 +10,8 @@ import java.lang.annotation.Target;
  * 交互模式声明注解，标记一个类为 LyClaw 支持的 LLM 交互模式实现。
  *
  * <p>交互模式定义了 LLM 在一次任务中如何与工具、环境进行多轮交互的策略。
- * 标注此注解的类会被 {@code InteractionModeProcessor} 自动发现和注册。
- * 通过 {@link Component} 元注解自动被 Spring 容器管理。
+ * 标注此注解的类会被自动配置（如 {@code ReActAutoConfiguration}）显式注册为 Bean，
+ * 而非通过 Spring 组件扫描自动发现（因为交互模式实现通常需要特定的构造器注入）。
  *
  * <p>使用示例：
  * <pre>{@code
@@ -25,7 +23,6 @@ import java.lang.annotation.Target;
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@Component
 @Documented
 public @interface InteractionMode {
 

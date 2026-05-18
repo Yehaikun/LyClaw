@@ -3,6 +3,7 @@ package lyjew.com.lyclaw.react;
 import java.util.List;
 
 import lyjew.com.lyclaw.chat.ChatFacade;
+import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
 /**
@@ -63,6 +64,7 @@ public final class LyClawAgent {
         private String model;
         private String provider;
         private List<AgentHook> hooks;
+        private List<ReactivePipelineStage> stages;
 
         private Builder(Class<T> agentInterface) {
             this.agentInterface = agentInterface;
@@ -103,6 +105,11 @@ public final class LyClawAgent {
             return this;
         }
 
+        public Builder<T> stages(List<ReactivePipelineStage> stages) {
+            this.stages = stages;
+            return this;
+        }
+
         /**
          * 构建并返回代理实例。
          *
@@ -112,7 +119,7 @@ public final class LyClawAgent {
         public T build() {
             AgentProxyFactory factory = new AgentProxyFactory(
                     chatFacade, reActEngine, toolRegistry,
-                    systemPrompt, model, provider, hooks);
+                    systemPrompt, model, provider, hooks, stages);
             return factory.create(agentInterface);
         }
     }

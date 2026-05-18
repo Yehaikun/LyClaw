@@ -11,6 +11,7 @@ import lyjew.com.lyclaw.tool.ToolProviderRequest;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -37,17 +38,26 @@ public class DefaultToolRegistry implements ToolRegistry {
     private final List<ToolProvider> toolProviders = new CopyOnWriteArrayList<>();
 
     /**
+     * 无参构造函数，用于 Spring 容器早期实例化（BFPP 阶段）。
+     * 工具由 {@code ToolAnnotationProcessor}（BeanPostProcessor）在后续阶段注册。
+     */
+    public DefaultToolRegistry() {
+        log.info("DefaultToolRegistry 初始化完成，未来会基于注解注册工具，请看这条日志下面注册工具的消息");
+    }
+
+    /**
      * 构造函数，接收 Spring 容器中所有 Tool 类型的 Bean 并自动注册。
      *
      * @param toolList 所有可用工具的列表（可为空）
      */
+    @Autowired
     public DefaultToolRegistry(List<Tool> toolList) {
+        this();
         if (toolList != null) {
             for (Tool tool : toolList) {
                 register(tool);
             }
         }
-        log.info("DefaultToolRegistry 初始化完成，未来会基于注解注册工具，请看这条日志下面注册工具的消息", tools.size());
     }
 
     /**

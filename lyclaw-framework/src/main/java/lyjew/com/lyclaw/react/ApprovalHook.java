@@ -7,11 +7,14 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import lyjew.com.lyclaw.model.ToolCall;
+
 /**
  * 工具审批 Hook，对需要审批的工具在执行前等待用户确认。
  *
  * <p>order=30，在沙箱包装之后、实际执行之前。
  * 仅对 approvalTools 集合中列出的工具生效，其他工具直接放行。
+ * 同时实现 wrapToolCall（步级）和 wrapToolExecutor（请求级）两个粒度。
  * 30 秒超时自动拒绝。
  */
 public class ApprovalHook implements AgentHook {
@@ -30,6 +33,22 @@ public class ApprovalHook implements AgentHook {
     @Override
     public int getOrder() { return 30; }
 
+    /**
+     * 步级拦截：每次工具调用前检查是否需要审批。
+     * 对审批工具打标，实际审批等待在 wrapToolExecutor 中完成。
+     */
+    @Override
+    public ToolCall wrapToolCall(ToolCall toolCall, AgentContext ctx) {
+        if (approvalStore == null || approvalTools.isEmpty()) {
+            return toolCall;
+        }
+        if (approvalTools.contains(toolCall.getName())) {
+            log.info("工具需审批: tool={} toolCallId={}", toolCall.getName(), toolCall.getToolCallId());
+            ctx.setAttribute("approval_pending_" + toolCall.getToolCallId(), Boolean.TRUE);
+        }
+        return toolCall;
+    }
+
     @Override
     public ToolExecutor wrapToolExecutor(ToolExecutor inner, AgentContext ctx) {
         if (approvalStore == null || approvalTools.isEmpty()) {
@@ -39,7 +58,7 @@ public class ApprovalHook implements AgentHook {
             if (!approvalTools.contains(toolName)) {
                 return inner.execute(toolName, toolCallId, argumentsJson);
             }
-            log.info("工具需审批: tool={} toolCallId={}", toolName, toolCallId);
+            log.info("等待审批: tool={} toolCallId={}", toolName, toolCallId);
             CompletableFuture<Boolean> future = approvalStore.create(toolCallId);
             try {
                 Boolean approved = future.get(APPROVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);

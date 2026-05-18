@@ -1,687 +1,788 @@
 # LyClaw Agent 封装思路计划
 
-> 目标：废除编排管线路径（路径1），将 Web 层精简为直接调用 Agent 代理（路径2），同时吸收 LangChain4j 和 LangChain V1 的成熟设计模式。
+> 目标：将 Stage 管线嵌入 Agent 代理内部，每个 @Agent 接口调用走完整的管线流程。
+> 13 个 SPI 全覆盖，@Agent 配置可扩展不硬编码。对标 2026 年行业主流 Agent 框架的能力全景，
+> 在沙箱隔离、工具审批、双层拦截上做差异化创新。
 
 ---
 
 ## 目录
 
-1. [现状：两条独立路径](#一现状两条独立路径)
-2. [LangChain4j 的设计启示](#二langchain4j-的设计启示)
-3. [LangChain V1 中间件模型](#三langchain-v1-中间件模型)
-4. [目标架构](#四目标架构)
-5. [Agent 内部执行流程](#五agent-内部执行流程)
-6. [Hook 体系扩展：从 3 个到 6 个](#六hook-体系扩展从-3-个到-6-个)
-7. [Planner 集成：计划能力下沉](#七planner-集成计划能力下沉)
-8. [Reflection 集成：反思能力下沉](#八reflection-集成反思能力下沉)
+1. [行业 Agent 框架能力全景对标](#一行业-agent-框架能力全景对标)
+2. [架构总览](#二架构总览)
+3. [Stage 管线](#三stage-管线)
+4. [Hook 体系：步骤级拦截](#四hook-体系步骤级拦截)
+5. [AgentContext：统一上下文](#五agentcontext统一上下文)
+6. [工具执行管线](#六工具执行管线)
+7. [13 个框架 SPI](#七13-个框架-spi)
+8. [@Agent 配置可扩展机制](#八agent-配置可扩展机制)
 9. [Web 层精简](#九web-层精简)
-10. [多 Agent 协作：Supervisor 模式](#十多-agent-协作supervisor-模式)
-11. [与 LangChain4j 的对比](#十一与-langchain4j-的对比)
-12. [实施阶段](#十二实施阶段)
+10. [差异化创新总结](#十差异化创新总结)
+11. [实施阶段与优先级](#十一实施阶段与优先级)
 
 ---
 
-## 一、现状：两条独立路径
+## 一、行业 Agent 框架能力全景对标
 
-当前 LyClaw 存在两条并行的请求处理路径：
+### 1.1 2026 年主流 Agent 框架通用功能栈
+
+所有主流框架都在做同一件事——把 LLM 从"一次问答"升级为"自主完成任务"。它们共同封装了 8 层能力：
 
 ```
-路径1（编排管线）— 6 阶段 Pipeline，功能完整但重量级
-═══════════════════════════════════════════════════════════
-  HTTP Controller → OrchestrationService → Orchestrator
-      → ContextBuild → SecurityCheck → PlanExecution
-      → Reflection → Respond(ReAct) → Metrics
-      → SSE 流返回前端
-
-路径2（Agent 代理）— JDK 动态代理，轻量但功能不完整
-═══════════════════════════════════════════════════════════
-  用户接口(@Agent) → AgentInvocationHandler
-      → Hook.beforeRequest (安全/沙箱)
-      → Hook.wrapToolExecutor (审批)
-      → ReActEngine.execute/executeStream
-      → Hook.afterResult
-      → 返回结果
+┌─────────────────────────────────────────────────────────────────┐
+│                     Agent 框架通用功能栈                         │
+├─────────────────────────────────────────────────────────────────┤
+│  ① Agent 定义层      角色、目标、系统提示词、状态变量              │
+│  ② 多Agent编排层     手递手 | 顺序 | 并行 | 层级 | 投票           │
+│  ③ 任务规划层        ReAct | Plan-First | 图式 | 动态重规划        │
+│  ④ 工具调用层        Function Call | MCP | 动态筛选 | 沙箱        │
+│  ⑤ 记忆系统层        工作记忆 | 语义/情景记忆 | 程序记忆           │
+│  ⑥ 安全护栏层        输入校验 | 输出审核 | 人机介入 | 审批         │
+│  ⑦ 可观测性层        链路追踪 | 调试 | 指标 | 检查点回放           │
+│  ⑧ 跨框架互通层      MCP | A2A | UTCP                             │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-| 对比维度 | 编排管线（路径1） | Agent 代理（路径2） |
-|---------|------------------|-------------------|
-| 入口方式 | HTTP Controller + OrchestrationService | @Agent 注解接口 |
-| 安全审核 | SecurityCheckStage | SecurityCheckHook（已实现） |
-| 沙箱隔离 | RespondStage → ActionExecutor → ToolSandbox | SandboxHook（已实现） |
-| 计划生成 | PlanExecutionStage → TaskPlanner | **缺失** |
-| 反思评估 | ReflectionStage → ReflectionEngine | **缺失** |
-| 工具审批 | RespondStage → DefaultReActEngine | ApprovalHook（已实现） |
-| 指标采集 | MetricsStage → MemorySystem | **缺失** |
-| 多 Agent 协作 | 无（仅单 Agent 循环） | **缺失** |
-| 代码量 | Controller + Service + 6 Stage ≈ 1500 行 | Handler + 3 Hook ≈ 400 行 |
+### 1.2 各层能力详解与 LyClaw 对标
 
-**核心问题**：路径1 是完整的，但太重（Spring MVC 注解、stage 依赖、PipelineContext 传递）。路径2 轻量，但缺少计划、反思、多 Agent 协作能力。未来的方向是让路径2 吞并路径1 的全部能力。
+#### ① Agent 定义与生命周期
+
+| 能力 | 行业标杆 | LyClaw 现状 | 差距 |
+|------|---------|-----------|------|
+| 角色/目标/系统提示词绑定 | CrewAI 的 `Agent(role, goal, backstory)` 最简洁 | `@Agent` + `@SystemMessage` / `@UserMessage` | 已有 |
+| 状态变量管理 | LangGraph 的 State + checkpoint | AgentContext.attributes | 缺类型安全的状态 Schema |
+| 会话持久化 | Google ADK 的 Session + PostgreSQL | StorageFacade（file 模式） | 缺关系型 DB 后端 |
+| Agent 即工具 | AutoGen 的嵌套 Agent 对话 | 无 | **缺失**（预留 @SupervisorAgent） |
+
+#### ② 多 Agent 编排模式
+
+| 模式 | 代表框架 | 机制 | LyClaw 现状 |
+|------|---------|------|-----------|
+| Handoff（手递手） | OpenAI Agents SDK | Agent A 完成→控制权交给 Agent B | **缺失** |
+| Role-based（角色协作） | CrewAI, MetaGPT | 预定义角色，按流程分工 | **缺失** |
+| Conversation-driven（对话式） | AutoGen | Agent 间消息通信，无中心调度 | **缺失** |
+| Hierarchical（层级树） | Google ADK, LangGraph | 父 Agent 分派→子 Agent 可再分派 | **缺失** |
+| Graph-based（图式） | LangGraph | 节点+边定义状态机 | 当前 Stage 链 ≈ 简化版 |
+| Voting/Debate（投票辩论） | AutoGen, CAMEL | 多输出→投票→最佳结果 | **缺失** |
+
+当前 `OrchestratorImpl.executeAgentTask()` 只是模拟实现，发送固定事件序列。
+
+#### ③ 任务规划
+
+| 策略 | 框架 | LyClaw 现状 |
+|------|------|-----------|
+| ReAct 循环 | 几乎所有框架 | ✅ `DefaultReActEngine` |
+| Plan-First（先生成计划，人工审核后执行） | Osprey, Alpha Berkeley | ✅ `TaskPlanner.plan()` + DAG |
+| Plan+Execute（规划→执行→反思） | 你的 LyClaw 当前模式 | ✅ 4 种策略（DAG/CoT/ReAct/Hierarchical） |
+| Reflexion（失败后自我批评→修正→重试） | AgenticAI, LangGraph | ❌ 缺失 |
+| CoT + Tree Search | 学术框架 | ❌ 缺失 |
+
+#### ④ 工具调用
+
+| 能力 | 行业现状 | LyClaw 现状 |
+|------|---------|-----------|
+| Function Calling | 所有框架标配 | ✅ `@Tool` + ToolRegistry |
+| MCP 协议 | 2025-2026 标配，Claude SDK 支持最深 | ❌ **缺失** |
+| 动态工具筛选 | 根据上下文自动过滤工具 | ❌ 缺失（当前全部工具传给 LLM） |
+| 沙箱执行 | OpenAI SDK v0.14+、AutoGen、Claude SDK | ✅ 3 级沙箱（DIRECT/RESTRICTED/ISOLATED） |
+| 审批流 | CrewAI 的 human_input，LangGraph 的 interrupt | ✅ ApprovalStore + SSE 审批流 |
+
+#### ⑤ 记忆系统
+
+| 层次 | 内容 | 技术 | LyClaw 现状 |
+|------|------|------|-----------|
+| 工作记忆 | 当前对话上下文、中间结果 | 会话缓冲区 | ✅ ChatRequest.messages |
+| 语义/情景记忆 | 历史对话摘要、用户偏好 | Vector DB + RAG | ⚠️ MemorySystem 有基础，缺向量检索 |
+| 程序性记忆 | Agent 学到的策略、启发式规则 | 动态调整系统提示词 | ❌ 缺失 |
+
+#### ⑥ 安全护栏
+
+| 类型 | 行业标杆 | LyClaw 现状 |
+|------|---------|-----------|
+| Input Guardrail | OpenAI SDK 三层 Guardrail | ✅ SecurityCheckStage（ContentFilter + SecurityManager） |
+| Output Guardrail | 输出审核 | ❌ **缺失**（ReflectionStage 被移除后没有输出审核） |
+| Tool Guardrail | 工具执行前权限检查 | ✅ ApprovalStore + ToolCallPolicy |
+| Human-in-the-Loop | CrewAI human_input, LangGraph interrupt | ✅ ApprovalHook（SSE 审批流） |
+
+#### ⑦ 可观测性
+
+| 能力 | 行业标杆 | LyClaw 现状 |
+|------|---------|-----------|
+| 链路追踪 | LangSmith, OpenAI SDK 内置 | ✅ Tracing（traceId + stage span） |
+| 检查点/时间旅行 | LangGraph checkpoint 可回退到任意状态 | ❌ 缺失（PERSISTENT 模式预留） |
+| Debug 模式 | Google ADK `adk web` CLI | ❌ 缺失 |
+| 指标采集 | — | ✅ MetricsCollector + MetricsStage |
+
+#### ⑧ 跨框架互通
+
+| 协议 | 职责 | 状态 | LyClaw 现状 |
+|------|------|------|-----------|
+| MCP (Model Context Protocol) | Agent ↔ 工具/资源标准化接口 | 2025 事实标准，200+ Server | ❌ **缺失** |
+| A2A (Agent-to-Agent) | 不同框架 Agent 相互发现和调用 | Google 主导，已并入 Linux 基金会 | ❌ **缺失** |
+| UTCP (Universal Tool Calling) | 跨语言工具调用协议 | Lattice 提出 | ❌ 缺失 |
+
+### 1.3 LyClaw 对标结论
+
+```
+LyClaw 已具备（行业对齐）:
+  ✅ ReAct 循环          ✅ 任务规划（4 种策略）   ✅ 沙箱隔离（行业领先）
+  ✅ 工具审批             ✅ 输入安全护栏           ✅ 链路追踪 + 指标
+  ✅ 记忆系统（基础）     ✅ @Agent 注解 + 模板    ✅ Stage 管线编排
+
+LyClaw 缺失（需要补齐）:
+  ❌ MCP 协议 — 2025-2026 行业标配，必须对齐
+  ❌ 多 Agent 协作 — 当前只是模拟，需真正的 Handoff/Hierarchical
+  ❌ 输出护栏 — 安全审核只做了输入，输出也需要
+  ❌ 动态工具筛选 — 工具多了 prompt 爆炸
+  ❌ 语义记忆 — 向量检索
+  ❌ 检查点回放 — 长任务崩溃恢复
+  ❌ A2A 协议 — 跨框架互通
+
+补的优先级:
+  P0: 沙箱 + 审批（已有，巩固）
+  P1: MCP 协议 + 输出护栏 + 双层拦截 + 上下文增强
+  P2: 动态工具筛选 + 语义记忆 + 检查点回放 + 混合 Planner
+  P3: 多 Agent + A2A + Reflexion
+```
 
 ---
 
-## 二、LangChain4j 的设计启示
+## 二、架构总览
 
-### 2.1 AiServices：JDK 动态代理 + 15 步执行管线
-
-LangChain4j 的 `AiServices` 是 Agent 代理的参考标杆。它同样使用 `Proxy.newProxyInstance()` 生成用户接口的代理实现，内部有一条 15 步的执行管线：
+### 2.1 请求路径（单一路径）
 
 ```
-1. 获取 InvocationContext（方法、参数、注解）
-2. 解析 @SystemMessage 模板 → 渲染系统消息
-3. 解析 @UserMessage 模板 → 渲染用户消息
-4. 应用 systemMessageTransformer
-5. 构建 ChatRequest（含 tools、toolChoice）
-6. 应用 chatRequestTransformer
-7. 发射 AiServiceStartedEvent
-8. 调用 ToolService.executeInferenceAndToolsLoop()
-9. 发射 AiServiceCompletedEvent
-10. 解析返回值类型（String/List/自定义类型）
-11. 应用 returnValueTransformer
-12. 若返回 TokenStream → 适配为 Publisher/Flux
-13. 若返回 ChatResponse → 直接返回
-14. 若返回自定义类型 → JSON 反序列化
-15. 返回结果
+HTTP POST /api/chat/stream
+  → ChatController (直接调用 Agent 代理)
+    → @Agent 接口 (JDK 动态代理)
+      → AgentInvocationHandler.invoke()
+        → 解析 @SystemMessage / @UserMessage 模板
+        → 创建 AgentContext
+        → 合并配置源 (注解 + yml + Builder + DB, 优先级叠加)
+        → 启动 Stage 管线 ───────────────────────────────┐
+          │                                               │
+          │  Stage 0: ContextBuild    加载记忆             │
+          │  Stage 1: SecurityCheck   安全审核 (输入护栏)   │
+          │  Stage 2: PlanExecution   生成任务 DAG         │
+          │  Stage 3: Respond         ReAct 循环 ──────┐  │
+          │  Stage 4: Metrics         指标 + 持久化      │  │
+          │                                               │  │
+          │  Respond 内部 (步骤级 Hook + 工具执行管线):    │  │
+          │    每轮: beforeModel → LLM → afterModel        │  │
+          │          → 若有 tool_calls:                    │  │
+          │            ToolExecutionPipeline ──────────┐  │  │
+          │              → ToolResolver → ToolCallPolicy│  │  │
+          │              → ToolHook.beforeExecution     │  │  │
+          │              → ParameterBinder → execute    │  │  │
+          │              → ToolHook.afterExecution      │  │  │
+          │              → ResultFormatter               │  │  │
+          │            └────────────────────────────────┘  │  │
+          │          → 循环或退出                          │  │
+          └───────────────────────────────────────────────┘  │
+        → 返回结果 (String / Mono / Flux<SSE>)              │
 ```
-
-**启示**：LyClaw 的 `AgentInvocationHandler.invoke()` 已经实现了步骤 2-3（`resolveSystemMessage` / `resolveUserMessage`）和步骤 8（委托 `ReActEngine`）。第 4、6、11 步的 "Transformer" 本质上是 **Hook 的另一种叫法**。
-
-### 2.2 PlannerBasedInvocationHandler：状态机编排
-
-LangChain4j 的 Agentic 模块在 AiServices 之上叠加了一层 **Planner 状态机**：
-
-```
-Agent 接口方法调用
-  → PlannerBasedInvocationHandler.invoke()
-    → Planner.firstAction(PlanningContext)
-    → PlannerLoop.loop()
-        WHILE not done:
-          → 执行 Agent（同步/并行）
-          → 子 Agent 完成后回调 onSubagentInvoked()
-          → Planner.nextAction(PlanningContext)
-          → 持久化执行状态（崩溃恢复）
-    → 返回结果
-```
-
-`Planner` 是一个策略接口，有 6 种实现：顺序、并行、条件路由、循环、监督者（LLM 驱动）、并行映射（MapReduce）。每种实现的核心差异仅在于 `nextAction()` 的决策逻辑。
-
-**启示**：LyClaw 当前的 `TaskPlanner` 只生成静态任务列表（DAG 图），缺少执行期的动态编排能力。引入 Planner 模式可以让 Agent 在执行过程中根据中间结果动态调整后续步骤。
-
-### 2.3 AgenticScope：黑板模式
-
-`AgenticScope` 是 Agent 间的共享状态空间：
-
-```
-AgenticScope
-  ├── state: ConcurrentHashMap<String, Object>   // 共享状态
-  ├── agentInvocations: List<AgentInvocation>     // 调用历史
-  ├── context: List<AgentMessage>                 // 对话上下文
-  └── Kind: EPHEMERAL / REGISTERED / PERSISTENT   // 生命周期
-```
-
-**启示**：LyClaw 当前的 `ChatContext` 和 `PipelineContext` 承载了类似职责，但耦合了管线特定的字段。在 Agent 路径中需要一个新的轻量级 `AgentScope` 替代它们。
 
 ---
 
-## 三、LangChain V1 中间件模型
+## 三、Stage 管线
 
-LangChain V1 使用 **StateGraph + 洋葱模型（Onion Model）** 实现中间件链：
+### 3.1 5 个 Stage
 
 ```
-START → [before_agent] → [before_model] → model → [after_model]
-                                                    ↓
-                                               [tools 节点]
-                                                    ↓
-                                         [loop back to before_model]
-                                                    ↓
-                                          [after_agent] → END
+order=0  ContextBuild    → MemorySystem.retrieve() → AgentContext.memoryEntries
+order=1  SecurityCheck   → SecurityManager.approve() + ContentFilter.filter()
+                            → AgentContext.sandboxLevel
+                            可终止管线（拒绝不安全请求）
+order=2  PlanExecution   → TaskPlanner.plan() + PlanValidator
+                            → AgentContext.taskNodes
+order=3  Respond         → ReActEngine + Hook链 + ToolExecutionPipeline
+                            → AgentContext.finalResponse + toolResults
+order=4  Metrics         → MemorySystem.ingestPerception() + MetricsCollector
+                            → SSE done 事件
 ```
 
-核心抽象 `AgentMiddleware` 暴露 6 个钩子点：
+ReflectionStage 已移除。计划校验由 PlanExecution 内部的 PlanValidator 负责。
 
-| 钩子 | 触发时机 | LyClaw 对应 |
-|------|---------|------------|
-| `before_agent` | Agent 调用开始前 | `Hook.beforeRequest` |
-| `before_model` | 每次 LLM 调用前 | **缺失**（ReAct 循环内部不可拦截） |
-| `after_model` | 每次 LLM 调用后 | **缺失** |
-| `wrap_model_call` | 包装 LLM 调用（可修改请求/响应） | **缺失** |
-| `wrap_tool_call` | 包装工具调用（可修改参数/结果） | `Hook.wrapToolExecutor` |
-| `after_agent` | Agent 调用结束后 | `Hook.afterResult` |
+### 3.2 Stage 接口
 
-**核心差异**：LangChain V1 的中间件是 **循环内拦截**（每次 LLM 调用和工具调用都可以被拦截），而 LyClaw 当前的 Hook 是 **循环外拦截**（仅在 ReAct 循环前后拦截）。这意味着 LyClaw 的 Hook 看不到 ReAct 第二轮及之后的 LLM 调用细节。
+```java
+public interface ReactivePipelineStage {
+    Flux<ServerSentEvent<String>> execute(AgentContext ctx);
+    int getOrder();
+    String getName();
+    default Class<? extends ReactivePipelineStage>[] after() { return new Class[0]; }
+}
+```
 
-**启示**：LyClaw 的 Hook 体系需要从 "循环级" 扩展到 "步骤级"，允许中间件在 ReAct 的每一次迭代中介入。
+用户自定义 Stage 只需实现此接口 + `@PipelineStage`，框架自动排序插入管线。
 
 ---
 
-## 四、目标架构
+## 四、Hook 体系：步骤级拦截
 
-废除管线路径后，所有请求统一走 Agent 代理路径：
+### 4.1 定位
+
+Hook 只做 AOP 做不到的事——ReAct 循环内部每一轮 LLM 调用和工具调用的拦截。方法级横切用 AOP。
 
 ```
-                          ┌──────────────────────────┐
-                          │     lyclaw-web (HTTP)     │
-                          │  ChatController (精简)    │
-                          │  ApprovalController       │
-                          │  HealthController         │
-                          └──────────┬───────────────┘
-                                     │ 直接调用
-                                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   AgentProxyFactory                          │
-│  为 @Agent 接口创建 JDK 动态代理                              │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                AgentInvocationHandler                        │
-│                                                              │
-│  ① Hook.beforeRequest (安全审核、内容过滤)                    │
-│  ② 检查是否需要 Planning（简单对话跳过）                      │
-│  ③ Hook.beforeModel (计划注入、上下文准备)                   │
-│  ④ ReActEngine.executeStream() ─────────────────┐            │
-│     │  每次 LLM 调用:                             │            │
-│     │    ├── Hook.beforeModel 拦截               │ 循环内     │
-│     │    ├── LLM 推理                             │ Hook       │
-│     │    ├── Hook.afterModel 拦截                │ 拦截       │
-│     │    ├── Hook.wrapToolCall 拦截              │            │
-│     │    └── 工具执行                             │            │
-│     │  每次循环结束:                              │            │
-│     │    └── Reflection 检查（可选）              │            │
-│     └────────────────────────────────────────────┘            │
-│  ⑤ Hook.afterResult (指标采集、结果校验)                      │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Hook 链 (6 个标准 Hook)                    │
-│                                                              │
-│  order=10  SecurityCheckHook   安全审核 + 内容过滤            │
-│  order=20  SandboxHook         工具执行隔离                   │
-│  order=30  PlanningHook        计划生成 → 注入 system prompt │
-│  order=40  ApprovalHook        工具审批（人机协同）           │
-│  order=50  ReflectionHook      每轮反思 + 最终质量评估        │
-│  order=60  MetricsHook         指标采集 + 持久化              │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+AOP 边界: ReActEngine.executeStream()  ← AOP 只能拦截这一次方法调用
+  ├── 第 1 轮: beforeModel → LLM → afterModel → 工具执行管线 → 循环
+  ├── 第 2 轮: beforeModel → LLM → afterModel → 工具执行管线 → 循环
+  └── ...（最多 30 轮）
+       ↑ Hook 在循环内部拦截，AOP 看不到这里
 ```
 
-**关键变化**：
+### 4.2 AgentHook 接口
 
-1. **ChatController 不再注入 OrchestrationService**，改为注入 AgentProxyFactory 或直接注入 Agent 接口的代理 Bean
-2. **PlanningHook** 替代 `PlanExecutionStage`：在 `beforeModel` 中检查是否需要生成计划，将计划文本注入 system prompt
-3. **ReflectionHook** 替代 `ReflectionStage`：在每轮 ReAct 循环的 `afterModel` 中做轻量校验，在循环结束后做质量评估
-4. **MetricsHook** 替代 `MetricsStage`：在 `afterResult` 中采集指标
-5. **Orchestrator、PipelineContext、6 个 Stage 类全部废弃**
+```java
+public interface AgentHook {
+    default void beforeRequest(AgentContext ctx) {}
+    default void beforeModel(ChatRequest request, int roundNum, AgentContext ctx) {}
+    default void afterModel(ModelResponse response, int roundNum, AgentContext ctx) {}
+    default ToolCall wrapToolCall(ToolCall toolCall, AgentContext ctx) { return toolCall; }
+    default String afterResult(String result, AgentContext ctx) { return result; }
+    default int getOrder() { return 100; }
+}
+```
+
+### 4.3 五个内置 Hook
+
+| Hook | Order | 拦截点 | 职责 |
+|------|-------|--------|------|
+| **SecurityCheckHook** | 10 | `beforeRequest` | 内容过滤 + 权限校验 |
+| **PlanningHook** | 20 | `beforeModel` | 注入 TaskNode DAG 到 system prompt；跟踪进度 |
+| **SandboxHook** | 30 | `wrapToolCall` | 沙箱隔离（DIRECT / RESTRICTED / ISOLATED） |
+| **ApprovalHook** | 40 | `wrapToolCall` | 非只读工具 → SSR tool_approval → 阻塞等确认 |
+| **OutputGuardHook** | 50 | `afterModel` | 输出护栏：检测敏感信息、注入、有害内容 |
 
 ---
 
-## 五、Agent 内部执行流程
+## 五、AgentContext：统一上下文
 
-### 5.1 循环级 Hook（控制 Agent 的启动和终止）
+合并 PipelineContext + AgentContext，参考 LangGraph State 和 LangChain4j AgenticScope。
 
 ```
-AgentInvocationHandler.invoke()
+AgentContext
+├── 基础信息
+│   ├── sessionId, traceId, method, args, chatRequest
 │
-├─ ① SecurityCheckHook.beforeRequest()
-│     ├─ ContentFilter.filter(userMessage) → 提示注入检测
-│     └─ SecurityManager.approve(sessionId, "EXECUTE_CHAT") → 获取沙箱级别
+├── Stage 产出（下游自动继承上游）
+│   ├── memoryEntries         ← Stage 0: ContextBuild
+│   ├── sandboxLevel          ← Stage 1: SecurityCheck
+│   ├── taskNodes             ← Stage 2: PlanExecution
+│   ├── toolResults           ← Stage 3: Respond
+│   ├── finalResponse         ← Stage 3: Respond
+│   └── successCount / failCount
 │
-├─ ② 构建 ChatRequest（system prompt + user message + tools）
+├── 管线控制
+│   ├── terminated, pipelineOk, currentStage
 │
-├─ ③ 检查是否启用 Planning：
-│     若禁用 → 跳过
-│     若启用 → PlanningHook.beforeModel():
-│       ├─ TaskPlanner.plan(userIntent) → 生成 TaskNode DAG
-│       ├─ 将 "请按以下步骤执行：1. xx 2. xx" 注入 system prompt
-│       └─ 将 TaskNode 列表存入 AgentScope（供 ReflectionHook 对照）
+├── 生命周期
+│   ├── TRANSIENT   — 一次调用
+│   ├── SESSION     — 绑定会话，跨调用缓存
+│   └── PERSISTENT  — 持久化，崩溃恢复（参考 LangGraph checkpoint）
 │
-├─ ④ 进入 ReAct 循环（最多 30 轮）
-│   │
-│   │ 每轮开始:
-│   │   ├─ Hook.beforeModel(request, roundNum)
-│   │   │    ├─ PlanningHook: 检查是否完成当前子任务，推进到下一步
-│   │   │    └─ 其他 beforeModel 逻辑
-│   │   │
-│   │   ├─ LLM 调用 (stream=true 探测 / 非流式推理)
-│   │   │
-│   │   ├─ Hook.afterModel(response, roundNum)
-│   │   │    ├─ ReflectionHook: 轻量级异常检测
-│   │   │    │    ├─ 空响应检测
-│   │   │    │    ├─ 重复内容检测（连续 3 轮相同输出）
-│   │   │    │    ├─ 幻觉标记检测（tool_call 引用不存在的工具）
-│   │   │    │    └─ 若检测到异常 → 注入纠正提示到下一轮 messages
-│   │   │    └─ 其他 afterModel 逻辑
-│   │   │
-│   │   ├─ 若无 tool_calls → 退出循环，返回纯文本
-│   │   │
-│   │   ├─ Hook.wrapToolCall(toolCall)
-│   │   │    ├─ SandboxHook: 沙箱级别检查 → 隔离执行
-│   │   │    └─ ApprovalHook: 若工具非只读 → 发射 tool_approval SSE → 等待用户确认
-│   │   │
-│   │   └─ 工具执行 → 结果追加到 messages
-│   │
-│   └─ 循环结束
-│
-├─ ⑤ ReflectionHook.afterResult(finalResult)
-│     ├─ ReflectionEngine.assessQuality(output, criteria) → 质量评分
-│     ├─ ErrorDetector.detect(output) → 事实错误检查
-│     └─ 若评分低于阈值 → 可选地追加一轮纠正 LLM 调用
-│
-├─ ⑥ MetricsHook.afterResult()
-│     ├─ 采集: 轮次数、工具调用数、耗时、token 消耗
-│     └─ 持久化到 MemorySystem
-│
-└─ ⑦ 返回结果
+└── 扩展属性
+    └── attributes: ConcurrentHashMap（参考 AgenticScope.state）
 ```
-
-### 5.2 步骤级 vs 循环级对比
-
-| 拦截粒度 | 当前（v1.0） | 目标（v2.0） |
-|---------|-------------|-------------|
-| Agent 启动 | `beforeRequest` | `beforeRequest` |
-| 每次 LLM 调用前 | **不可拦截** | `beforeModel` |
-| 每次 LLM 调用后 | **不可拦截** | `afterModel` |
-| 每次工具调用 | `wrapToolExecutor` | `wrapToolCall` |
-| Agent 结束 | `afterResult` | `afterResult` |
-
-v2.0 新增的 `beforeModel` 和 `afterModel` 是步骤级拦截，它们让 Planning 和 Reflection 可以深入到 ReAct 循环内部。
 
 ---
 
-## 六、Hook 体系扩展：从 3 个到 6 个
+## 六、工具执行管线
 
-### 6.1 AgentHook 接口扩展
+### 6.1 完整链路
 
-当前接口有 3 个方法，需要扩展到 5 个：
+当前工具执行散落在两个地方（AgentInvocationHandler 和 RespondStage），代码不一致。统一为一条可拦截、可替换的管线：
 
 ```
-当前 (v1.0):
-  beforeRequest(AgentContext)
-  wrapToolExecutor(ToolExecutor, AgentContext) → ToolExecutor
-  afterResult(String, AgentContext) → String
-
-扩展 (v2.0):
-  beforeRequest(AgentContext)
-  beforeModel(ChatRequest, int roundNum, AgentContext)          ← 新增
-  afterModel(ModelResponse, int roundNum, AgentContext)         ← 新增
-  wrapToolCall(ToolCall, AgentContext) → ToolCall               ← 取代 wrapToolExecutor
-  afterResult(String, AgentContext) → String
+LLM 返回 ToolCall
+  │
+  ▼
+┌──────────────────────────────────────────────────────────┐
+│              ToolExecutionPipeline                        │
+│                                                           │
+│  ① ToolResolver.resolve(name, ctx)                        │
+│     找到工具实例                                            │
+│                                                           │
+│  ② ToolCallPolicy.check(name, ctx)                        │
+│     策略检查（次数限制 / 白名单 / 黑名单）                  │
+│                                                           │
+│  ③ ToolHook.beforeExecution(toolCall, ctx)                │
+│     SandboxHook 分级 + ApprovalHook 审批                   │
+│     + 用户自定义 ToolHook（日志、审计、限流）              │
+│                                                           │
+│  ④ ParameterBinder.bind(tool, argsJson)                   │
+│     统一参数绑定（不区分 @Param 注解 / Tool 接口）          │
+│     注入参数（sandboxLevel、sessionId）对 LLM 不可见       │
+│                                                           │
+│  ⑤ tool.invoke(boundArgs)                                 │
+│     实际执行                                                │
+│                                                           │
+│  ⑥ ToolHook.afterExecution(result, ctx)                   │
+│     结果校验 + 审计日志                                    │
+│                                                           │
+│  ⑦ ResultFormatter.format(rawResult)                      │
+│     格式化为 ToolExecutionResult                            │
+│                                                           │
+└──────────────────────────────────────────────────────────┘
+  │
+  ▼
+ToolExecutionResult → 追加到 messages → 继续 ReAct
 ```
 
-### 6.2 六个标准 Hook 的职责
+### 6.2 AgentHook 与 ToolHook 的分工
 
-#### SecurityCheckHook（order=10）
+```
+ReAct 循环内部:
 
-- **`beforeRequest`**：调用 `ContentFilter.filter()` 检测提示注入/PII；调用 `SecurityManager.approve()` 确定沙箱级别
-- **运行阶段**：Agent 启动前，一次性
-- **替代**：`SecurityCheckStage`
+  AgentHook.beforeModel    → LLM 调用前（规划进度注入）
+  LLM 推理
+  AgentHook.afterModel     → LLM 调用后（异常检测、输出护栏）
 
-#### SandboxHook（order=20）
+  若有 tool_calls:
+    ToolHook.beforeExecution  → 工具执行前（沙箱、审批、动态筛选）
+    工具执行
+    ToolHook.afterExecution   → 工具执行后（结果校验、审计）
+    ToolHook.onError          → 工具异常（重试/跳过/终止）
+```
 
-- **`wrapToolCall`**：将工具调用包装在沙箱中执行，根据沙箱级别（DIRECT / RESTRICTED / ISOLATED）控制文件系统和网络访问
-- **运行阶段**：每次工具调用时
-- **替代**：`RespondStage` 中的 `ActionExecutor.executeTool()` 调用链
+分开的理由：AgentHook 管 LLM 推理，ToolHook 管工具执行。用户可以只替换工具拦截逻辑，不影响 LLM 拦截逻辑。
 
-#### PlanningHook（order=30）
+### 6.3 注入参数（参考 LangChain InjectedToolArg）
 
-- **`beforeModel`（首次）**：调用 `TaskPlanner.plan(userIntent)` 生成任务 DAG，将计划文本注入 system prompt
-- **`beforeModel`（后续轮次）**：检查当前轮次的工具调用结果是否完成了当前子任务，推进游标到下一子任务
-- **运行阶段**：Agent 启动时 + 每轮 LLM 调用前
-- **替代**：`PlanExecutionStage`
-- **可配置**：简单对话（"今天天气怎么样"）自动跳过，由 LLM 快速分类决定是否启用
+```java
+// 对 LLM 可见的参数
+@Param(name = "command", description = "要执行的 Shell 命令", required = true)
+String command,
 
-#### ApprovalHook（order=40）
+// 对 LLM 不可见，框架运行时注入
+@ParamInjected SandboxLevel sandboxLevel,   // from AgentContext
+@ParamInjected String sessionId,            // from AgentContext
+@ParamInjected ChatContext ctx              // from AgentContext
+```
 
-- **`wrapToolCall`**：对非只读工具（如文件写入、命令执行、网络请求），发射 `tool_approval` SSE 事件，阻塞等待用户确认（60s 超时）
-- **运行阶段**：每次工具调用时
-- **替代**：`DefaultReActEngine` 内置的审批逻辑
-
-#### ReflectionHook（order=50）
-
-- **`afterModel`（每轮）**：轻量级异常检测（空响应、重复输出、幻觉标记），若检测到异常则注入纠正提示
-- **`afterResult`（循环结束）**：调用 `ReflectionEngine.assessQuality()` 评估输出质量，包括准确性、完整性、安全性、用户体验四个维度
-- **运行阶段**：每轮 LLM 调用后 + Agent 结束后
-- **替代**：`ReflectionStage`
-
-#### MetricsHook（order=60）
-
-- **`beforeModel`**：记录 LLM 调用开始时间
-- **`afterModel`**：计算 token 消耗、响应延迟
-- **`afterResult`**：汇总全部指标 → 持久化到 `MemorySystem`
-- **运行阶段**：贯穿全流程
-- **替代**：`MetricsStage`
+`@ParamInjected` 参数不出现在 ToolDefinition 的 JSON Schema 中，LLM 不知道它们的存在。框架在 `ParameterBinder.bind()` 阶段自动注入。
 
 ---
 
-## 七、Planner 集成：计划能力下沉
+## 七、13 个框架 SPI
 
-### 7.1 设计思路
-
-LangChain4j 的 `Planner` 核心思想是 **"计划即策略"** ——计划不是一次生成的静态 DAG，而是每步根据上一步结果动态决定下一步。但 LangChain4j 的 Planner 也有代价：每次决策需要 LLM 调用（SupervisorAgent），增加了 2-5 秒延迟。
-
-LyClaw 的 `TaskPlanner` 当前只生成静态 DAG 图（`TaskNode` 列表），不参与执行期决策。对于 LyClaw 的定位（单体 Agent 而非多 Agent 系统），**完全动态的 Planner 是过度设计**。
-
-### 7.2 LyClaw 的折中方案：计划注入
-
-保持 `TaskPlanner` 的静态 DAG 生成，但通过 `PlanningHook` 将计划注入到 ReAct 循环：
+### 7.1 SPI 全景
 
 ```
-PlanningHook 工作流程:
-
-1. [beforeModel(首次)] 判断是否需要计划:
-   - 调用 LLM（低成本模型，如 deepseek-v4-flash）做意图分类: "simple" / "complex"
-   - "simple" → 不生成计划，跳过
-   - "complex" → TaskPlanner.plan(userIntent) → 生成 TaskNode DAG
-
-2. [beforeModel(首次)] 注入计划到 system prompt:
-   原始: "你是一个有用的 AI 助手..."
-   注入后: "你是一个有用的 AI 助手...
-            
-            ## 执行计划
-            1. 检索相关数据
-            2. 分析数据模式
-            3. 生成可视化建议
-            4. 撰写分析报告
-            
-            ## 当前进度
-            开始执行第 1 步。"
-
-3. [beforeModel(第N轮)] 根据工具调用结果推进进度:
-   - 检查 tool result 是否符合当前子任务完成条件
-   - 推进游标 → 更新 "## 当前进度" 为 "已完成第1步，开始第2步"
+┌──────────────────────────────────────────────────────────────────┐
+│                     LyClaw Framework SPI (13 个)                   │
+│                                                                    │
+│  Agent 级 SPI (8 个):                                              │
+│  SPI-1 : AgentFactory            Agent 代理创建方式                │
+│  SPI-2 : ReactivePipelineStage   Stage 注册和排序                  │
+│  SPI-3 : AgentHook               ReAct 循环步骤级拦截              │
+│  SPI-4 : ReActEngine             推理-行动循环引擎                 │
+│  SPI-5 : TaskPlanner             任务规划策略                      │
+│  SPI-6 : ChatModelProvider       LLM 模型接入                     │
+│  SPI-7 : AgentCommProtocol       Agent 间通信（含 A2A）           │
+│  SPI-8 : AgentConfigSource       配置源优先级叠加                  │
+│                                                                    │
+│  Tool 级 SPI (5 个):                                               │
+│  SPI-9 : ToolResolver            工具发现 + 动态筛选                │
+│  SPI-10: ToolExecutionPipeline   工具执行管线编排                  │
+│  SPI-11: ToolHook                工具执行拦截（before/after/onError）│
+│  SPI-12: ParameterBinder         参数绑定 + 注入参数                │
+│  SPI-13: MCPConnector            MCP 协议接入                      │
+│                                                                    │
+│  默认实现全部内置，用户可选替换。对默认行为满意则零配置。            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-**不采用 LangChain4j Planner 的原因**：
+### 7.2 SPI-1: AgentFactory
 
-- LyClaw 的定位是单 Agent 系统，LangChain4j Planner 是为多 Agent 编排设计的
-- LangChain4j Planner 的每次动态决策都需要 LLM 调用（SupervisorAgent），成本高
-- LyClaw 已有的 `TaskPlanner` 生成的 DAG 图对单 Agent 够用
-- 简单的 "意图分类 + 计划注入" 方案在 90% 场景下足够，且不增加 LLM 调用次数
+```java
+public interface AgentFactory {
+    boolean supports(Class<?> agentInterface);
+    Object create(Class<?> agentInterface, AgentConfig config);
+}
+```
+
+默认：`JdkProxyAgentFactory`（`Proxy.newProxyInstance()` + `AgentInvocationHandler`）
+
+可替换为：CGLIB 子类化、字节码生成、远程 RPC 代理
+
+### 7.3 SPI-2: ReactivePipelineStage
+
+见第三章 `Stage 接口`。用户实现接口 + `@PipelineStage` 即可插入自定义 Stage。
+
+### 7.4 SPI-3: AgentHook
+
+见第四章 `AgentHook 接口`。用户实现接口即可注册自定义 Hook。
+
+### 7.5 SPI-4: ReActEngine
+
+```java
+public interface ReActEngine {
+    String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor);
+    Flux<ServerSentEvent<String>> executeStream(ChatFacade chatFacade, ChatRequest request,
+                                                 ToolExecutor toolExecutor);
+    void setApprovalRequired(Set<String> toolNames);
+}
+```
+
+默认：`DefaultReActEngine`（30 轮，流式探测，SSE 审批流）
+
+可替换为：Tree-of-Thought、基于状态图引擎、预算感知轮次控制
+
+### 7.6 SPI-5: TaskPlanner
+
+```java
+public interface TaskPlanner {
+    TaskPlan plan(ChatContext context, String userIntent);
+    /** 可选：执行期动态决策 */
+    default TaskNode nextAction(AgentContext ctx) { return null; }
+}
+```
+
+默认：`DAGTaskPlanner`（静态 DAG 生成）。可选：`SupervisorPlanner`（LLM 动态决策）。
+
+### 7.7 SPI-6: ChatModelProvider
+
+```java
+public interface ChatModelProvider {
+    ChatModel resolve(ChatRequest request, AgentContext ctx);
+    List<String> supportedModels();
+}
+```
+
+默认：`RoutingChatModelProvider`（配置驱动路由）
+
+### 7.8 SPI-7: AgentCommProtocol（含 A2A）
+
+```java
+public interface AgentCommProtocol {
+    Flux<AgentMessage> send(String targetAgentName, AgentMessage message);
+    void registerReceiver(String agentName, Consumer<AgentMessage> receiver);
+    /** 是否支持 A2A 协议发现 */
+    default boolean supportsA2A() { return false; }
+    /** 发现远程 Agent（A2A） */
+    default List<AgentDefinition> discoverAgents() { return List.of(); }
+}
+```
+
+默认：`InJvmProtocol`（同 JVM 直接调用）
+
+可替换为：RabbitMQ、Kafka、gRPC、Redis pub/sub。A2A 协议通过 `discoverAgents()` 扩展。
+
+### 7.9 SPI-8: AgentConfigSource
+
+```java
+public interface AgentConfigSource {
+    Map<String, String> loadConfig(String agentName);
+    default int getPriority() { return 0; }
+}
+```
+
+优先级叠加：`application.yml (10) → @Agent 注解 (50) → AgentBuilder (100) → DB (60) → 配置中心 (70)`
+
+### 7.10 SPI-9: ToolResolver
+
+```java
+public interface ToolResolver {
+    /** 获取可用工具定义（支持动态筛选） */
+    List<ToolDefinition> resolveTools(AgentContext ctx);
+    /** 按名称查找工具实例 */
+    Tool resolve(String toolName, AgentContext ctx);
+}
+```
+
+默认：`AnnotationToolResolver`（扫描 `@Tool` 注解 + ToolProvider 动态工具）
+
+动态筛选：`resolveTools()` 可根据 `ctx` 中的上下文自动过滤无关工具，避免 prompt 爆炸。
+
+### 7.11 SPI-10: ToolExecutionPipeline
+
+```java
+public interface ToolExecutionPipeline {
+    ToolExecutionResult execute(ToolCall toolCall, AgentContext ctx);
+}
+```
+
+默认实现按第七章的顺序编排：resolve → policy → beforeHook → bind → invoke → afterHook → format。
+
+### 7.12 SPI-11: ToolHook
+
+```java
+public interface ToolHook {
+    /** 工具执行前（可修改参数、拒绝执行） */
+    default ToolCall beforeExecution(ToolCall toolCall, AgentContext ctx) { return toolCall; }
+    /** 工具执行后（可修改结果） */
+    default ToolExecutionResult afterExecution(ToolExecutionResult result, AgentContext ctx) { return result; }
+    /** 工具异常时（决定重试/跳过/终止） */
+    default ToolErrorAction onError(Exception e, ToolCall toolCall, AgentContext ctx) { return ToolErrorAction.ABORT; }
+    default int getOrder() { return 100; }
+}
+```
+
+内置 SandboxHook + ApprovalHook 同时实现 AgentHook 和 ToolHook（兼容过渡），未来逐步迁移到纯 ToolHook。
+
+### 7.13 SPI-12: ParameterBinder
+
+```java
+public interface ParameterBinder {
+    /** 将 JSON args 绑定到工具参数，注入框架级参数 */
+    Map<String, Object> bind(Tool tool, String argsJson, AgentContext ctx);
+    /** 类型转换 */
+    Object coerce(Object value, Class<?> targetType);
+}
+```
+
+默认：`ReflectionParameterBinder`（`@Param` 注解反射 + `@ParamInjected` 注入参数）
+
+### 7.14 SPI-13: MCPConnector
+
+```java
+public interface MCPConnector {
+    /** 连接 MCP Server */
+    void connect(String serverUrl);
+    /** 从 MCP Server 获取工具列表 */
+    List<ToolDefinition> listTools();
+    /** 通过 MCP 协议执行工具 */
+    ToolExecutionResult callTool(String toolName, Map<String, Object> args);
+    /** 关闭连接 */
+    void disconnect();
+}
+```
+
+MCP（Model Context Protocol）是 2025-2026 行业标准。实现后 LyClaw 可直接接入 200+ 现有的 MCP Server（文件系统、数据库、API 网关等），同时 MCP Server 可复用 LyClaw 的工具。
 
 ---
 
-## 八、Reflection 集成：反思能力下沉
+## 八、@Agent 配置可扩展机制
 
-### 8.1 两层反思
+### 8.1 注解定义
 
-将反思拆分为两个层次：
+```java
+@Retention(RUNTIME)
+@Target(TYPE)
+public @interface Agent {
 
-**层次 1：循环内轻量校验（afterModel，每轮）**
+    // ── 核心属性（框架级，类型安全）──
+    String name();
+    String description() default "";
+    String model() default "";
+    String provider() default "";
+    SandboxLevel sandbox() default SandboxLevel.RESTRICTED;
+    int maxToolRounds() default 30;
+    int approvalTimeout() default 60;
 
-不增加 LLM 调用，纯规则检测：
-- 空响应 → 追加 "Please continue your response." 到 messages
-- 连续 3 轮相同输出 → 追加 "Your last 3 responses were identical. Please provide new information or conclude."
-- tool_call 引用不存在的工具 → 追加错误提示，列出可用工具
-- 响应内容截断（最后一句不完整）→ 追加 "continue"
+    // ── 扩展属性（可无限扩展，不改注解定义）──
+    Extension[] extensions() default {};
+}
 
-**层次 2：循环后质量评估（afterResult，仅最终）**
+@Retention(RUNTIME)
+public @interface Extension {
+    String key();    // 配置键，如 "planning.strategy"
+    String value();  // 配置值，如 "sequential"
+}
+```
 
-调用 LLM 评估最终输出质量：
-- 准确性：是否包含事实错误
-- 完整性：是否回应了用户的所有问题
-- 安全性：是否包含敏感内容
-- 用户体验：格式、语气、可读性
+### 8.2 使用示例
 
-若评分低于阈值（如 60 分），可自动发起一次纠正 LLM 调用。
+```java
+@Agent(
+    name = "data-analysis-agent",
+    sandbox = SandboxLevel.RESTRICTED,
+    maxToolRounds = 20,
 
-### 8.2 与 ReflectionStage 的对比
+    extensions = {
+        @Extension(key = "planning.enabled", value = "true"),
+        @Extension(key = "planning.strategy", value = "sequential"),
+        @Extension(key = "memory.topK", value = "10"),
+        @Extension(key = "tool.dynamicFiltering", value = "true"),
+        @Extension(key = "mcp.servers", value = "http://localhost:9000,http://localhost:9001"),
+        @Extension(key = "outputGuard.enabled", value = "true"),
+        @Extension(key = "communication.protocol", value = "in-jvm"),
+    }
+)
+public interface DataAnalysisAgent {
+    Flux<ServerSentEvent<String>> analyze(String userRequest);
+}
+```
 
-| 维度 | ReflectionStage（旧） | ReflectionHook（新） |
-|------|----------------------|---------------------|
-| 执行时机 | ReAct 循环结束后，作为独立 Stage | 每轮循环中有轻量校验，循环后有质量评估 |
-| LLM 调用 | 1 次（质量评估） | 1 次（仅最终评估） |
-| 循环内纠正 | **不支持** | 支持（规则检测 → 注入提示） |
-| 代码复杂度 | 独立 Stage + QualityCriteria + ErrorDetector + StrategyAdjuster | 1 个 Hook，约 200 行 |
-| 纠正机制 | 通过 PipelineContext 传递 | 直接修改 ReAct 循环中的 messages 列表 |
+### 8.3 未来扩展
+
+新功能只需：1. 组件从 AgentConfig 读新 key → 2. 用户在 @Extension 加一行。注解定义不动。
 
 ---
 
 ## 九、Web 层精简
 
-### 9.1 当前 ChatController
+### 9.1 ChatController
 
 ```java
-// 当前：依赖 OrchestrationService
-@PostMapping(value = "/chat/stream", produces = TEXT_EVENT_STREAM_VALUE)
-public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request, ...) {
-    Session session = orchestrationService.resolveSession(request.getSessionId());
-    return orchestrationService.chatStream(request, traceId, session);
-}
-```
-
-### 9.2 精简后 ChatController
-
-```java
-// 精简后：直接注入 Agent 代理 Bean
 @RestController
 @RequestMapping("/api")
 public class ChatController {
-
-    private final ChatAgent chatAgent;  // @Agent 接口的 JDK 代理
+    private final ChatAgent chatAgent;  // @Agent 代理 Bean，直接注入
 
     @PostMapping(value = "/chat/stream", produces = TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request, ...) {
-        return chatAgent.chatStream(
-            request.getMessages(),
-            request.getSessionId()
-        );
+        return chatAgent.chatStream(request.getMessages(), request.getSessionId());
     }
 }
 ```
 
-### 9.3 ChatAgent 接口定义
-
-```java
-@Agent(
-    name = "lyclaw-chat",
-    description = "LyClaw 通用聊天 Agent",
-    planning = true,       // 启用计划（复杂任务自动触发）
-    reflection = true      // 启用反思
-)
-public interface ChatAgent {
-
-    @SystemMessage("你是 LyClaw AI 助手，今天是 {{current_date}}。")
-    Flux<ServerSentEvent<String>> chatStream(
-        @UserMessage List<Message> messages,
-        @V("sessionId") String sessionId
-    );
-}
-```
-
-### 9.4 可删除的组件
+### 9.2 可删除的组件
 
 | 删除项 | 原因 |
 |--------|------|
-| `Orchestrator` / `OrchestratorImpl` | 不再需要管线编排 |
-| `PipelineContext` | 不再需要管线上下文传递 |
-| 6 个 Pipeline Stage 类 | 全部由 Hook 替代 |
-| `OrchestrationService` | 不再需要业务逻辑中间层 |
-| `InteractionModeProcessor` | 不再需要解析 @InteractionMode（ReAct 引擎成为唯一模式） |
-| `lyclaw-orchestration` 模块 | 整个模块可废弃（或重建为轻量级多 Agent 编排库） |
-
-### 9.5 保留的组件
-
-| 保留项 | 原因 |
-|--------|------|
-| `AgentInvocationHandler` | Agent 代理核心执行引擎 |
-| `DefaultReActEngine` | LLM 推理-行动循环 |
-| `AgentHook` 接口 + 6 个实现 | 安全/沙箱/计划/审批/反思/指标 |
-| `AgentProxyFactory` | 创建代理实例 |
-| `AgentInterfaceProcessor` | 扫描 @Agent 接口并注册 Bean |
-| `ToolRegistry` + `ActionExecutor` | 工具注册和执行 |
-| `ChatFacade` | LLM 路由和调用 |
-| `MemorySystem` | 记忆持久化 |
-| `StorageFacade` | 会话和实体存储 |
-| `TaskPlanner` | 计划生成（被 PlanningHook 使用） |
-| `ReflectionEngine` | 反思评估（被 ReflectionHook 使用） |
-| 3 个 Controller | HTTP 入口（精简后） |
+| Orchestrator / OrchestratorImpl | Stage 管线嵌入 AgentInvocationHandler |
+| OrchestrationService | Controller 直接调 Agent 代理 |
+| PipelineContext / ChatContext | 被 AgentContext 取代 |
+| ReflectionStage | 已移除。OutputGuardHook 负责输出护栏 |
+| InteractionModeProcessor | @InteractionMode 废弃，ReAct 为唯一模式 |
+| lyclaw-orchestration 模块 | 降为空壳或删除 |
 
 ---
 
-## 十、多 Agent 协作：Supervisor 模式
+## 十、差异化创新总结
 
-### 10.1 定位
+### 10.1 LyClaw vs 全行业
 
-废除编排管线后，多 Agent 协作仍是需求（例如：数据分析场景中，一个 Agent 负责数据检索，一个 Agent 负责统计分析，一个 Agent 负责可视化建议）。LangChain4j 的 `SupervisorAgent` 提供了参考方案。
+| 能力维度 | LangChain4j | OpenAI SDK | Google ADK | CrewAI | LyClaw v2.0 |
+|---------|-----------|-----------|-----------|--------|------------|
+| 沙箱隔离 | ❌ | ✅ | ❌ | ❌ | ✅ 3级（**行业领先**） |
+| 工具审批（SSE） | ❌ | ❌ | ❌ | human_input | ✅ SSE双向（**独有**） |
+| 双层拦截 | ❌ | ❌ | ❌ | ❌ | ✅ Stage+步骤级（**独有**） |
+| MCP 协议 | ✅ | ✅ | ✅ | ❌ | ✅ SPI-13 |
+| A2A 协议 | ❌ | ❌ | ✅ | ❌ | ✅ SPI-7 预留 |
+| 输出护栏 | ❌ | ✅ | ❌ | ❌ | ✅ OutputGuardHook |
+| 动态工具筛选 | ✅ | ❌ | ❌ | ❌ | ✅ SPI-9 |
+| 配置可扩展 | ❌ | ❌ | ❌ | ❌ | ✅ @Extension key-value（**独有**） |
+| 上下文逐步增强 | ❌ | ❌ | ❌ | ❌ | ✅ Stage 链（**独有**） |
+| 多 Agent | SupervisorAgent | Handoff | Hierarchical | Role-based | P3 预留 |
+| 检查点回放 | ❌ | ❌ | ✅ | ❌ | P2 AgentContext PERSISTENT |
+| 13 个 SPI | 0 | 0 | 0 | 0 | ✅ **全可替换** |
 
-### 10.2 设计思路
-
-不立即实现，但预留扩展点：
-
-```
-预留: @SupervisorAgent 注解
-═══════════════════════════════════
-
-@Agent(name = "data-analysis-supervisor")
-public interface DataAnalysisSupervisor {
-
-    @SystemMessage("""
-        你是数据分析主管。你可以调用以下子 Agent:
-        - data_retriever: 从数据库中检索原始数据
-        - statistical_analyzer: 执行统计分析
-        - visualization_advisor: 提供可视化建议
-        
-        根据用户需求，决定调用哪个子 Agent，综合分析结果后给出最终回答。
-        """)
-    Flux<ServerSentEvent<String>> analyze(String userRequest);
-}
-```
-
-关键差异：Supervisor Agent 的 `ChatRequest.tools` 列表中包含的是**子 Agent 的调用入口**（而非普通工具），子 Agent 的调用也经过完整的 Hook 链（安全、沙箱、审批）。
-
-### 10.3 与 LangChain4j SupervisorAgent 的对比
-
-| 维度 | LangChain4j SupervisorAgent | LyClaw 预留给 Supervisor |
-|------|---------------------------|------------------------|
-| 实现方式 | `AiServices` 创建的 LLM Agent + `SupervisorAgentServiceImpl` | @Agent 接口 + Hook 链 |
-| 子 Agent 调用 | PlannerBasedInvocationHandler → Planner → PlannerLoop | AgentInvocationHandler 递归（子 Agent 也是代理对象） |
-| 状态管理 | AgenticScope（黑板） | AgentScope（ConcurrentHashMap） |
-| 持久化 | checkpoint 到 AgenticScopeStore | MemorySystem |
-| 崩溃恢复 | saveState / restoreState | 暂不支持（延后到 v3.0） |
-
----
-
-## 十一、与 LangChain4j 的对比
-
-| 设计要素 | LangChain4j | LyClaw（目标架构） |
-|---------|------------|-------------------|
-| **代理机制** | `Proxy.newProxyInstance()` + `AiServices` | `Proxy.newProxyInstance()` + `AgentInvocationHandler` |
-| **执行管线** | 15 步静态管线（`DefaultAiServices`） | Hook 链（6 个标准 Hook，可插拔） |
-| **编排模型** | Planner 状态机 + PlannerLoop（8 种拓扑） | PlanningHook（计划注入）+ 单 Agent ReAct |
-| **拦截粒度** | 循环级（仅在 AiServices 入口/出口） | 循环级 + 步骤级（beforeModel/afterModel） |
-| **状态管理** | AgenticScope（黑板）+ checkpoint 持久化 | AgentScope（轻量版，无崩溃恢复） |
-| **多 Agent** | SupervisorAgent + PlannerBasedInvocationHandler | @SupervisorAgent 注解（预留），子 Agent = 工具 |
-| **模板系统** | `@SystemMessage` + `@UserMessage` + `@V` + PromptTemplateFactory | `@SystemMessage` + `@UserMessage` + `@V`（已对齐） |
-| **Hook/中间件** | 无内置中间件（通过 Transformer 和 Listener 扩展） | AgentHook SPI（6 个标准 Hook） |
-| **流式支持** | TokenStream + TokenStreamAdapter | Flux<ServerSentEvent<String>>（Reactor） |
-| **工具审批** | 无内置支持 | ApprovalHook（SSE → 前端 → 回调） |
-
-**LyClaw 的差异化优势**：
-
-1. **步骤级 Hook 拦截** — LangChain4j 的 Transformer 只在入口/出口生效，LyClaw 的 Hook 可以介入 ReAct 循环的每一轮 LLM 调用
-2. **工具审批（人机协同）** — LangChain4j 没有内置的工具审批机制，LyClaw 有完整的 SSE → ApprovalStore → 回调流程
-3. **沙箱隔离** — LangChain4j 无沙箱概念，LyClaw 有三级沙箱（DIRECT / RESTRICTED / ISOLATED）
-4. **Spring Boot 原生集成** — Bean 自动发现、自动配置、`@Agent` 接口自动代理
-
-**LangChain4j 的优势**（LyClaw 暂不追赶）：
-
-1. **多 Agent 编排** — 8 种拓扑（顺序/并行/条件/循环/监督者/MapReduce），LyClaw 只有单 Agent
-2. **崩溃恢复** — PlannerLoop 的 saveState/restoreState + checkpoint 持久化
-3. **社区生态** — 30+ 模型集成、文档、示例
-
----
-
-## 十二、实施阶段
-
-### 阶段 1：Hook 接口扩展（1-2 天）
-
-- 扩展 `AgentHook` 接口，新增 `beforeModel`、`afterModel` 方法
-- 修改 `AgentInvocationHandler`，在 ReAct 循环中调用步骤级 Hook
-- 修改 `DefaultReActEngine`，暴露内部 LLM 调用点供 Hook 拦截
-- 为现有 3 个 Hook 添加空实现（`beforeModel` / `afterModel` 默认为 no-op）
-- 编译验证
-
-### 阶段 2：新建 PlanningHook（1-2 天）
-
-- 在 `AgentInvocationHandler` 中新增 `beforeModel`（首次）逻辑：调用 `TaskPlanner.plan()`，注入计划文本
-- 实现 "意图分类"：低成本 LLM 判断用户请求是 simple 还是 complex
-- 实现 "进度追踪"：在后续 `beforeModel` 中根据工具调用结果推进计划游标
-- 将 `@Agent` 注解扩展 `planning` 属性（默认 false）
-
-### 阶段 3：新建 ReflectionHook（1-2 天）
-
-- 实现循环内轻量校验（空响应/重复/幻觉/截断检测，纯规则，无 LLM 调用）
-- 实现循环后质量评估（调用 LLM，4 维度评分）
-- 实现纠正注入逻辑（检测到异常时追加提示到 messages）
-- 将 `@Agent` 注解扩展 `reflection` 属性（默认 false）
-
-### 阶段 4：新建 MetricsHook（0.5 天）
-
-- 采集轮次数、工具调用数、耗时、token 消耗
-- 在 `afterResult` 中汇总并持久化到 `MemorySystem`
-
-### 阶段 5：Web 层精简 + 旧代码删除（1-2 天）
-
-- 修改 `ChatController`，注入 `ChatAgent` 代理 Bean 替代 `OrchestrationService`
-- 修改 `ApprovalController` 和 `HealthController`（基本不变）
-- 删除 `OrchestrationService`、`Orchestrator`、`OrchestratorImpl`
-- 删除 `PipelineContext`、6 个 Stage 类
-- 删除 `lyclaw-orchestration` 模块（或降级为空壳保留向后兼容）
-- 全量编译 + 启动 + curl 测试 SSE 流
-
-### 阶段 6：多 Agent 协作（预留，v3.0）
-
-- 设计 `@SupervisorAgent` 注解
-- 实现子 Agent 作为工具的注册机制
-- 实现 AgenticScope 状态共享
-- 工作流拓扑（至少支持顺序和并行）
-
-### 实施优先级总结
+### 10.2 优先级
 
 ```
-必须做（v2.0）:
-  ✅ 阶段 1: Hook 接口扩展（步骤级拦截）
-  ✅ 阶段 2: PlanningHook（替代 PlanExecutionStage）
-  ✅ 阶段 3: ReflectionHook（替代 ReflectionStage）
-  ✅ 阶段 4: MetricsHook（替代 MetricsStage）
-  ✅ 阶段 5: Web 层精简 + 管线代码删除
+P0 — 安全底线（已有，巩固）:
+    沙箱隔离（3 级）+ 工具审批（SSE 双向）+ 输入护栏
+    → 这是 LyClaw 最硬核的差异化，行业没有第二家同时做这三件事
 
-预留（v3.0）:
-  ⏳ 阶段 6: 多 Agent 协作（Supervisor 模式）
-  ⏳ 崩溃恢复（checkpoint / saveState / restoreState）
-  ⏳ 工作流可视化（DAG 图编辑）
+P1 — 行业对齐 + 架构创新:
+    MCP 协议（行业标配，必须对齐）
+    工具执行管线（统一两条路径的工具执行）
+    双层拦截（Stage 级 + 步骤级，架构独创）
+    上下文逐步增强（Stage 链，下游自动继承上游）
+    输出护栏（OutputGuardHook，补安全漏洞）
+
+P2 — 优化增强:
+    动态工具筛选（工具多了不爆炸）
+    语义记忆（向量检索）
+    检查点回放（长任务崩溃恢复）
+    混合 Planner（简单任务零 LLM 成本）
+    @Extension 配置机制（不改注解加配置）
+
+P3 — 多 Agent（预留）:
+    真正多 Agent 协作（Handoff / Hierarchical）
+    A2A 协议（跨框架互通）
+    Reflexion（失败后自我修正）
 ```
 
 ---
 
-## 附录：架构演进对比
+## 十一、实施阶段与优先级
+
+### 11.1 总体路线
 
 ```
-v1.0（当前）                         v2.0（目标）
-════════════════════════════════     ════════════════════════════════
+阶段 1 (P0): 安全底线          阶段 2 (P1): 行业对齐+架构核心
+══════════════════════        ═══════════════════════════════
+AgentContext 统一              Stage 管线嵌入 Agent
+Hook 接口扩展（步骤级）        ToolExecutionPipeline 实现
+SandboxHook 完善               5 个 Stage 迁移到 framework
+ApprovalHook 完善              MCP 协议（SPI-13）
+SecurityCheckHook 完善         OutputGuardHook 新建
+                               PlanningHook 新建
+                               Web 精简 + 旧代码删除
 
-HTTP 入口                            HTTP 入口
-  ↓                                    ↓
-OrchestrationService                 ChatAgent（@Agent 接口代理）
-  ↓                                    ↓
-Orchestrator                         AgentInvocationHandler
-  ↓                                    ↓
-6 个 Pipeline Stage                  Hook 链（6 个 Hook）
-  ├─ ContextBuild                    ├─ SecurityCheckHook
-  ├─ SecurityCheck   → Feign         ├─ SandboxHook
-  ├─ PlanExecution   → Feign         ├─ PlanningHook  ← 替代 PlanExecutionStage
-  ├─ Reflection      → Feign         ├─ ApprovalHook
-  ├─ Respond (ReAct)                 ├─ ReflectionHook ← 替代 ReflectionStage
-  └─ Metrics         → Feign         └─ MetricsHook    ← 替代 MetricsStage
-  ↓                                    ↓
-ReActEngine                          ReActEngine（扩展步骤级拦截）
-  ↓                                    ↓
-SSE → 前端                           SSE → 前端
+阶段 3 (P2): 优化增强          阶段 4 (P3): 多 Agent
+══════════════════════        ═══════════════════════
+13 个 SPI 全部实现             @SupervisorAgent
+动态工具筛选                   Handoff / Hierarchical
+语义记忆（向量检索）           A2A 协议发现
+检查点回放                     Reflexion
+混合 Planner                   工作流拓扑
+@Extension 配置机制
+```
 
-代码量: ~2500 行                      代码量: ~1200 行
-模块数: 9 个（含 orchestration）       模块数: 8 个（无 orchestration）
-请求路径: 2 条（管线 + 代理）          请求路径: 1 条（代理）
-Hook 拦截: 循环级                      Hook 拦截: 循环级 + 步骤级
-多 Agent: 不支持                       多 Agent: 预留
+### 11.2 阶段 1：安全底线（P0，2-3 天）
+
+| 任务 | 说明 |
+|------|------|
+| 合并 PipelineContext → AgentContext | 保留全部字段，新增 Lifecycle 枚举 |
+| Hook 接口扩展 | 新增 beforeModel / afterModel / wrapToolCall |
+| SandboxHook 完善 | 适配新 AgentContext，从 ctx 读取 sandboxLevel |
+| ApprovalHook 完善 | 适配 wrapToolCall 签名，SSE 审批流可用 |
+| SecurityCheckHook 完善 | beforeRequest 注入 ContentFilter + SecurityManager |
+| 编译验证 | mvn compile 通过 |
+
+### 11.3 阶段 2：行业对齐 + 架构核心（P1，4-5 天）
+
+| 任务 | 说明 |
+|------|------|
+| AgentInvocationHandler 嵌入 Stage 管线 | invoke() 中注入 PipelineStageProcessor，Stage 按序执行 |
+| 5 个 Stage 迁移到 lyclaw-framework | 修改签名为 execute(AgentContext) |
+| ToolExecutionPipeline 实现 | 默认 7 步管线：resolve→policy→beforeHook→bind→invoke→afterHook→format |
+| SPI-13 MCPConnector | 默认实现：JSON-RPC over HTTP，连接 MCP Server 获取工具 |
+| OutputGuardHook 新建 | afterModel 检测敏感信息、注入、有害内容 |
+| PlanningHook 新建 | beforeModel 注入 TaskNode DAG + 进度追踪 |
+| ChatController 精简 | 注入 ChatAgent 代理 Bean |
+| 删除旧代码 | Orchestrator / OrchestratorImpl / OrchestrationService / PipelineContext / ChatContext / ReflectionStage / InteractionModeProcessor |
+| lyclaw-orchestration 降级 | 或直接删除模块 |
+| 全量编译 + curl SSE 测试 | 确保前端零改动 |
+
+### 11.4 阶段 3：优化增强（P2，3-4 天）
+
+| 任务 | 说明 |
+|------|------|
+| SPI-1 ~ SPI-8 全部实现 | AgentFactory、Stage、Hook、ReActEngine、TaskPlanner、ChatModelProvider、AgentCommProtocol、AgentConfigSource |
+| SPI-9 ~ SPI-13 完善 | ToolResolver 动态筛选、ToolHook 用户扩展、ParameterBinder 注入参数 |
+| @Extension 配置机制 | AgentConfig 类 + AgentConfigResolver + 多来源优先级叠加 |
+| 混合 Planner | PlanExecutionStage 中规则优先，LLM 可选 |
+| 语义记忆 | MemorySystem 接入向量检索 |
+| AgentContext SESSION / PERSISTENT | SESSION 跨调用缓存，PERSISTENT checkpoint 持久化 |
+
+### 11.5 阶段 4：多 Agent 协作（P3，预留）
+
+| 任务 | 说明 |
+|------|------|
+| @SupervisorAgent 注解 | 多 Agent 编排入口 |
+| Handoff / Hierarchical | 手递手 + 层级树两种模式 |
+| A2A 协议发现 | AgentCommProtocol.discoverAgents() |
+| Reflexion | 失败后自我批评→修正→重试 |
+| AgentContext PERSISTENT 崩溃恢复 | checkpoint / restore |
+
+### 11.6 模块变更汇总
+
+```
+v1.0 模块结构:                        v2.0 模块结构:
+═══════════════════                  ═══════════════════
+lyclaw-framework                     lyclaw-framework (+5 Stage, +AgentContext, +13 SPI接口)
+lyclaw-autoconfigure                 lyclaw-autoconfigure (+SPI默认实现自动配置)
+lyclaw-infra                         lyclaw-infra
+lyclaw-protocol                      lyclaw-protocol (+MCPConnector)
+lyclaw-plan                          lyclaw-plan
+lyclaw-memory                        lyclaw-memory (+语义记忆检索)
+lyclaw-action                        lyclaw-action (+ToolExecutionPipeline)
+lyclaw-reflect                       lyclaw-reflect
+lyclaw-orchestration  ← 删除        lyclaw-web (唯一部署单元)
+lyclaw-web
+
+                                    13 个 SPI 接口分布在 framework/action/protocol 中
+                                    删除:
+                                      Orchestrator / OrchestratorImpl
+                                      OrchestrationService
+                                      PipelineContext / ChatContext
+                                      ReflectionStage / InteractionModeProcessor
+                                      lyclaw-orchestration 模块
 ```
