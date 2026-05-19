@@ -51,8 +51,9 @@ public class PlanExecutionStage extends PipelineStageBase {
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
         if (ctx.isTerminated()) return Flux.empty();
 
-        return Flux.create(sink -> {
+        return Flux.defer(() -> {
             String traceId = ctx.getTracing().getTraceId();
+            List<ServerSentEvent<String>> events = new ArrayList<>();
             try {
                 ctx.getCurrentStage().set("PLAN");
                 ctx.getTracing().beginStage("PLAN");
@@ -60,7 +61,7 @@ public class PlanExecutionStage extends PipelineStageBase {
                 log.info("\n\n========== [阶段 2/5] 任务规划 [PLAN] ==========");
                 log.info(logJson("INFO", "stage_start", "PLAN", traceId,
                         "Planning task decomposition", null));
-                sink.next(sseEvent("plan_start", "Planning task decomposition"));
+                events.add(sseEvent("plan_start", "Planning task decomposition"));
 
                 TaskPlan taskPlan = taskPlanner.plan(buildChatContext(ctx), ctx.getUserMessage());
                 if (planValidator != null) {
@@ -80,15 +81,18 @@ public class PlanExecutionStage extends PipelineStageBase {
                 }
                 log.info(logJson("INFO", "plan_result", "PLAN", traceId,
                         "Plan generated: " + ctx.getNodes().size() + " task(s)", null));
-                sink.next(sseEvent("plan_complete", "Planned " + ctx.getNodes().size() + " task(s)"));
+                events.add(sseEvent("plan_complete", "Planned " + ctx.getNodes().size() + " task(s)"));
 
                 List<TaskNode> nodes = ctx.getNodes();
                 for (int i = 0; i < nodes.size(); i++) {
                     TaskNode node = nodes.get(i);
-                    sink.next(sseEvent("plan_node",
-                            "{\"index\":" + (i + 1) + ",\"nodeId\":\"" + escapeJson(node.getNodeId())
-                                    + "\",\"type\":\"" + escapeJson(node.getType())
-                                    + "\",\"description\":\"" + escapeJson(node.getDescription()) + "\"}"));
+                    Map<String, Object> nodeData = new LinkedHashMap<>();
+                    nodeData.put("index", i + 1);
+                    nodeData.put("nodeId", node.getNodeId());
+                    nodeData.put("type", node.getType());
+                    nodeData.put("description", node.getDescription());
+                    nodeData.put("dependencies", node.getDependencies());
+                    events.add(sseEvent("plan_node", nodeData));
                 }
 
                 long stageDuration = System.currentTimeMillis() - t3;
@@ -100,16 +104,18 @@ public class PlanExecutionStage extends PipelineStageBase {
                 }
 
                 ctx.getCurrentStage().set("EXECUTE");
-                sink.next(sseEvent("action_complete",
-                        "{\"total\":" + nodes.size() + ",\"success\":0,\"failed\":0}"));
-                sink.complete();
+                Map<String, Object> completeData = new LinkedHashMap<>();
+                completeData.put("total", nodes.size());
+                completeData.put("success", 0);
+                completeData.put("failed", 0);
+                events.add(sseEvent("action_complete", completeData));
             } catch (Exception e) {
                 log.error(logJson("ERROR", "stage_error", "PLAN", traceId,
-                        "Plan/execute failed: " + e.getMessage(), null));
+                        "Plan/execute failed: " + e.getMessage(), null), e);
                 ctx.getCurrentStage().set("EXECUTE");
-                sink.next(sseEvent("plan_complete", "Plan execution degraded"));
-                sink.complete();
+                events.add(sseEvent("plan_complete", "Plan execution degraded"));
             }
+            return Flux.fromIterable(events);
         });
     }
 

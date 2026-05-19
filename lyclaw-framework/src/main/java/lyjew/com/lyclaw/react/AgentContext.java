@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -48,10 +49,10 @@ public class AgentContext {
     private final TraceContext tracing;
 
     // ========== 流水线状态 ==========
-    private final List<String> toolResults = new ArrayList<>();
+    private final List<String> toolResults = new CopyOnWriteArrayList<>();
     private final AtomicInteger successCount = new AtomicInteger(0);
     private final AtomicInteger failCount = new AtomicInteger(0);
-    private final List<TaskNode> nodes = new ArrayList<>();
+    private final List<TaskNode> nodes = new CopyOnWriteArrayList<>();
     private final AtomicReference<Double> reflectScoreRef = new AtomicReference<>(0.0);
     private final AtomicBoolean pipelineOk = new AtomicBoolean(false);
     private final AtomicLong respondStartMs = new AtomicLong();

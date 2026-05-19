@@ -87,7 +87,7 @@ public class RespondStage extends PipelineStageBase {
                         String fallback = buildFallbackResponse(sc, fc, toolResults);
                         return Flux.just(
                                 sseEvent("message", fallback),
-                                sseEvent("done", "{\"status\":\"completed\",\"fallback\":true}")
+                                sseEvent("done", Map.of("status", "completed", "fallback", true))
                         );
                     });
         });
@@ -120,7 +120,7 @@ public class RespondStage extends PipelineStageBase {
                     args = Collections.emptyMap();
                 }
             } catch (Exception e) {
-                log.error("工具参数JSON解析失败: tool={} error={}", toolName, e.getMessage());
+                log.error("工具参数JSON解析失败: tool={} error={}", toolName, e.getMessage(), e);
                 args = Collections.emptyMap();
             }
 

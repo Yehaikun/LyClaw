@@ -7,6 +7,9 @@ import lyjew.com.lyclaw.memory.MemoryQueryResult;
 import lyjew.com.lyclaw.memory.MemorySystem;
 import lyjew.com.lyclaw.annotation.PipelineStage;
 import lyjew.com.lyclaw.react.AgentContext;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 
@@ -31,8 +34,9 @@ public class ContextBuildStage extends PipelineStageBase {
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
         if (ctx.isTerminated()) return Flux.empty();
 
-        return Flux.create(sink -> {
+        return Flux.defer(() -> {
             String traceId = ctx.getTracing().getTraceId();
+            List<ServerSentEvent<String>> events = new ArrayList<>();
             try {
                 ctx.getCurrentStage().set("CONTEXT_BUILD");
                 ctx.getTracing().beginStage("CONTEXT_BUILD");
@@ -41,7 +45,7 @@ public class ContextBuildStage extends PipelineStageBase {
                 log.info("\n\n========== [阶段 0/5] 上下文构建 [CONTEXT_BUILD] ==========");
                 log.info(logJson("INFO", "stage_start", "CONTEXT_BUILD", traceId,
                         "Loading session and retrieving memories", null));
-                sink.next(sseEvent("context_build_start", "Loading session and retrieving memories"));
+                events.add(sseEvent("context_build_start", "Loading session and retrieving memories"));
 
                 long memCallStart = System.currentTimeMillis();
                 MemoryQuery memoryQuery = MemoryQuery.builder()
@@ -52,14 +56,13 @@ public class ContextBuildStage extends PipelineStageBase {
                 long memCallDuration = System.currentTimeMillis() - memCallStart;
                 int memoryHits = memoryResult != null ? memoryResult.getTotalHits() : 0;
 
-                // 存储记忆结果到 AgentContext，供下游 Stage 使用
                 if (memoryResult != null && memoryResult.getEntries() != null) {
                     ctx.setAttribute("memoryEntries", memoryResult.getEntries());
                 }
 
                 log.info(logJson("INFO", "memory_call", "CONTEXT_BUILD", traceId,
                         "memorySystem.retrieve completed: " + memoryHits + " entries", memCallDuration));
-                sink.next(sseEvent("context_build_complete",
+                events.add(sseEvent("context_build_complete",
                         "Loaded session, retrieved " + memoryHits + " memory entries"));
 
                 if (metricsCollector != null) {
@@ -75,15 +78,13 @@ public class ContextBuildStage extends PipelineStageBase {
                 if (metricsCollector != null) {
                     metricsCollector.recordPipelineStage("CONTEXT_BUILD", stageDuration);
                 }
-
-                sink.complete();
             } catch (Exception e) {
                 log.warn(logJson("WARN", "stage_error", "CONTEXT_BUILD", traceId,
-                        "Context build failed, continuing: " + e.getMessage(), null));
+                        "Context build failed, continuing: " + e.getMessage(), null), e);
                 ctx.getCurrentStage().set("CONTEXT_BUILD");
-                sink.next(sseEvent("context_build_complete", "Context build degraded (memory unavailable)"));
-                sink.complete();
+                events.add(sseEvent("context_build_complete", "Context build degraded (memory unavailable)"));
             }
+            return Flux.fromIterable(events);
         });
     }
 

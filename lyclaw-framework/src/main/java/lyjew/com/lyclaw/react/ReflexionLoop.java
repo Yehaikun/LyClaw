@@ -80,7 +80,7 @@ public class ReflexionLoop {
                 }
             } catch (Exception e) {
                 executionError = e;
-                log.warn("[Reflexion {}] 执行异常: {}", loopId, e.getMessage());
+                log.warn("[Reflexion {}] 执行异常: {}", loopId, e.getMessage(), e);
             }
 
             // 构建反思反馈
@@ -103,7 +103,7 @@ public class ReflexionLoop {
                                     ? report.getSuggestion().getType().name() : null)
                             .build();
                 } catch (Exception e) {
-                    log.warn("[Reflexion {}] 反思评估失败: {}", loopId, e.getMessage());
+                    log.warn("[Reflexion {}] 反思评估失败: {}", loopId, e.getMessage(), e);
                 }
             }
 

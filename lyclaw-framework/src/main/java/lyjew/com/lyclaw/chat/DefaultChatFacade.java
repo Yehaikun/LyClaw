@@ -145,6 +145,7 @@ public class DefaultChatFacade implements ChatFacade {
                 try {
                     results.put(key, Boolean.TRUE.equals(model.validate().block()));
                 } catch (Exception e) {
+                    log.warn("Health check failed: {}", key, e);
                     results.put(key, false);
                 }
             }

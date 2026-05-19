@@ -15,6 +15,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 安全检查阶段，order=1。内容过滤 + 安全审批 → sandboxLevel。
@@ -48,8 +49,9 @@ public class SecurityCheckStage extends PipelineStageBase {
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
         if (ctx.isTerminated()) return Flux.empty();
 
-        return Flux.create(sink -> {
+        return Flux.defer(() -> {
             String traceId = ctx.getTracing().getTraceId();
+            List<ServerSentEvent<String>> events = new ArrayList<>();
             try {
                 ctx.getCurrentStage().set("INTERCEPT");
                 ctx.getTracing().beginStage("INTERCEPT");
@@ -58,7 +60,7 @@ public class SecurityCheckStage extends PipelineStageBase {
                 log.info("\n\n========== [阶段 1/5] 安全检查 - 身份验证与内容过滤 [INTERCEPT] ==========");
                 log.info(logJson("INFO", "stage_start", "INTERCEPT", traceId,
                         "Running security checks and content filter", null));
-                sink.next(sseEvent("intercept_start", "Running security checks and content filter"));
+                events.add(sseEvent("intercept_start", "Running security checks and content filter"));
 
                 if (securityManager != null) {
                     var approvalResult = securityManager.approve(buildChatContext(ctx), "EXECUTE_CHAT");
@@ -68,10 +70,9 @@ public class SecurityCheckStage extends PipelineStageBase {
                                 "Security check denied: " + reason, null));
                         ctx.getTracing().endStage("INTERCEPT");
                         ctx.setTerminated(true);
-                        sink.next(sseEvent("intercept_blocked", "Security check denied: " + reason));
-                        sink.next(sseEvent("done", "{\"status\":\"blocked\"}"));
-                        sink.complete();
-                        return;
+                        events.add(sseEvent("intercept_blocked", "Security check denied: " + reason));
+                        events.add(sseEvent("done", Map.of("status", "blocked")));
+                        return Flux.fromIterable(events);
                     }
                     if (approvalResult.getSandboxLevel() != null) {
                         ctx.setSandboxLevel(approvalResult.getSandboxLevel());
@@ -88,15 +89,14 @@ public class SecurityCheckStage extends PipelineStageBase {
                                 "Content filter blocked: " + reason, null));
                         ctx.getTracing().endStage("INTERCEPT");
                         ctx.setTerminated(true);
-                        sink.next(sseEvent("intercept_blocked", "Content filter blocked: " + reason));
-                        sink.next(sseEvent("done", "{\"status\":\"blocked\"}"));
-                        sink.complete();
-                        return;
+                        events.add(sseEvent("intercept_blocked", "Content filter blocked: " + reason));
+                        events.add(sseEvent("done", Map.of("status", "blocked")));
+                        return Flux.fromIterable(events);
                     }
                     ctx.setUserMessage(filterResult.getFilteredContent());
                 }
 
-                sink.next(sseEvent("intercept_complete", "Security check and content filter passed"));
+                events.add(sseEvent("intercept_complete", "Security check and content filter passed"));
                 long stageDuration = System.currentTimeMillis() - t2;
                 ctx.getTracing().endStage("INTERCEPT");
                 log.info(logJson("INFO", "stage_complete", "INTERCEPT", traceId,
@@ -104,14 +104,13 @@ public class SecurityCheckStage extends PipelineStageBase {
                 if (metricsCollector != null) {
                     metricsCollector.recordPipelineStage("INTERCEPT", stageDuration);
                 }
-                sink.complete();
             } catch (Exception e) {
                 log.warn(logJson("WARN", "stage_error", "INTERCEPT", traceId,
-                        "Security check failed, continuing: " + e.getMessage(), null));
+                        "Security check failed, continuing: " + e.getMessage(), null), e);
                 ctx.getTracing().endStage("INTERCEPT");
-                sink.next(sseEvent("intercept_complete", "Security check skipped (error)"));
-                sink.complete();
+                events.add(sseEvent("intercept_complete", "Security check skipped (error)"));
             }
+            return Flux.fromIterable(events);
         });
     }
 

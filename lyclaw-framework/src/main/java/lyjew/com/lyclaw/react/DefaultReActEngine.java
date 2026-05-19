@@ -311,7 +311,7 @@ public class DefaultReActEngine implements ReActEngine {
             try {
                 approved = future.get(approvalTimeoutSeconds, TimeUnit.SECONDS);
             } catch (Exception e) {
-                log.warn("审批超时或异常: toolCallId={} error={}", req.getId(), e.getMessage());
+                log.warn("审批超时或异常: toolCallId={} error={}", req.getId(), e.getMessage(), e);
                 approved = false;
             }
             log.info("APPROVAL_DEBUG resolved: toolCallId={} approved={}", req.getId(), approved);
@@ -349,6 +349,7 @@ public class DefaultReActEngine implements ReActEngine {
             event.put("message", "AI 请求执行 " + name);
             return objectMapper.writeValueAsString(event);
         } catch (Exception e) {
+            log.error("Failed to serialize tool approval JSON", e);
             return "{\"error\":\"json\"}";
         }
     }
@@ -475,6 +476,7 @@ public class DefaultReActEngine implements ReActEngine {
             event.put("success", success);
             return objectMapper.writeValueAsString(event);
         } catch (Exception e) {
+            log.error("Failed to serialize tool call JSON", e);
             return "{\"error\":\"json\"}";
         }
     }

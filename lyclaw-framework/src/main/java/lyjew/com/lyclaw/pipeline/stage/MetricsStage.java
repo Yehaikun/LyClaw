@@ -10,6 +10,7 @@ import lyjew.com.lyclaw.annotation.PipelineStage;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -61,7 +62,7 @@ public class MetricsStage extends PipelineStageBase {
                 entry.setUserId("default");
             } catch (Exception e) {
                 log.warn(logJson("WARN", "memory_ingest_failed", "METRICS", traceId,
-                        "Memory ingest failed (non-critical): " + e.getMessage(), null));
+                        "Memory ingest failed (non-critical): " + e.getMessage(), null), e);
             }
 
             if (metricsCollector != null) {
@@ -82,15 +83,20 @@ public class MetricsStage extends PipelineStageBase {
 
             ctx.getCurrentStage().set("done");
 
+            Map<String, Object> metricsData = new LinkedHashMap<>();
+            metricsData.put("totalDurationMs", totalDuration);
+            metricsData.put("tasksProcessed", taskCount);
+            metricsData.put("traceId", traceId);
+
+            Map<String, Object> doneData = new LinkedHashMap<>();
+            doneData.put("status", "completed");
+            doneData.put("durationMs", totalDuration);
+            doneData.put("traceId", traceId);
+
             return Flux.just(
                     sseEvent("respond_complete", "Response generated and memory persisted"),
-                    sseEvent("metrics",
-                            "{\"totalDurationMs\":" + totalDuration
-                                    + ",\"tasksProcessed\":" + taskCount
-                                    + ",\"traceId\":\"" + escapeJson(traceId) + "\"}"),
-                    sseEvent("done",
-                            "{\"status\":\"completed\",\"durationMs\":" + totalDuration
-                                    + ",\"traceId\":\"" + escapeJson(traceId) + "\"}")
+                    sseEvent("metrics", metricsData),
+                    sseEvent("done", doneData)
             );
         });
     }

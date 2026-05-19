@@ -64,7 +64,7 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
             try {
                 hook.beforeExecution(toolCall, ctx);
             } catch (Exception e) {
-                log.warn("ToolHook.beforeExecution failed: {}", e.getMessage());
+                log.warn("ToolHook.beforeExecution failed: {}", e.getMessage(), e);
                 return hook.onError(toolCall, e, ctx);
             }
         }
@@ -97,7 +97,9 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
             for (ToolHook hook : toolHooks) {
                 try {
                     return hook.onError(toolCall, e, ctx);
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                    log.warn("ToolHook.onError failed", ignored);
+                }
             }
             return "Error: " + e.getMessage();
         }
@@ -107,7 +109,7 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
             try {
                 result = hook.afterExecution(result, toolCall, ctx);
             } catch (Exception e) {
-                log.warn("ToolHook.afterExecution failed: {}", e.getMessage());
+                log.warn("ToolHook.afterExecution failed: {}", e.getMessage(), e);
             }
         }
 
@@ -121,7 +123,7 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
                 return objectMapper.readValue(argumentsJson, new TypeReference<Map<String, Object>>() {});
             }
         } catch (Exception e) {
-            log.warn("Failed to parse tool arguments JSON: {}", e.getMessage());
+            log.warn("Failed to parse tool arguments JSON: {}", e.getMessage(), e);
         }
         return Map.of();
     }
