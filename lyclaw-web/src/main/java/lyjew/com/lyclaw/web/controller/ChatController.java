@@ -30,13 +30,21 @@ public class ChatController {
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request) {
+    public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request,
+                                                     @RequestParam(required = false) String agentId) {
+        String resolvedAgentId = agentId != null && !agentId.isEmpty() ? agentId
+                : request.getAgentId() != null && !request.getAgentId().isEmpty() ? request.getAgentId()
+                : null;
         String userMessage = request.getLastUserMessage();
         return chatAgent.chatStream(userMessage);
     }
 
     @PostMapping("/chat")
-    public Mono<Map<String, Object>> chat(@RequestBody ChatRequest request) {
+    public Mono<Map<String, Object>> chat(@RequestBody ChatRequest request,
+                                          @RequestParam(required = false) String agentId) {
+        String resolvedAgentId = agentId != null && !agentId.isEmpty() ? agentId
+                : request.getAgentId() != null && !request.getAgentId().isEmpty() ? request.getAgentId()
+                : null;
         String userMessage = request.getLastUserMessage();
         String sessionId = request.getSessionId() != null ? request.getSessionId() : "";
         return Mono.fromCallable(() -> chatAgent.chat(userMessage))

@@ -107,6 +107,24 @@ public class ChatRequest {
     @Builder.Default
     private Map<String, Object> extras = new HashMap<>();
 
+    // ── Phase 2-4 预埋字段 ────────────────────────────────────────
+
+    /** 目标 Agent ID，为空时使用默认 Agent。Phase 3 agent routing */
+    @Builder.Default
+    private String agentId = "";
+
+    /** 思考级别: off, minimal, low, medium, high, xhigh, adaptive, max。Phase 2 thinking control */
+    @Builder.Default
+    private String thinkingLevel = "";
+
+    /** 推理级别。Phase 2 reasoning control */
+    @Builder.Default
+    private String reasoningLevel = "";
+
+    /** 详细度级别。Phase 2 verbose control */
+    @Builder.Default
+    private String verboseLevel = "";
+
     /**
      * 判断请求中是否设置了系统提示词。
      *

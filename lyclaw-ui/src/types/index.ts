@@ -159,6 +159,14 @@ export interface ChatRequest {
   stopSequences?: string[]
   /** 扩展属性：用于传递模型特定的额外参数 */
   extras?: Record<string, unknown>
+  /** 目标 Agent ID（Phase 3 agent routing） */
+  agentId?: string
+  /** 思考级别: off, minimal, low, medium, high, xhigh, adaptive, max（Phase 2） */
+  thinkingLevel?: string
+  /** 推理级别（Phase 2 reasoning control） */
+  reasoningLevel?: string
+  /** 详细度级别（Phase 2 verbose control） */
+  verboseLevel?: string
 }
 
 /** 聊天会话：消息的容器，拥有唯一ID和元数据 */
