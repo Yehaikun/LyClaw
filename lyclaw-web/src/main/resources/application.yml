@@ -71,7 +71,9 @@ lyclaw:
 
     # ── 全局降级链（所有模型的兜底降级顺序） ───────────
     # 单模型级别的 fallback 优先于全局 fallbackChain
-    fallback-chain: []
+    fallback-chain:
+      - "deepseek/deepseek-v4-flash"
+      - "openai/gpt-4o"
 
     # ── 全局熔断器配置 ─────────────────────────────────
     # 当某个模型连续失败达到阈值后，自动熔断一段时间
@@ -146,6 +148,61 @@ lyclaw:
     # 单次 Agent 调用总超时（毫秒）
     # 默认: 300000（5分钟）
     timeout-ms: 300000
+
+    # ── Agent 全局默认值（绑定 AgentDefaultsConfig） ──────
+    # 优先级: @Agent 注解 > lyclaw.agent.defaults > 系统内置默认值
+    defaults:
+      subagent-enabled: true
+      subagent-delegation-mode: suggest
+      subagent-max-concurrent: 1
+      subagent-max-spawn-depth: 1
+      subagent-max-children-per-agent: 5
+      subagent-run-timeout-seconds: 300
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.subagent  —  子Agent运行时配置                    ║
+  # ║  AutoConfiguration: AgentProxyAutoConfiguration           ║
+  # ╚══════════════════════════════════════════════════════════╝
+  subagent:
+    # 是否全局启用子Agent生成
+    # 默认: true
+    enabled: true
+
+    # 委托模式: suggest（建议，需用户确认）| prefer（优先委托）
+    # 默认: suggest
+    delegation-mode: suggest
+
+    # 允许的 Agent ID 白名单，"*" 表示不限制
+    # 默认: "*"
+    allow-agents: "*"
+
+    # 最大并发子Agent数量
+    # 默认: 1
+    max-concurrent: 1
+
+    # 最大生成嵌套深度（1 = 不允许递归生成）
+    # 默认: 1
+    max-spawn-depth: 1
+
+    # 单父Agent最多可生成的直接子Agent数
+    # 默认: 5
+    max-children-per-agent: 5
+
+    # 子Agent会话归档时间（分钟），超时自动归档
+    # 默认: 60
+    archive-after-minutes: 60
+
+    # 单个子Agent运行超时（秒）
+    # 默认: 300
+    run-timeout-seconds: 300
+
+    # 子Agent公告超时（毫秒），等待前端响应子Agent生成确认的时间
+    # 默认: 120000（2分钟）
+    announce-timeout-ms: 120000
+
+    # 是否要求生成的子Agent ID 必须在 AgentRegistry 中注册
+    # 默认: false
+    require-agent-id: false
 
   # ╔══════════════════════════════════════════════════════════╗
   # ║  lyclaw.plan  —  任务规划配置  (PlanProperties)          ║

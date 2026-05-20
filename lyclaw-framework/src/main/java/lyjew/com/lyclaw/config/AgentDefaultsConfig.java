@@ -47,6 +47,18 @@ public class AgentDefaultsConfig {
     private String subagentModel;
     private String subagentThinking;
 
+    // ── 子Agent运行时默认值 ────────────────────────────
+    private boolean subagentEnabled = true;
+    private int subagentMaxConcurrent = 1;
+    private int subagentArchiveAfterMinutes = 60;
+    private int subagentRunTimeoutSeconds = 300;
+    private int subagentAnnounceTimeoutMs = 120_000;
+    private boolean subagentRequireAgentId = false;
+    private String subagentDelegationMode = "suggest";
+    private String subagentAllowAgents = "*";
+    private int subagentMaxSpawnDepth = 1;
+    private int subagentMaxChildrenPerAgent = 5;
+
     // ── 运行重试 ────────────────────────────────────────────
     private int maxRetryAttempts = 3;
     private long retryBaseDelayMs = 1000;
@@ -61,6 +73,19 @@ public class AgentDefaultsConfig {
     private int memoryGetMaxChars = 50000;
     private int toolResultMaxChars = 80000;
     private int toolResultTotalMaxChars = 200000;
+
+    // ── 多模态模型默认值 ──────────────────────────────
+    private String imageModel = "";
+    private String imageGenerationModel = "";
+    private String videoGenerationModel = "";
+    private String musicGenerationModel = "";
+    private String pdfModel = "";
+    private int pdfMaxBytesMb = 10;
+    private int pdfMaxPages = 20;
+    private boolean mediaGenerationAutoProviderFallback = true;
+
+    // ── 模型降级链 ──────────────────────────────────────
+    private List<String> modelFallbackChain = new ArrayList<>();
 
     // ===== Getters / Setters =====
 
@@ -124,6 +149,36 @@ public class AgentDefaultsConfig {
     public String getSubagentThinking() { return subagentThinking; }
     public void setSubagentThinking(String t) { this.subagentThinking = t; }
 
+    public boolean isSubagentEnabled() { return subagentEnabled; }
+    public void setSubagentEnabled(boolean e) { this.subagentEnabled = e; }
+
+    public int getSubagentMaxConcurrent() { return subagentMaxConcurrent; }
+    public void setSubagentMaxConcurrent(int n) { this.subagentMaxConcurrent = n; }
+
+    public int getSubagentArchiveAfterMinutes() { return subagentArchiveAfterMinutes; }
+    public void setSubagentArchiveAfterMinutes(int n) { this.subagentArchiveAfterMinutes = n; }
+
+    public int getSubagentRunTimeoutSeconds() { return subagentRunTimeoutSeconds; }
+    public void setSubagentRunTimeoutSeconds(int n) { this.subagentRunTimeoutSeconds = n; }
+
+    public int getSubagentAnnounceTimeoutMs() { return subagentAnnounceTimeoutMs; }
+    public void setSubagentAnnounceTimeoutMs(int n) { this.subagentAnnounceTimeoutMs = n; }
+
+    public boolean isSubagentRequireAgentId() { return subagentRequireAgentId; }
+    public void setSubagentRequireAgentId(boolean r) { this.subagentRequireAgentId = r; }
+
+    public String getSubagentDelegationMode() { return subagentDelegationMode; }
+    public void setSubagentDelegationMode(String m) { this.subagentDelegationMode = m; }
+
+    public String getSubagentAllowAgents() { return subagentAllowAgents; }
+    public void setSubagentAllowAgents(String a) { this.subagentAllowAgents = a; }
+
+    public int getSubagentMaxSpawnDepth() { return subagentMaxSpawnDepth; }
+    public void setSubagentMaxSpawnDepth(int d) { this.subagentMaxSpawnDepth = d; }
+
+    public int getSubagentMaxChildrenPerAgent() { return subagentMaxChildrenPerAgent; }
+    public void setSubagentMaxChildrenPerAgent(int c) { this.subagentMaxChildrenPerAgent = c; }
+
     public int getMaxRetryAttempts() { return maxRetryAttempts; }
     public void setMaxRetryAttempts(int n) { this.maxRetryAttempts = n; }
 
@@ -150,4 +205,31 @@ public class AgentDefaultsConfig {
 
     public int getToolResultTotalMaxChars() { return toolResultTotalMaxChars; }
     public void setToolResultTotalMaxChars(int n) { this.toolResultTotalMaxChars = n; }
+
+    public String getImageModel() { return imageModel; }
+    public void setImageModel(String m) { this.imageModel = m; }
+
+    public String getImageGenerationModel() { return imageGenerationModel; }
+    public void setImageGenerationModel(String m) { this.imageGenerationModel = m; }
+
+    public String getVideoGenerationModel() { return videoGenerationModel; }
+    public void setVideoGenerationModel(String m) { this.videoGenerationModel = m; }
+
+    public String getMusicGenerationModel() { return musicGenerationModel; }
+    public void setMusicGenerationModel(String m) { this.musicGenerationModel = m; }
+
+    public String getPdfModel() { return pdfModel; }
+    public void setPdfModel(String m) { this.pdfModel = m; }
+
+    public int getPdfMaxBytesMb() { return pdfMaxBytesMb; }
+    public void setPdfMaxBytesMb(int n) { this.pdfMaxBytesMb = n; }
+
+    public int getPdfMaxPages() { return pdfMaxPages; }
+    public void setPdfMaxPages(int n) { this.pdfMaxPages = n; }
+
+    public boolean isMediaGenerationAutoProviderFallback() { return mediaGenerationAutoProviderFallback; }
+    public void setMediaGenerationAutoProviderFallback(boolean f) { this.mediaGenerationAutoProviderFallback = f; }
+
+    public List<String> getModelFallbackChain() { return modelFallbackChain; }
+    public void setModelFallbackChain(List<String> chain) { this.modelFallbackChain = chain; }
 }

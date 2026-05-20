@@ -82,10 +82,10 @@ public class AgentContext {
     private String reasoningLevel;
     /** 运行时类型 */
     private AgentRuntimeType runtimeType = AgentRuntimeType.EMBEDDED;
-    /** 运行元数据（runId, jobId, trigger 等） */
-    private final Map<String, Object> runMetadata = new java.util.concurrent.ConcurrentHashMap<>();
-    /** 活跃的子 Agent ID 集合 */
-    private final java.util.Set<String> activeSubagentIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 运行元数据（runId, jobId, trigger 等）—— 向后兼容的 Map 存储 */
+    private final Map<String, Object> runMetadataMap = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 类型化运行元数据（子代理层级、模型解析、归档等） */
+    private final RunMetadata runMetadata = new RunMetadata();
 
     /**
      * 构造 AgentContext。
@@ -190,29 +190,104 @@ public class AgentContext {
     public void setResolvedConfig(lyjew.com.lyclaw.config.ResolvedAgentConfig resolvedConfig) { this.resolvedConfig = resolvedConfig; }
 
     public String getThinkingLevel() { return thinkingLevel; }
-    public void setThinkingLevel(String thinkingLevel) { this.thinkingLevel = thinkingLevel; }
+    public void setThinkingLevel(String thinkingLevel) { this.thinkingLevel = thinkingLevel; this.runMetadata.setThinkingLevel(thinkingLevel); }
 
     public String getVerboseLevel() { return verboseLevel; }
-    public void setVerboseLevel(String verboseLevel) { this.verboseLevel = verboseLevel; }
+    public void setVerboseLevel(String verboseLevel) { this.verboseLevel = verboseLevel; this.runMetadata.setVerboseLevel(verboseLevel); }
 
     public String getReasoningLevel() { return reasoningLevel; }
-    public void setReasoningLevel(String reasoningLevel) { this.reasoningLevel = reasoningLevel; }
+    public void setReasoningLevel(String reasoningLevel) { this.reasoningLevel = reasoningLevel; this.runMetadata.setReasoningLevel(reasoningLevel); }
 
     public AgentRuntimeType getRuntimeType() { return runtimeType; }
     public void setRuntimeType(AgentRuntimeType runtimeType) { this.runtimeType = runtimeType; }
 
-    // ========== 运行元数据 ==========
+    // ========== 运行元数据（Map-based，向后兼容） ==========
 
-    public Object getRunMetadata(String key) { return runMetadata.get(key); }
-    public void setRunMetadata(String key, Object value) { runMetadata.put(key, value); }
-    public Map<String, Object> getRunMetadata() { return Collections.unmodifiableMap(runMetadata); }
+    /**
+     * 从运行元数据中读取指定 key。
+     *
+     * <p>对于 {@link RunMetadata} 中的类型化字段，优先返回类型化值；
+     * 未知 key 回退到 Map 存储，保证向后兼容。</p>
+     */
+    public Object getRunMetadata(String key) {
+        return switch (key) {
+            case "subagentDepth" -> runMetadata.getSubagentDepth();
+            case "parentSessionKey" -> runMetadata.getParentSessionKey();
+            case "subagentTargetAgentId" -> runMetadata.getSubagentTargetAgentId();
+            case "thinkingLevel" -> runMetadata.getThinkingLevel();
+            case "verboseLevel" -> runMetadata.getVerboseLevel();
+            case "reasoningLevel" -> runMetadata.getReasoningLevel();
+            case "resolvedModel" -> runMetadata.getResolvedModel();
+            case "resolvedProvider" -> runMetadata.getResolvedProvider();
+            case "imageModel" -> runMetadata.getImageModel();
+            case "archiveSessionKey" -> runMetadata.getArchiveSessionKey();
+            default -> runMetadataMap.get(key);
+        };
+    }
+
+    /**
+     * 写入运行元数据。
+     *
+     * <p>同时写入 Map（向后兼容）和 {@link RunMetadata} 类型化字段（已知 key）。
+     * 类型不匹配时仅写入 Map，不抛出异常。</p>
+     */
+    public void setRunMetadata(String key, Object value) {
+        runMetadataMap.put(key, value);
+        syncTypedRunMetadata(key, value);
+    }
+
+    /**
+     * 将已知 key 的值同步到 {@link RunMetadata} 类型化字段。
+     */
+    private void syncTypedRunMetadata(String key, Object value) {
+        if (value == null) return;
+        switch (key) {
+            case "subagentDepth" -> {
+                if (value instanceof Number n) runMetadata.setSubagentDepth(n.intValue());
+            }
+            case "parentSessionKey" -> {
+                if (value instanceof String s) runMetadata.setParentSessionKey(s);
+            }
+            case "subagentTargetAgentId" -> {
+                if (value instanceof String s) runMetadata.setSubagentTargetAgentId(s);
+            }
+            case "thinkingLevel" -> {
+                if (value instanceof String s) runMetadata.setThinkingLevel(s);
+            }
+            case "verboseLevel" -> {
+                if (value instanceof String s) runMetadata.setVerboseLevel(s);
+            }
+            case "reasoningLevel" -> {
+                if (value instanceof String s) runMetadata.setReasoningLevel(s);
+            }
+            case "resolvedModel" -> {
+                if (value instanceof String s) runMetadata.setResolvedModel(s);
+            }
+            case "resolvedProvider" -> {
+                if (value instanceof String s) runMetadata.setResolvedProvider(s);
+            }
+            case "imageModel" -> {
+                if (value instanceof String s) runMetadata.setImageModel(s);
+            }
+            case "archiveSessionKey" -> {
+                if (value instanceof String s) runMetadata.setArchiveSessionKey(s);
+            }
+        }
+    }
+
+    public Map<String, Object> getRunMetadataMap() { return Collections.unmodifiableMap(runMetadataMap); }
+
+    // ========== 运行元数据（类型化访问） ==========
+
+    /** 返回类型化的 {@link RunMetadata}，提供强类型子代理层级、模型解析等访问。 */
+    public RunMetadata getRunMetadata() { return runMetadata; }
 
     // ========== 活跃子 Agent ==========
 
-    public boolean addActiveSubagent(String agentId) { return activeSubagentIds.add(agentId); }
-    public boolean removeActiveSubagent(String agentId) { return activeSubagentIds.remove(agentId); }
-    public java.util.Set<String> getActiveSubagentIds() { return Collections.unmodifiableSet(activeSubagentIds); }
-    public int getActiveSubagentCount() { return activeSubagentIds.size(); }
+    public boolean addActiveSubagent(String agentId) { return this.runMetadata.getActiveSubagentIds().add(agentId); }
+    public boolean removeActiveSubagent(String agentId) { return this.runMetadata.getActiveSubagentIds().remove(agentId); }
+    public java.util.Set<String> getActiveSubagentIds() { return Collections.unmodifiableSet(this.runMetadata.getActiveSubagentIds()); }
+    public int getActiveSubagentCount() { return this.runMetadata.getActiveSubagentIds().size(); }
 
     // ========== 生命周期：检查点 ==========
 
@@ -244,6 +319,14 @@ public class AgentContext {
         snapshot.put("verboseLevel", verboseLevel);
         snapshot.put("reasoningLevel", reasoningLevel);
         snapshot.put("runtimeType", runtimeType != null ? runtimeType.name() : null);
+        // RunMetadata 字段
+        snapshot.put("subagentDepth", runMetadata.getSubagentDepth());
+        snapshot.put("parentSessionKey", runMetadata.getParentSessionKey());
+        snapshot.put("subagentTargetAgentId", runMetadata.getSubagentTargetAgentId());
+        snapshot.put("resolvedModel", runMetadata.getResolvedModel());
+        snapshot.put("resolvedProvider", runMetadata.getResolvedProvider());
+        snapshot.put("imageModel", runMetadata.getImageModel());
+        snapshot.put("archiveSessionKey", runMetadata.getArchiveSessionKey());
         return snapshot;
     }
 
@@ -296,16 +379,38 @@ public class AgentContext {
             this.agentDir = (String) snapshot.get("agentDir");
         }
         if (snapshot.get("thinkingLevel") != null) {
-            this.thinkingLevel = (String) snapshot.get("thinkingLevel");
+            setThinkingLevel((String) snapshot.get("thinkingLevel"));
         }
         if (snapshot.get("verboseLevel") != null) {
-            this.verboseLevel = (String) snapshot.get("verboseLevel");
+            setVerboseLevel((String) snapshot.get("verboseLevel"));
         }
         if (snapshot.get("reasoningLevel") != null) {
-            this.reasoningLevel = (String) snapshot.get("reasoningLevel");
+            setReasoningLevel((String) snapshot.get("reasoningLevel"));
         }
         if (snapshot.get("runtimeType") != null) {
             this.runtimeType = AgentRuntimeType.valueOf((String) snapshot.get("runtimeType"));
+        }
+        // RunMetadata 字段恢复
+        if (snapshot.get("subagentDepth") != null) {
+            this.runMetadata.setSubagentDepth(((Number) snapshot.get("subagentDepth")).intValue());
+        }
+        if (snapshot.get("parentSessionKey") != null) {
+            this.runMetadata.setParentSessionKey((String) snapshot.get("parentSessionKey"));
+        }
+        if (snapshot.get("subagentTargetAgentId") != null) {
+            this.runMetadata.setSubagentTargetAgentId((String) snapshot.get("subagentTargetAgentId"));
+        }
+        if (snapshot.get("resolvedModel") != null) {
+            this.runMetadata.setResolvedModel((String) snapshot.get("resolvedModel"));
+        }
+        if (snapshot.get("resolvedProvider") != null) {
+            this.runMetadata.setResolvedProvider((String) snapshot.get("resolvedProvider"));
+        }
+        if (snapshot.get("imageModel") != null) {
+            this.runMetadata.setImageModel((String) snapshot.get("imageModel"));
+        }
+        if (snapshot.get("archiveSessionKey") != null) {
+            this.runMetadata.setArchiveSessionKey((String) snapshot.get("archiveSessionKey"));
         }
     }
 

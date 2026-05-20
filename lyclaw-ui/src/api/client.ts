@@ -205,6 +205,7 @@ export async function postSSE(
   onStatus?: (text: string) => void,
   onToolCall?: (data: string) => void,
   onApprovalRequired?: (data: string) => void,
+  onThinking?: (text: string) => void,
   onEvent?: (event: string, data: string) => void,
 ): Promise<void> {
   const controller = new AbortController()
@@ -314,6 +315,8 @@ export async function postSSE(
           if (text && onToolCall) onToolCall(text)
         } else if (currentEvent === 'tool_approval') {
           if (text && onApprovalRequired) onApprovalRequired(text)
+        } else if (currentEvent === 'thinking') {
+          if (text && onThinking) onThinking(text)
         } else if (onEvent) {
           onEvent(currentEvent, text)
         }

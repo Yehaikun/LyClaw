@@ -142,7 +142,48 @@ public class AgentInvocationHandler implements InvocationHandler {
         ctx.setPipelineOk(true); // 默认流水线正常，安全阶段可设为 false
         ctx.setRuntimeType(AgentRuntimeType.EMBEDDED);
 
-        // 0. beforeAgentRun hook dispatch
+        // Phase 2: resolve thinking/reasoning/verbose levels from ChatRequest
+        // Priority: ChatRequest field > ResolvedAgentConfig default
+        String resolvedThinking = resolveLevel(request.getThinkingLevel(), resolvedConfig.getThinkingDefault());
+        if (resolvedThinking != null) {
+            ctx.setThinkingLevel(resolvedThinking);
+            ctx.setRunMetadata("thinkingLevel", resolvedThinking);
+            ctx.getRunMetadata().setThinkingLevel(resolvedThinking);
+            // Propagate back to ChatRequest so DefaultReActEngine.applyThinkingLevel() can read it
+            request.setThinkingLevel(resolvedThinking);
+        }
+
+        String resolvedReasoning = resolveLevel(request.getReasoningLevel(), resolvedConfig.getReasoningDefault());
+        if (resolvedReasoning != null) {
+            ctx.setReasoningLevel(resolvedReasoning);
+            ctx.setRunMetadata("reasoningLevel", resolvedReasoning);
+            ctx.getRunMetadata().setReasoningLevel(resolvedReasoning);
+        }
+
+        String resolvedVerbose = resolveLevel(request.getVerboseLevel(), resolvedConfig.getVerboseDefault());
+        if (resolvedVerbose != null) {
+            ctx.setVerboseLevel(resolvedVerbose);
+            ctx.setRunMetadata("verboseLevel", resolvedVerbose);
+            ctx.getRunMetadata().setVerboseLevel(resolvedVerbose);
+        }
+
+        // Phase 2: set resolved model/provider on runMetadata
+        // Used by ModelResolutionService.resolvedEffectiveModel() as first priority
+        if (resolvedConfig.getModel() != null && !resolvedConfig.getModel().isEmpty()) {
+            ctx.setRunMetadata("resolvedModel", resolvedConfig.getModel());
+            ctx.getRunMetadata().setResolvedModel(resolvedConfig.getModel());
+        }
+        if (resolvedConfig.getProvider() != null && !resolvedConfig.getProvider().isEmpty()) {
+            ctx.setRunMetadata("resolvedProvider", resolvedConfig.getProvider());
+            ctx.getRunMetadata().setResolvedProvider(resolvedConfig.getProvider());
+        }
+
+        // TODO: Phase 2 - wire delegate_to_agent tool via DelegateToAgentToolProvider
+        // into toolRegistry so that tool definitions include delegate_to_agent.
+        // The tool registry should be populated with delegate_to_agent when
+        // resolvedConfig.getDelegationMode() is not "none" and allowAgents is non-empty.
+
+        // 0. beforeAgentRun hook dispatch (with fully prepared context)
         hookRegistry.dispatchBeforeAgentRun(ctx);
 
         // 1. beforeRequest hooks（按 order 升序）
@@ -156,6 +197,16 @@ public class AgentInvocationHandler implements InvocationHandler {
         if (!userMessage.equals(ctx.getUserMessage())
                 || !Objects.equals(systemPrompt, ctx.getSystemPrompt())) {
             request = buildChatRequest(method, ctx.getUserMessage(), ctx.getSystemPrompt());
+            // Phase 2: preserve resolved thinking/reasoning/verbose levels on rebuilt request
+            if (ctx.getThinkingLevel() != null && !ctx.getThinkingLevel().isEmpty()) {
+                request.setThinkingLevel(ctx.getThinkingLevel());
+            }
+            if (ctx.getReasoningLevel() != null && !ctx.getReasoningLevel().isEmpty()) {
+                request.setReasoningLevel(ctx.getReasoningLevel());
+            }
+            if (ctx.getVerboseLevel() != null && !ctx.getVerboseLevel().isEmpty()) {
+                request.setVerboseLevel(ctx.getVerboseLevel());
+            }
             ctx.setChatRequest(request);
         }
 
@@ -495,6 +546,20 @@ public class AgentInvocationHandler implements InvocationHandler {
             }
         }
         return false;
+    }
+
+    /**
+     * Resolve a level value with priority: request-level override &gt; config-level default.
+     * Returns null if neither is set.
+     */
+    private static String resolveLevel(String requestValue, String configDefault) {
+        if (requestValue != null && !requestValue.isEmpty()) {
+            return requestValue;
+        }
+        if (configDefault != null && !configDefault.isEmpty()) {
+            return configDefault;
+        }
+        return null;
     }
 
     private ChatRequest buildChatRequest(Method method, String userMessage, String systemPrompt) {

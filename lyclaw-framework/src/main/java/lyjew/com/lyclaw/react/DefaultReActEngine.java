@@ -46,6 +46,11 @@ public class DefaultReActEngine implements ReActEngine {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Phase 2: thinking level → thinking budget mapping (token counts)
+    private static final int THINKING_BUDGET_LOW = 1024;
+    private static final int THINKING_BUDGET_MEDIUM = 4096;
+    private static final int THINKING_BUDGET_HIGH = 16384;
+
     private final ApprovalStore approvalStore;
     private final int maxToolRounds;
     private final long approvalTimeoutSeconds;
@@ -72,8 +77,39 @@ public class DefaultReActEngine implements ReActEngine {
 
     // ── 非流式 ReAct ────────────────────────────────────────────────
 
+    /**
+     * Phase 2: apply thinking level from ChatRequest to thinkingEnabled/thinkingBudget.
+     * Mapping: "off"→disabled, "low"→1024, "medium"→4096, "high"→16384,
+     * "minimal"→512, "xhigh"→32768, "adaptive"/"max"→16384.
+     * Falls back to ChatRequest.thinkingEnabled if already set.
+     */
+    private static void applyThinkingLevel(ChatRequest request) {
+        if (request.isThinkingEnabled() || request.getThinkingBudget() != null) {
+            return; // already explicitly configured, don't override
+        }
+        String level = request.getThinkingLevel();
+        if (level == null || level.isEmpty() || "off".equalsIgnoreCase(level)) {
+            request.setThinkingEnabled(false);
+            return;
+        }
+        int budget;
+        switch (level.toLowerCase()) {
+            case "minimal":  budget = 512;   break;
+            case "low":      budget = THINKING_BUDGET_LOW;    break;
+            case "medium":   budget = THINKING_BUDGET_MEDIUM; break;
+            case "high":     budget = THINKING_BUDGET_HIGH;   break;
+            case "xhigh":
+            case "max":
+            case "adaptive": budget = THINKING_BUDGET_HIGH;   break;
+            default:         budget = THINKING_BUDGET_MEDIUM; break;
+        }
+        request.setThinkingEnabled(true);
+        request.setThinkingBudget(budget);
+    }
+
     @Override
     public String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor) {
+        applyThinkingLevel(request);
         List<Message> messages = request.getMessages();
 
         // 无工具执行器时退化为单次 LLM 调用
@@ -140,6 +176,7 @@ public class DefaultReActEngine implements ReActEngine {
     @Override
     public Flux<ServerSentEvent<String>> executeStream(ChatFacade chatFacade, ChatRequest request,
                                                        ToolExecutor toolExecutor) {
+        applyThinkingLevel(request);
         // 无工具执行器时退化为简单流式
         if (toolExecutor == null) {
             return simpleStream(chatFacade, request);
@@ -156,6 +193,12 @@ public class DefaultReActEngine implements ReActEngine {
                 .<ServerSentEvent<String>>handle((chunk, sink) -> {
                     boolean hasContent = chunk.getContent() != null && !chunk.getContent().isEmpty();
                     boolean hasToolCalls = chunk.getToolCalls() != null && !chunk.getToolCalls().isEmpty();
+                    boolean hasThinking = chunk.getThinking() != null && !chunk.getThinking().isEmpty();
+
+                    // Phase 2: emit thinking events for reasoning_content
+                    if (hasThinking) {
+                        sink.next(sseEvent("thinking", chunk.getThinking()));
+                    }
 
                     if (state[0] == 2) { // 已在收集模式
                         buffer.add(chunk);
@@ -379,6 +422,12 @@ public class DefaultReActEngine implements ReActEngine {
                     .<ServerSentEvent<String>>handle((chunk, sink) -> {
                         boolean hasContent = chunk.getContent() != null && !chunk.getContent().isEmpty();
                         boolean hasToolCalls = chunk.getToolCalls() != null && !chunk.getToolCalls().isEmpty();
+                        boolean hasThinking = chunk.getThinking() != null && !chunk.getThinking().isEmpty();
+
+                        // Phase 2: emit thinking events for reasoning_content
+                        if (hasThinking) {
+                            sink.next(sseEvent("thinking", chunk.getThinking()));
+                        }
 
                         if (state[0] == 2) { // 已在收集模式
                             buffer.add(chunk);
@@ -485,10 +534,16 @@ public class DefaultReActEngine implements ReActEngine {
     private Flux<ServerSentEvent<String>> simpleStream(ChatFacade chatFacade, ChatRequest request) {
         request.setTools(null);
         request.setToolChoice(null);
+        applyThinkingLevel(request);
         ChatModel model = chatFacade.resolveModel(chatFacade.route(request, null));
         log.debug("ReAct simple stream via {}:{}", model.provider(), model.model());
         return model.stream(request)
                 .handle((chunk, sink) -> {
+                    // Phase 2: emit thinking events for reasoning_content
+                    String thinking = chunk.getThinking();
+                    if (thinking != null && !thinking.isEmpty()) {
+                        sink.next(sseEvent("thinking", thinking));
+                    }
                     String text = chunk.getContent() != null ? chunk.getContent() : "";
                     if (!text.isEmpty()) {
                         sink.next(sseEvent("message", text));

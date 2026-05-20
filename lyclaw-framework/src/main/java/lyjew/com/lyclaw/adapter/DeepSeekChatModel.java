@@ -40,6 +40,13 @@ import org.springframework.context.annotation.Bean;
  * 工具调用的流式模式时，思考模式将自动降级为关闭状态，框架会根据 ModelCapabilities
  * 声明自动处理此兼容性问题。
  *
+ * <p>Phase 2 推理内容处理：DeepSeek API 在流式 SSE 块的 delta 中返回
+ * {@code "reasoning_content"} 字段。父类 {@link OpenAiProtocolChatModel#parseChunk(String)}
+ * 已将该字段提取到 {@code ModelResponse.thinking} 中，下游的 {@code DefaultReActEngine}
+ * 负责将其转换为 {@code event: thinking} SSE 事件发送给前端展示。
+ * 调用方可通过 {@link lyjew.com.lyclaw.react.SseEventBuilder#thinkingEvent(String)}
+ * 构建标准的 thinking 事件字符串。
+ *
  * @see OpenAiProtocolChatModel
  * @see lyjew.com.lyclaw.chat.AbstractChatModel
  */

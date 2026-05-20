@@ -233,26 +233,26 @@ class AgentContextPhase1Test {
         }
 
         @Test
-        @DisplayName("getRunMetadata() 返回的 map 不可修改")
-        void getRunMetadataReturnsUnmodifiableMap() {
+        @DisplayName("getRunMetadataMap() 返回的 map 不可修改")
+        void getRunMetadataMapReturnsUnmodifiableMap() {
             AgentContext ctx = new AgentContext("s1", "hello", "sys", null, null, null);
             ctx.setRunMetadata("key", "value");
 
-            Map<String, Object> metadata = ctx.getRunMetadata();
+            Map<String, Object> metadata = ctx.getRunMetadataMap();
 
             assertThatThrownBy(() -> metadata.put("newKey", "newValue"))
                     .isInstanceOf(UnsupportedOperationException.class);
         }
 
         @Test
-        @DisplayName("getRunMetadata() 应返回已设置的所有条目")
-        void getRunMetadataReturnsAllEntries() {
+        @DisplayName("getRunMetadataMap() 应返回已设置的所有条目")
+        void getRunMetadataMapReturnsAllEntries() {
             AgentContext ctx = new AgentContext("s1", "hello", "sys", null, null, null);
             ctx.setRunMetadata("a", 1);
             ctx.setRunMetadata("b", "two");
             ctx.setRunMetadata("c", true);
 
-            Map<String, Object> metadata = ctx.getRunMetadata();
+            Map<String, Object> metadata = ctx.getRunMetadataMap();
 
             assertThat(metadata).hasSize(3);
             assertThat(metadata).containsEntry("a", 1);

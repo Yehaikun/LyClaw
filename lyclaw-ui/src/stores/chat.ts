@@ -73,6 +73,12 @@ export const useChatStore = defineStore('chat', () => {
   /** 等待用户审批的工具调用信息，非null时前端显示确认对话框 */
   const pendingApproval = ref<PendingApproval | null>(null)
 
+  /** 模型推理/思考阶段的流式文本（Phase 2 thinking/reasoning SSE 事件） */
+  const thinkingText = ref<string>('')
+
+  /** 子代理委派事件列表（Phase 2 subagent_spawned/subagent_ended SSE 事件） */
+  const subagentEvents = ref<Array<{ event: string; data: string }>>([])
+
   // ====================================================================
   // 计算属性（Getters）
   // ====================================================================
@@ -94,6 +100,9 @@ export const useChatStore = defineStore('chat', () => {
     }
     return null
   })
+
+  /** 模型是否正在输出推理/思考内容（Phase 2 thinking SSE 事件） */
+  const isThinking = computed<boolean>(() => thinkingText.value.length > 0)
 
   // ====================================================================
   // 操作方法（Actions）
@@ -149,6 +158,8 @@ export const useChatStore = defineStore('chat', () => {
     toolStatus.value = ''
     liveToolCalls.value = []
     pendingApproval.value = null
+    thinkingText.value = ''
+    subagentEvents.value = []
 
     try {
       await postChatStream(
@@ -170,6 +181,8 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push(assistantMsg)
           }
           currentStreamingText.value = ''
+          thinkingText.value = ''
+          subagentEvents.value = []
           toolStatus.value = ''
           liveToolCalls.value = []
           pendingApproval.value = null
@@ -187,6 +200,8 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push(partialMsg)
           }
           currentStreamingText.value = ''
+          thinkingText.value = ''
+          subagentEvents.value = []
           liveToolCalls.value = []
           pendingApproval.value = null
           isStreaming.value = false
@@ -268,6 +283,14 @@ export const useChatStore = defineStore('chat', () => {
             }
           } catch { /* ignore malformed JSON */ }
         },
+        // thinking 事件回调：Phase 2 模型推理/思考内容流式推送
+        (text: string) => {
+          setThinking(text)
+        },
+        // 通用事件回调：捕获未特定处理的 SSE 事件（subagent_spawned、subagent_ended 等）
+        (event: string, data: string) => {
+          addSubagentEvent(event, data)
+        },
       )
     } catch (err) {
       isStreaming.value = false
@@ -337,6 +360,31 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * 设置推理/思考流式文本（Phase 2 thinking SSE 事件回调）。
+   *
+   * @param text 累积的思考文本内容
+   */
+  function setThinking(text: string): void {
+    thinkingText.value += text
+  }
+
+  /** 清空推理/思考文本，在流结束时或新一轮对话开始时调用。 */
+  function clearThinking(): void {
+    thinkingText.value = ''
+  }
+
+  /**
+   * 添加子代理委派事件记录（Phase 2 subagent_spawned/subagent_ended SSE 事件）。
+   * 每收到一个子代理事件就追加到数组中，供视图层展示子代理的委派链路。
+   *
+   * @param event 事件类型（如 subagent_spawned、subagent_ended）
+   * @param data 事件携带的JSON数据
+   */
+  function addSubagentEvent(event: string, data: string): void {
+    subagentEvents.value.push({ event, data })
+  }
+
+  /**
    * 清空所有聊天消息和错误状态。
    *
    * 重置messages、currentStreamingText、error和errorTraceId。
@@ -345,6 +393,8 @@ export const useChatStore = defineStore('chat', () => {
   function clearChat(): void {
     messages.value = []
     currentStreamingText.value = ''
+    thinkingText.value = ''
+    subagentEvents.value = []
     error.value = null
     errorTraceId.value = undefined
     pendingApproval.value = null
@@ -485,10 +535,13 @@ export const useChatStore = defineStore('chat', () => {
     toolStatus,
     liveToolCalls,
     pendingApproval,
+    thinkingText,
+    subagentEvents,
     // 计算属性
     messageCount,
     lastMessage,
     lastUserMessage,
+    isThinking,
     // 操作方法
     sendMessage,
     stopGeneration,
@@ -498,5 +551,8 @@ export const useChatStore = defineStore('chat', () => {
     setSessionId,
     addToolCallMessage,
     respondToApproval,
+    setThinking,
+    clearThinking,
+    addSubagentEvent,
   }
 })

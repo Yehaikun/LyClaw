@@ -333,9 +333,10 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
                     content = source.get("content").asText();
                 }
 
-                // thinking 内容提取
+                // Phase 2: thinking 内容提取 (DeepSeek/OpenAI reasoning_content in SSE delta)
                 if (source.has("reasoning_content") && !source.get("reasoning_content").isNull()) {
                     thinking = source.get("reasoning_content").asText();
+                    log.trace("SSE reasoning_content detected: {} chars", thinking.length());
                 }
 
                 // tool_calls

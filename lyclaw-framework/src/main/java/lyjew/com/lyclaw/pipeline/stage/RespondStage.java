@@ -178,6 +178,11 @@ public class RespondStage extends PipelineStageBase {
 
             return model.stream(request)
                     .handle((response, sink) -> {
+                        // Phase 2: emit thinking events for reasoning_content
+                        String thinking = response.getThinking();
+                        if (thinking != null && !thinking.isEmpty()) {
+                            sink.next(sseEvent("thinking", thinking));
+                        }
                         String text = response.getContent() != null ? response.getContent() : "";
                         if (!text.isEmpty()) {
                             sink.next(sseEvent("message", text));

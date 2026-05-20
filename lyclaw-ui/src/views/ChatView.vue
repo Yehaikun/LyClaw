@@ -65,6 +65,9 @@ const messageListRef = ref<HTMLElement | null>(null)
 /** 用户是否手动向上滚动离开底部：为true时暂停自动滚动 */
 const userScrolledUp = ref(false)
 
+/** 是否展开显示推理/思考内容（Phase 2 thinking indicator） */
+const showThinking = ref(true)
+
 /** 判定"接近底部"的距离阈值（像素），在此范围内视为用户在底部 */
 const SCROLL_BOTTOM_THRESHOLD = 80
 
@@ -357,6 +360,17 @@ watch(
             </div>
           </div>
 
+          <!-- 推理/思考指示器：Phase 2 thinking SSE 事件驱动，展示模型深度推理内容 -->
+          <div v-if="chatStore.isThinking" class="thinking-reasoning">
+            <div class="thinking-reasoning-header" @click="showThinking = !showThinking">
+              <span>🧠 深度思考中...</span>
+              <span class="toggle-arrow">{{ showThinking ? '▼' : '▶' }}</span>
+            </div>
+            <div v-if="showThinking" class="thinking-reasoning-content">
+              <pre>{{ chatStore.thinkingText }}</pre>
+            </div>
+          </div>
+
           <!-- 实时工具调用卡片：tool_call SSE 事件驱动，展示加载动画 -->
           <div v-if="chatStore.liveToolCalls.length > 0" class="live-tool-calls">
             <ToolCallCard
@@ -607,6 +621,58 @@ watch(
   max-width: 720px;
   margin: 0 auto;
   width: 100%;
+}
+
+/* ---- 推理/思考指示器（Phase 2 thinking SSE 事件） ---- */
+.thinking-reasoning {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.thinking-reasoning-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 8px 12px;
+  border-radius: var(--rounded-sm);
+  background: rgba(245, 158, 11, 0.08);
+  font-family: var(--font-sans);
+  font-size: var(--body-sm-size);
+  color: #b45309;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.thinking-reasoning-header:hover {
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.toggle-arrow {
+  margin-left: auto;
+  font-size: 10px;
+  color: #d97706;
+  transition: transform var(--transition-fast);
+}
+
+.thinking-reasoning-content {
+  margin-top: 6px;
+  padding: 10px 14px;
+  border-left: 2px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.04);
+  border-radius: 0 var(--rounded-sm) var(--rounded-sm) 0;
+}
+
+.thinking-reasoning-content pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--body-sm-size);
+  color: #92400e;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
 }
 
 /* ---- Mobile ---- */
