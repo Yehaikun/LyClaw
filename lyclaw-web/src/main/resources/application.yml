@@ -133,7 +133,7 @@ lyclaw:
 
     # ReAct 循环最大工具调用轮数
     # 默认: 30
-    max-tool-rounds: 30
+    max-tool-rounds: 100
 
     # 工具审批超时（秒），前端弹窗等待用户确认的时间
     # 超时自动拒绝，默认: 30

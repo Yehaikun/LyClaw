@@ -15,7 +15,7 @@ import lyjew.com.lyclaw.error.ToolExecuteException;
  * 工具只负责执行并透明传递结果，由 LLM 根据输出文本自行理解命令执行情况。</p>
  */
 @Tool(name = "command",
-      description = "在本机环境中执行系统命令，主意不要执行危险命令",
+      description = "在本机环境中执行系统命令，注意不要执行危险命令，并且你命令不能长度太短，比如cd到某个目录，不能只写这个，不然步骤太多了容易出错误",
       readonly = false,
       group = "builtin")
 public class AnnotatedCommandTool {

@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,30 +187,144 @@ public class AgentInvocationHandler implements InvocationHandler {
         };
     }
 
+    private static final int MAX_REFLECTION_RETRIES = 2;
+    private static final double REFLECTION_RETRY_THRESHOLD = 0.6;
+
     /**
      * 流式执行 Stage 管线，返回 SSE 事件流。
+     * 包含 Plan→Execute→Reflect→Replan 闭环：ReflectionStage 评分低于阈值时自动重试。
      */
     private Flux<org.springframework.http.codec.ServerSentEvent<String>> executeStages(AgentContext ctx) {
         if (stages.isEmpty()) {
             return Flux.empty();
         }
 
-        Flux<org.springframework.http.codec.ServerSentEvent<String>> pipeline = stages.get(0).execute(ctx);
-        for (int i = 1; i < stages.size(); i++) {
-            ReactivePipelineStage stage = stages.get(i);
-            pipeline = pipeline.concatWith(stage.execute(ctx));
+        int planIdx = indexOfStage("PlanExecution");
+        int reflectionIdx = indexOfStage("Reflection");
+
+        if (reflectionIdx < 0 || planIdx < 0) {
+            return simpleConcat(ctx);
         }
-        return pipeline;
+
+        List<Flux<org.springframework.http.codec.ServerSentEvent<String>>> allFluxes = new ArrayList<>();
+
+        // 前置阶段（ContextBuild → SecurityCheck）
+        for (int i = 0; i < planIdx; i++) {
+            allFluxes.add(stages.get(i).execute(ctx));
+        }
+
+        // 可重试阶段块：PlanExecution → Respond → ReflectionStage
+        // 使用 repeat(condition) 实现重试（repeatWhen 在 Flux.concat 中会导致完成信号丢失）
+        AtomicInteger retries = new AtomicInteger(0);
+        Flux<org.springframework.http.codec.ServerSentEvent<String>> retryBlock = Flux.defer(() -> {
+            List<Flux<org.springframework.http.codec.ServerSentEvent<String>>> innerList = new ArrayList<>();
+            for (int i = planIdx; i <= reflectionIdx; i++) {
+                innerList.add(stages.get(i).execute(ctx));
+            }
+            return Flux.concat(innerList);
+        }).repeat(() -> {
+            double score = ctx.getReflectScoreRef().get();
+            int failCount = ctx.getFailCount().get();
+            int attempt = retries.incrementAndGet();
+            if (score < REFLECTION_RETRY_THRESHOLD && failCount > 0
+                    && attempt <= MAX_REFLECTION_RETRIES) {
+                log.info("Reflection score {} < threshold {} (failCount={}), retrying ({}/{})",
+                        String.format("%.2f", score), REFLECTION_RETRY_THRESHOLD,
+                        failCount, attempt, MAX_REFLECTION_RETRIES);
+                return true;
+            }
+            return false;
+        });
+
+        allFluxes.add(retryBlock);
+
+        // MetricsStage 在重试块之后
+        int metricsIdx = indexOfStage("Metrics");
+        if (metricsIdx >= 0) {
+            allFluxes.add(stages.get(metricsIdx).execute(ctx));
+        }
+
+        return Flux.concat(allFluxes);
     }
 
     /**
      * 阻塞执行 Stage 管线，收集最终响应文本。
+     * 包含 Plan→Execute→Reflect→Replan 闭环。
      */
     private String executeStagesBlocking(AgentContext ctx) {
         if (stages.isEmpty()) {
             return "";
         }
 
+        int planIdx = indexOfStage("PlanExecution");
+        int reflectionIdx = indexOfStage("Reflection");
+
+        if (reflectionIdx < 0 || planIdx < 0) {
+            return simpleConcatBlocking(ctx);
+        }
+
+        StringBuilder finalResponse = new StringBuilder();
+        try {
+            // 前置阶段
+            for (int i = 0; i < planIdx; i++) {
+                stages.get(i).execute(ctx).blockLast();
+            }
+
+            // 可重试阶段块
+            int retries = 0;
+            double score;
+            do {
+                for (int i = planIdx; i <= reflectionIdx; i++) {
+                    stages.get(i).execute(ctx)
+                            .doOnNext(event -> {
+                                if ("message".equals(event.event()) && event.data() != null) {
+                                    if (finalResponse.length() > 0) finalResponse.append("\n");
+                                    finalResponse.append(event.data());
+                                }
+                            })
+                            .blockLast();
+                }
+                score = ctx.getReflectScoreRef().get();
+                retries++;
+            } while (score < REFLECTION_RETRY_THRESHOLD && ctx.getFailCount().get() > 0
+                    && retries < MAX_REFLECTION_RETRIES);
+
+            ctx.setAttribute("finalResponse", finalResponse.toString());
+
+            // MetricsStage
+            int metricsIdx = indexOfStage("Metrics");
+            if (metricsIdx >= 0) {
+                stages.get(metricsIdx).execute(ctx).blockLast();
+            }
+        } catch (Exception e) {
+            log.error("Stage pipeline execution failed", e);
+            return "Error: " + e.getMessage();
+        }
+
+        String result = ctx.getAttribute("finalResponse");
+        return result != null ? result : finalResponse.toString();
+    }
+
+    private int indexOfStage(String stageName) {
+        for (int i = 0; i < stages.size(); i++) {
+            if (stageName.equals(stages.get(i).getStageName())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** 无 ReflectionStage 时的简单串接（无重试） */
+    private Flux<org.springframework.http.codec.ServerSentEvent<String>> simpleConcat(AgentContext ctx) {
+        Flux<org.springframework.http.codec.ServerSentEvent<String>> pipeline = stages.get(0).execute(ctx);
+        for (int i = 1; i < stages.size(); i++) {
+            pipeline = pipeline.concatWith(stages.get(i).execute(ctx));
+        }
+        return pipeline;
+    }
+
+    /** 无 ReflectionStage 时的简单串接（阻塞，无重试） */
+    private String simpleConcatBlocking(AgentContext ctx) {
         StringBuilder finalResponse = new StringBuilder();
         try {
             Flux<org.springframework.http.codec.ServerSentEvent<String>> pipeline = stages.get(0).execute(ctx);
@@ -229,7 +344,6 @@ public class AgentInvocationHandler implements InvocationHandler {
             log.error("Stage pipeline execution failed", e);
             return "Error: " + e.getMessage();
         }
-
         String result = ctx.getAttribute("finalResponse");
         return result != null ? result : finalResponse.toString();
     }

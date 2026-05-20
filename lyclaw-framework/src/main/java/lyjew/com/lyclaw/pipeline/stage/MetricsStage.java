@@ -18,7 +18,7 @@ import java.util.Map;
  * 指标记录阶段，order=4，管线最后一个阶段。
  */
 @Slf4j
-@PipelineStage(name = "Metrics", after = RespondStage.class, group = "POSTPROCESSING")
+@PipelineStage(name = "Metrics", after = ReflectionStage.class, group = "POSTPROCESSING")
 public class MetricsStage extends PipelineStageBase {
 
     private final MemorySystem memorySystem;
@@ -102,7 +102,7 @@ public class MetricsStage extends PipelineStageBase {
     }
 
     @Override
-    public int getOrder() { return 4; }
+    public int getOrder() { return 5; }
 
     @Override
     public String getStageName() { return "Metrics"; }
