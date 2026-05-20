@@ -1,37 +1,12 @@
 package lyjew.com.lyclaw.annotation;
 
+import java.lang.annotation.*;
 import org.springframework.stereotype.Component;
 
-import java.lang.annotation.Documented;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
 /**
- * AI 智能体（Agent）声明注解，用于将一个类标记为 LyClaw 框架中的自主 AI 智能体组件。
+ * AI Agent 声明注解 —— 对标 OpenClaw AgentConfig 的完整字段集合。
  *
- * <p>在 LyClaw 的智能体架构中，Agent 是具有独立决策能力、可自主执行多步任务的高级
- * AI 组件。与单一的 Tool 不同，Agent 通常包含更复杂的内部逻辑，如多轮对话管理、
- * 工具编排、子任务分解和结果综合等能力。被 {@code @Agent} 注解标记的类通过
- * {@link org.springframework.stereotype.Component} 元注解自动被 Spring 容器发现并
- * 注册为 Bean，框架的 AgentRegistry 负责管理所有已注册的 Agent 实例。
- *
- * <p>Agent 的生命周期由框架管理：启动时自动注册，运行时通过名称查找和调度，
- * 支持在对话流程中作为子任务执行器被调用，也支持独立的 Agent-to-Agent 通信。
- *
- * <p>核心属性说明：
- * <ul>
- *   <li><b>name</b>：Agent 的名称，用于在框架中唯一标识和查找该 Agent。建议使用
- *       简短有意义的英文名称，如 "code-reviewer"、"data-analyst"</li>
- *   <li><b>description</b>：Agent 的功能描述，用于运维面板展示和自动生成
- *       AI 可理解的 Agent 能力说明，帮助路由决策选择最合适的 Agent</li>
- *   <li><b>version</b>：Agent 的语义化版本号（SemVer），用于追踪 Agent 的迭代历史
- *       和兼容性管理</li>
- * </ul>
- *
- * @see lyjew.com.lyclaw.annotation.tool.Tool
- * @see lyjew.com.lyclaw.annotation.PipelineStage
+ * 字段解析优先级：Agent 级别 > 全局默认值(lyclaw.agent.defaults.*) > 系统内置默认值。
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -39,63 +14,91 @@ import java.lang.annotation.Target;
 @Documented
 public @interface Agent {
 
-    /**
-     * Agent 的名称，用于在框架的 AgentRegistry 中唯一标识该 Agent。
-     *
-     * <p>该名称将作为注册表中的键值，运行时通过此名称查找和调度 Agent。建议使用
-     * 简短、描述性强的小写英文标识，如 "code-reviewer"、"data-analyst"。
-     *
-     * @return Agent 的名称字符串，默认为空字符串（使用类名推断）
-     */
+    // ── 身份标识 ──────────────────────────────────────────────
+    /** Agent 唯一标识符。为空时从类简单名称派生。 */
+    String id() default "";
+
+    /** 此 Agent 是否为默认 Agent。 */
+    boolean defaultAgent() default false;
+
+    /** 人类可读的显示名称。 */
     String name() default "";
 
-    /**
-     * Agent 的功能描述，说明该 Agent 的用途、能力和适用场景。
-     *
-     * <p>该描述将展示在运维面板和 Actuator 端点中，也可能被注入到 AI 模型的
-     * 上下文中作为 Agent 选择决策的参考信息。
-     *
-     * @return Agent 的功能描述字符串，默认为空字符串
-     */
+    /** UI 中显示的描述信息，用于 Agent 选择路由。 */
     String description() default "";
 
-    /**
-     * Agent 的语义化版本号，遵循 SemVer 规范（主版本.次版本.修订号）。
-     *
-     * <p>版本号用于追踪 Agent 的功能迭代和接口变更，框架的依赖管理系统可据此
-     * 进行兼容性检查和版本冲突检测。
-     *
-     * @return Agent 的版本号字符串，默认为 "1.0.0"
-     */
+    /** 语义化版本（SemVer）。 */
     String version() default "1.0.0";
 
-    /**
-     * 指定该 Agent 使用的模型名称（如 "deepseek-v4-flash"）。
-     * 为空时使用系统默认模型。
-     */
+    // ── 工作区 ─────────────────────────────────────────────────
+    /** 此 Agent 的工作区根目录。为空则使用全局工作区。 */
+    String workspace() default "";
+
+    /** 工作区下 Agent 专属子目录。为空则使用 agent id。 */
+    String agentDir() default "";
+
+    // ── 系统提示词 ──────────────────────────────────────────
+    /** 覆盖从引导文件加载的系统提示词。 */
+    String systemPromptOverride() default "";
+
+    // ── 模型 ──────────────────────────────────────────────────
+    /** 模型名称（如 "deepseek-v4-flash"）。为空 = 使用默认值。 */
     String model() default "";
 
-    /**
-     * 指定该 Agent 使用的模型提供商（如 "deepseek"、"openai"）。
-     * 为空时使用系统默认提供商。
-     */
+    /** 提供商键值（如 "deepseek"、"openai"）。为空 = 使用默认值。 */
     String provider() default "";
 
-    /**
-     * 扩展配置键值对，用于为 Agent 注入框架级配置而不修改注解定义。
-     *
-     * <p>支持的功能键包括（不限于）：
-     * <ul>
-     *   <li>{@code planning.enabled} — 是否启用任务规划</li>
-     *   <li>{@code planning.strategy} — 规划策略（dag/cot/react/hierarchical）</li>
-     *   <li>{@code memory.topK} — 记忆检索数量</li>
-     *   <li>{@code tool.dynamicFiltering} — 是否启用动态工具筛选</li>
-     *   <li>{@code mcp.servers} — MCP Server 地址列表（逗号分隔）</li>
-     *   <li>{@code outputGuard.enabled} — 是否启用输出护栏</li>
-     *   <li>{@code communication.protocol} — Agent 通信协议</li>
-     *   <li>{@code maxToolRounds} — 最大工具调用轮数</li>
-     *   <li>{@code sandbox} — 沙箱级别</li>
-     * </ul>
-     */
+    /** 有序的备用模型键值列表，主模型失败时按序尝试。 */
+    String[] fallbacks() default {};
+
+    // ── 技能 ─────────────────────────────────────────────────
+    /** 附加到此 Agent 的技能标识符列表。 */
+    String[] skills() default {};
+
+    // ── 思考 / 详细度 / 推理 ─────────────────────────────
+    /** 默认思考级别: off, minimal, low, medium, high, xhigh, adaptive, max。 */
+    String thinkingDefault() default "";
+
+    /** 默认详细度级别。 */
+    String verboseDefault() default "";
+
+    /** 默认推理级别。 */
+    String reasoningDefault() default "";
+
+    /** 快速模式：为 true 时跳过昂贵的预处理步骤。 */
+    boolean fastModeDefault() default false;
+
+    // ── 上下文 ─────────────────────────────────────────────────
+    /** 为此 Agent 预留的上下文窗口 Token 数。0 = 使用全局默认值。 */
+    int contextTokens() default 0;
+
+    /** 从单个引导文件中加载的最大字符数。0 = 使用默认值。 */
+    int bootstrapMaxChars() default 0;
+
+    /** 所有引导文件合计的最大字符数。0 = 使用默认值。 */
+    int bootstrapTotalMaxChars() default 0;
+
+    /** 何时注入引导内容: always, continuation-skip, never。 */
+    String contextInjection() default "always";
+
+    // ── 子 Agent 委托 ────────────────────────────────────
+    /** 委托模式: suggest（建议，用户确认）或 prefer（优先委托）。 */
+    String delegationMode() default "suggest";
+
+    /** 允许委托的 Agent ID 白名单。为空 = 不限制。 */
+    String[] allowAgents() default {};
+
+    /** 生成子 Agent 的最大嵌套深度。0 = 使用默认值。 */
+    int maxSpawnDepth() default 0;
+
+    /** 单层中最多可生成的子 Agent 数量。0 = 使用默认值。 */
+    int maxChildrenPerAgent() default 0;
+
+    // ── 沙箱 ────────────────────────────────────────────────
+    /** 沙箱模式: none, docker, podman。 */
+    String sandbox() default "";
+
+    // ── 扩展（向后兼容的逃生舱口） ──────────────────────
+    /** 供插件使用的任意键值对。优先使用上方的类型化字段。 */
     Extension[] extensions() default {};
 }

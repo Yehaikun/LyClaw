@@ -6,10 +6,13 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
 import lyjew.com.lyclaw.autoconfigure.processor.AgentInterfaceProcessor;
 import lyjew.com.lyclaw.chat.ChatFacade;
+import lyjew.com.lyclaw.config.AgentConfigResolver;
+import lyjew.com.lyclaw.config.AgentDefaultsConfig;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.react.AgentHook;
 import lyjew.com.lyclaw.react.AgentProxyFactory;
@@ -27,18 +30,27 @@ import lyjew.com.lyclaw.tool.ToolRegistry;
 @AutoConfiguration
 @AutoConfigureAfter({ChatAutoConfiguration.class, ReActAutoConfiguration.class, ToolAutoConfiguration.class})
 @ConditionalOnClass({ReActEngine.class, ToolRegistry.class, ChatFacade.class})
+@EnableConfigurationProperties(AgentDefaultsConfig.class)
 public class AgentProxyAutoConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean(AgentConfigResolver.class)
+    public AgentConfigResolver agentConfigResolver(AgentDefaultsConfig defaults) {
+        return new AgentConfigResolver(defaults);
+    }
 
     @Bean
     @ConditionalOnMissingBean(AgentProxyFactory.class)
     public AgentProxyFactory agentProxyFactory(ChatFacade chatFacade,
                                                 ReActEngine reActEngine,
                                                 ToolRegistry toolRegistry,
-                                                List<ReactivePipelineStage> stages) {
-        List<AgentHook> hooks = List.of();
+                                                List<ReactivePipelineStage> stages,
+                                                List<AgentHook> hooks,
+                                                AgentConfigResolver configResolver) {
+        List<AgentHook> hookList = hooks != null ? hooks : List.of();
         List<ReactivePipelineStage> pipelineStages = stages != null ? stages : List.of();
         return new AgentProxyFactory(chatFacade, reActEngine, toolRegistry,
-                null, null, null, hooks, pipelineStages);
+                null, null, null, hookList, pipelineStages, configResolver);
     }
 
     @Bean

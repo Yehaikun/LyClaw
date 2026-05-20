@@ -75,4 +75,94 @@ public interface AgentHook {
 
     /** 优先级，数值越小越先执行。默认 100。 */
     default int getOrder() { return 100; }
+
+    // ── 模型生命周期 ──────────────────────────────────────────
+
+    /** 模型解析前调用 —— 可拦截/修改模型选择。 */
+    default void beforeModelResolve(AgentContext ctx) {}
+
+    /** 模型调用开始时调用 —— 记录/审计 LLM 调用开始。 */
+    default void modelCallStarted(AgentContext ctx) {}
+
+    /** 模型调用结束时调用 —— 记录/审计 LLM 调用结束。 */
+    default void modelCallEnded(AgentContext ctx) {}
+
+    /** LLM 输入发送前调用 —— 审查发送给 LLM 的完整 prompt。 */
+    default void llmInput(String prompt, AgentContext ctx) {}
+
+    /** LLM 输出接收后调用 —— 审查 LLM 原始响应。 */
+    default void llmOutput(String response, AgentContext ctx) {}
+
+    // ── Agent 生命周期 ────────────────────────────────────────
+
+    /** Agent 启动时调用（DEPRECATED：使用 beforeAgentRun）。 */
+    default void beforeAgentStart(AgentContext ctx) {}
+
+    /** Agent 回复发送前调用 —— 可过滤/转换最终回复。 */
+    default void beforeAgentReply(String reply, AgentContext ctx) {}
+
+    /** Agent 最终化前调用 —— 修订门控：返回 CONTINUE/REVISE/FINALIZE。 */
+    default AgentFinalizeResult beforeAgentFinalize(AgentContext ctx) {
+        return AgentFinalizeResult.continue_();
+    }
+
+    /** Agent 运行结束时调用 —— 清理、通知。 */
+    default void agentEnd(AgentContext ctx) {}
+
+    /** Agent 运行开始前调用 —— 门控：可抛出异常阻止运行。 */
+    default void beforeAgentRun(AgentContext ctx) {}
+
+    // ── 工具生命周期 ────────────────────────────────────────
+
+    /** 工具调用前调用 —— 可门控（PASS/BLOCK）。参数为 JSON 字符串。 */
+    default void beforeToolCall(String toolName, String toolCallId, String args, AgentContext ctx) {}
+
+    /** 工具调用后调用 —— 记录结果、副作用。 */
+    default void afterToolCall(String toolName, String toolCallId, String result, AgentContext ctx) {}
+
+    /** 工具结果持久化时调用。 */
+    default void toolResultPersist(String toolName, String result, AgentContext ctx) {}
+
+    // ── 会话生命周期 ────────────────────────────────────────
+
+    /** 会话开始时调用。 */
+    default void sessionStart(String sessionId, AgentContext ctx) {}
+
+    /** 会话结束时调用。 */
+    default void sessionEnd(String sessionId, AgentContext ctx) {}
+
+    // ── 子Agent生命周期 ───────────────────────────────────
+
+    /** 子 Agent 生成前调用。 */
+    default void subagentSpawning(String childAgentId, String task, AgentContext ctx) {}
+
+    /** 子 Agent 生成完成后调用。 */
+    default void subagentSpawned(String childAgentId, String sessionKey, AgentContext ctx) {}
+
+    /** 子 Agent 结束时调用。outcome: "ok", "error", "timeout", "killed"。 */
+    default void subagentEnded(String childAgentId, String outcome, AgentContext ctx) {}
+
+    // ── Compaction ───────────────────────────────────────────
+
+    /** 上下文压缩前调用。 */
+    default void beforeCompaction(AgentContext ctx) {}
+
+    /** 上下文压缩后调用。 */
+    default void afterCompaction(AgentContext ctx) {}
+
+    // ── 消息生命周期 ────────────────────────────────────────
+
+    /** 消息接收时调用 —— 可过滤/转换入站消息。 */
+    default void messageReceived(Message msg, AgentContext ctx) {}
+
+    /** 消息发送前调用。 */
+    default void messageSending(String msg, AgentContext ctx) {}
+
+    /** 消息发送后调用。 */
+    default void messageSent(String msg, AgentContext ctx) {}
+
+    // ── 心跳检测 ────────────────────────────────────────────
+
+    /** 心跳提示词贡献 —— 返回要追加到心跳 prompt 的字符串。 */
+    default String heartbeatPromptContribution(AgentContext ctx) { return ""; }
 }

@@ -2,6 +2,7 @@ package lyjew.com.lyclaw.react;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,30 @@ public class AgentContext {
     // ========== 扩展属性 ==========
     private final Map<String, Object> attributes = new HashMap<>();
 
+    // ========== Phase 1 新增字段 ==========
+    /** Agent 唯一标识符 */
+    private String agentId;
+    /** Agent 显示名称 */
+    private String agentName;
+    /** 工作区目录 */
+    private String workspaceDir;
+    /** Agent 专属目录 */
+    private String agentDir;
+    /** 解析后的 Agent 配置（不可变） */
+    private lyjew.com.lyclaw.config.ResolvedAgentConfig resolvedConfig;
+    /** 思考级别 */
+    private String thinkingLevel;
+    /** 详细度级别 */
+    private String verboseLevel;
+    /** 推理级别 */
+    private String reasoningLevel;
+    /** 运行时类型 */
+    private AgentRuntimeType runtimeType = AgentRuntimeType.EMBEDDED;
+    /** 运行元数据（runId, jobId, trigger 等） */
+    private final Map<String, Object> runMetadata = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 活跃的子 Agent ID 集合 */
+    private final java.util.Set<String> activeSubagentIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     /**
      * 构造 AgentContext。
      */
@@ -74,6 +99,17 @@ public class AgentContext {
         this.method = method;
         this.args = args;
         this.tracing = new TraceContext();
+    }
+
+    /**
+     * 构造 AgentContext（含 agentId 和 agentName）。
+     */
+    public AgentContext(String sessionId, String userMessage, String systemPrompt,
+                        ToolRegistry toolRegistry, Method method, Object[] args,
+                        String agentId, String agentName) {
+        this(sessionId, userMessage, systemPrompt, toolRegistry, method, args);
+        this.agentId = agentId;
+        this.agentName = agentName;
     }
 
     // ========== Agent 标识 getters/setters ==========
@@ -136,6 +172,48 @@ public class AgentContext {
     public void setAttribute(String key, Object value) { attributes.put(key, value); }
     public Map<String, Object> getAttributes() { return attributes; }
 
+    // ========== Phase 1 新增 getters/setters ==========
+
+    public String getAgentId() { return agentId; }
+    public void setAgentId(String agentId) { this.agentId = agentId; }
+
+    public String getAgentName() { return agentName; }
+    public void setAgentName(String agentName) { this.agentName = agentName; }
+
+    public String getWorkspaceDir() { return workspaceDir; }
+    public void setWorkspaceDir(String workspaceDir) { this.workspaceDir = workspaceDir; }
+
+    public String getAgentDir() { return agentDir; }
+    public void setAgentDir(String agentDir) { this.agentDir = agentDir; }
+
+    public lyjew.com.lyclaw.config.ResolvedAgentConfig getResolvedConfig() { return resolvedConfig; }
+    public void setResolvedConfig(lyjew.com.lyclaw.config.ResolvedAgentConfig resolvedConfig) { this.resolvedConfig = resolvedConfig; }
+
+    public String getThinkingLevel() { return thinkingLevel; }
+    public void setThinkingLevel(String thinkingLevel) { this.thinkingLevel = thinkingLevel; }
+
+    public String getVerboseLevel() { return verboseLevel; }
+    public void setVerboseLevel(String verboseLevel) { this.verboseLevel = verboseLevel; }
+
+    public String getReasoningLevel() { return reasoningLevel; }
+    public void setReasoningLevel(String reasoningLevel) { this.reasoningLevel = reasoningLevel; }
+
+    public AgentRuntimeType getRuntimeType() { return runtimeType; }
+    public void setRuntimeType(AgentRuntimeType runtimeType) { this.runtimeType = runtimeType; }
+
+    // ========== 运行元数据 ==========
+
+    public Object getRunMetadata(String key) { return runMetadata.get(key); }
+    public void setRunMetadata(String key, Object value) { runMetadata.put(key, value); }
+    public Map<String, Object> getRunMetadata() { return Collections.unmodifiableMap(runMetadata); }
+
+    // ========== 活跃子 Agent ==========
+
+    public boolean addActiveSubagent(String agentId) { return activeSubagentIds.add(agentId); }
+    public boolean removeActiveSubagent(String agentId) { return activeSubagentIds.remove(agentId); }
+    public java.util.Set<String> getActiveSubagentIds() { return Collections.unmodifiableSet(activeSubagentIds); }
+    public int getActiveSubagentCount() { return activeSubagentIds.size(); }
+
     // ========== 生命周期：检查点 ==========
 
     /**
@@ -157,6 +235,15 @@ public class AgentContext {
         snapshot.put("reflectScore", reflectScoreRef.get());
         snapshot.put("toolResults", new ArrayList<>(toolResults));
         snapshot.put("tracing", Map.of("traceId", tracing.getTraceId()));
+        // Phase 1 新增字段
+        snapshot.put("agentId", agentId);
+        snapshot.put("agentName", agentName);
+        snapshot.put("workspaceDir", workspaceDir);
+        snapshot.put("agentDir", agentDir);
+        snapshot.put("thinkingLevel", thinkingLevel);
+        snapshot.put("verboseLevel", verboseLevel);
+        snapshot.put("reasoningLevel", reasoningLevel);
+        snapshot.put("runtimeType", runtimeType != null ? runtimeType.name() : null);
         return snapshot;
     }
 
@@ -194,6 +281,31 @@ public class AgentContext {
         if (snapshot.get("toolResults") instanceof List<?> list) {
             this.toolResults.clear();
             for (Object item : list) this.toolResults.add((String) item);
+        }
+        // Phase 1 新增字段恢复
+        if (snapshot.get("agentId") != null) {
+            this.agentId = (String) snapshot.get("agentId");
+        }
+        if (snapshot.get("agentName") != null) {
+            this.agentName = (String) snapshot.get("agentName");
+        }
+        if (snapshot.get("workspaceDir") != null) {
+            this.workspaceDir = (String) snapshot.get("workspaceDir");
+        }
+        if (snapshot.get("agentDir") != null) {
+            this.agentDir = (String) snapshot.get("agentDir");
+        }
+        if (snapshot.get("thinkingLevel") != null) {
+            this.thinkingLevel = (String) snapshot.get("thinkingLevel");
+        }
+        if (snapshot.get("verboseLevel") != null) {
+            this.verboseLevel = (String) snapshot.get("verboseLevel");
+        }
+        if (snapshot.get("reasoningLevel") != null) {
+            this.reasoningLevel = (String) snapshot.get("reasoningLevel");
+        }
+        if (snapshot.get("runtimeType") != null) {
+            this.runtimeType = AgentRuntimeType.valueOf((String) snapshot.get("runtimeType"));
         }
     }
 

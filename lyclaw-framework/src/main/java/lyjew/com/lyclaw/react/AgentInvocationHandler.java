@@ -18,6 +18,7 @@ import lyjew.com.lyclaw.annotation.agent.SystemMessage;
 import lyjew.com.lyclaw.annotation.agent.UserMessage;
 import lyjew.com.lyclaw.annotation.agent.V;
 import lyjew.com.lyclaw.chat.ChatFacade;
+import lyjew.com.lyclaw.config.ResolvedAgentConfig;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolCall;
@@ -54,12 +55,48 @@ public class AgentInvocationHandler implements InvocationHandler {
     private final String providerOverride;
     private final List<AgentHook> hooks;
     private final List<ReactivePipelineStage> stages;
+    private final HookRegistry hookRegistry;
+    private final ResolvedAgentConfig resolvedConfig;
 
     public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
                                    ToolRegistry toolRegistry, String defaultSystemPrompt,
                                    String modelOverride, String providerOverride,
                                    List<AgentHook> hooks,
                                    List<ReactivePipelineStage> stages) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
+                providerOverride, hooks, stages, null, null);
+    }
+
+    /** Constructor with HookRegistry (backward compatible). */
+    public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
+                                   ToolRegistry toolRegistry, String defaultSystemPrompt,
+                                   String modelOverride, String providerOverride,
+                                   List<AgentHook> hooks,
+                                   List<ReactivePipelineStage> stages,
+                                   HookRegistry hookRegistry) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
+                providerOverride, hooks, stages, hookRegistry, null);
+    }
+
+    /** Constructor with ResolvedAgentConfig (used by AgentProxyFactory). */
+    public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
+                                   ToolRegistry toolRegistry, String defaultSystemPrompt,
+                                   String modelOverride, String providerOverride,
+                                   List<AgentHook> hooks,
+                                   List<ReactivePipelineStage> stages,
+                                   ResolvedAgentConfig resolvedConfig) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
+                providerOverride, hooks, stages, null, resolvedConfig);
+    }
+
+    /** Full constructor. */
+    public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
+                                   ToolRegistry toolRegistry, String defaultSystemPrompt,
+                                   String modelOverride, String providerOverride,
+                                   List<AgentHook> hooks,
+                                   List<ReactivePipelineStage> stages,
+                                   HookRegistry hookRegistry,
+                                   ResolvedAgentConfig resolvedConfig) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
@@ -68,6 +105,12 @@ public class AgentInvocationHandler implements InvocationHandler {
         this.providerOverride = providerOverride;
         this.hooks = hooks != null ? List.copyOf(hooks) : List.of();
         this.stages = stages != null ? sortedStages(stages) : List.of();
+        this.hookRegistry = hookRegistry != null ? hookRegistry : new HookRegistry();
+        this.resolvedConfig = resolvedConfig != null ? resolvedConfig : ResolvedAgentConfig.builder().build();
+        // 将所有现有 hooks 注册到 HookRegistry
+        for (AgentHook hook : this.hooks) {
+            this.hookRegistry.register(hook, "agent-hook", hook.getOrder());
+        }
     }
 
     private static List<ReactivePipelineStage> sortedStages(List<ReactivePipelineStage> stages) {
@@ -97,6 +140,10 @@ public class AgentInvocationHandler implements InvocationHandler {
                 toolRegistry, method, args);
         ctx.setChatRequest(request);
         ctx.setPipelineOk(true); // 默认流水线正常，安全阶段可设为 false
+        ctx.setRuntimeType(AgentRuntimeType.EMBEDDED);
+
+        // 0. beforeAgentRun hook dispatch
+        hookRegistry.dispatchBeforeAgentRun(ctx);
 
         // 1. beforeRequest hooks（按 order 升序）
         List<AgentHook> sorted = new ArrayList<>(hooks);
@@ -119,8 +166,15 @@ public class AgentInvocationHandler implements InvocationHandler {
 
         if (!stages.isEmpty()) {
             // 2a. Stage 管线路径
+            // 模型调用前 dispatch（stage 管线内嵌 ReAct 循环）
+            hookRegistry.dispatchBeforeModelResolve(ctx);
+            hookRegistry.dispatchModelCallStarted(ctx);
+
             if (returnType == Flux.class) {
                 Flux<org.springframework.http.codec.ServerSentEvent<String>> stageFlux = executeStages(ctx);
+                // 模型调用后 dispatch（Flux 场景在完成时触发）
+                stageFlux = stageFlux
+                        .doOnComplete(() -> hookRegistry.dispatchModelCallEnded(ctx));
                 if (returnsSSE) {
                     return stageFlux;
                 }
@@ -128,6 +182,8 @@ public class AgentInvocationHandler implements InvocationHandler {
                         .mapNotNull(event -> "message".equals(event.event()) ? event.data() : null);
             }
             result = executeStagesBlocking(ctx);
+            // 模型调用后 dispatch（阻塞场景）
+            hookRegistry.dispatchModelCallEnded(ctx);
         } else {
             // 2b. 无 Stage 时的降级路径：直接 ReActEngine（向后兼容）
             ToolExecutor toolExecutor = buildToolExecutor(ctx);
@@ -135,9 +191,15 @@ public class AgentInvocationHandler implements InvocationHandler {
                 toolExecutor = hook.wrapToolExecutor(toolExecutor, ctx);
             }
 
+            // 模型调用前 dispatch
+            hookRegistry.dispatchBeforeModelResolve(ctx);
+            hookRegistry.dispatchModelCallStarted(ctx);
+
             if (returnType == Flux.class) {
                 Flux<org.springframework.http.codec.ServerSentEvent<String>> reActFlux =
                         reActEngine.executeStream(chatFacade, ctx.getChatRequest(), toolExecutor);
+                // 模型调用后 dispatch
+                hookRegistry.dispatchModelCallEnded(ctx);
                 if (returnsSSE) {
                     return reActFlux;
                 }
@@ -146,12 +208,17 @@ public class AgentInvocationHandler implements InvocationHandler {
             }
 
             result = reActEngine.execute(chatFacade, ctx.getChatRequest(), toolExecutor);
+            // 模型调用后 dispatch
+            hookRegistry.dispatchModelCallEnded(ctx);
         }
 
         // 3. afterResult hooks（按 order 降序）
         for (int i = sorted.size() - 1; i >= 0; i--) {
             result = sorted.get(i).afterResult(result, ctx);
         }
+
+        // 4. agentEnd hook dispatch
+        hookRegistry.dispatchAgentEnd(ctx);
 
         if (returnType == Mono.class) {
             return Mono.justOrEmpty(result);
@@ -166,6 +233,8 @@ public class AgentInvocationHandler implements InvocationHandler {
 
     private ToolExecutor buildToolExecutor(AgentContext ctx) {
         return (toolName, toolCallId, argumentsJson) -> {
+            // beforeToolCall dispatch
+            hookRegistry.dispatchBeforeToolCall(toolName, toolCallId, argumentsJson, ctx);
             try {
                 ToolCall toolCall = ToolCall.builder()
                         .toolCallId(toolCallId)
@@ -176,13 +245,21 @@ public class AgentInvocationHandler implements InvocationHandler {
                 if (!result.isSuccess()) {
                     result = toolRegistry.executeByName(toolName, toolCallId, argumentsJson, ctx.getChatRequest());
                 }
+                String output;
                 if (result.isSuccess()) {
-                    return result.getResult() != null ? result.getResult() : "";
+                    output = result.getResult() != null ? result.getResult() : "";
+                } else {
+                    output = "Error: " + (result.getError() != null ? result.getError() : "unknown");
                 }
-                return "Error: " + (result.getError() != null ? result.getError() : "unknown");
+                // afterToolCall dispatch
+                hookRegistry.dispatchAfterToolCall(toolName, toolCallId, output, ctx);
+                return output;
             } catch (Exception e) {
                 log.error("Tool execution failed: tool={} toolCallId={}", toolName, toolCallId, e);
-                return "Error: " + e.getMessage();
+                String errorOutput = "Error: " + e.getMessage();
+                // afterToolCall dispatch (even on error)
+                hookRegistry.dispatchAfterToolCall(toolName, toolCallId, errorOutput, ctx);
+                return errorOutput;
             }
         };
     }
@@ -244,7 +321,8 @@ public class AgentInvocationHandler implements InvocationHandler {
             allFluxes.add(stages.get(metricsIdx).execute(ctx));
         }
 
-        return Flux.concat(allFluxes);
+        return Flux.concat(allFluxes)
+                .doOnComplete(() -> hookRegistry.dispatchBeforeAgentFinalize(ctx));
     }
 
     /**
@@ -291,6 +369,9 @@ public class AgentInvocationHandler implements InvocationHandler {
 
             ctx.setAttribute("finalResponse", finalResponse.toString());
 
+            // beforeAgentFinalize dispatch
+            hookRegistry.dispatchBeforeAgentFinalize(ctx);
+
             // MetricsStage
             int metricsIdx = indexOfStage("Metrics");
             if (metricsIdx >= 0) {
@@ -320,7 +401,8 @@ public class AgentInvocationHandler implements InvocationHandler {
         for (int i = 1; i < stages.size(); i++) {
             pipeline = pipeline.concatWith(stages.get(i).execute(ctx));
         }
-        return pipeline;
+        return pipeline
+                .doOnComplete(() -> hookRegistry.dispatchBeforeAgentFinalize(ctx));
     }
 
     /** 无 ReflectionStage 时的简单串接（阻塞，无重试） */
@@ -344,6 +426,8 @@ public class AgentInvocationHandler implements InvocationHandler {
             log.error("Stage pipeline execution failed", e);
             return "Error: " + e.getMessage();
         }
+        // beforeAgentFinalize dispatch
+        hookRegistry.dispatchBeforeAgentFinalize(ctx);
         String result = ctx.getAttribute("finalResponse");
         return result != null ? result : finalResponse.toString();
     }
@@ -422,8 +506,10 @@ public class AgentInvocationHandler implements InvocationHandler {
             builder.systemPrompt(systemPrompt);
         }
 
-        if (modelOverride != null && !modelOverride.isEmpty()) {
-            builder.model(modelOverride);
+        String model = (modelOverride != null && !modelOverride.isEmpty()) ? modelOverride :
+                (resolvedConfig.getModel() != null && !resolvedConfig.getModel().isEmpty()) ? resolvedConfig.getModel() : null;
+        if (model != null && !model.isEmpty()) {
+            builder.model(model);
         }
 
         Class<?> returnType = method.getReturnType();

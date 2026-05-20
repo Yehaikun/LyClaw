@@ -5,6 +5,8 @@ import java.util.List;
 
 import lyjew.com.lyclaw.annotation.Agent;
 import lyjew.com.lyclaw.chat.ChatFacade;
+import lyjew.com.lyclaw.config.AgentConfigResolver;
+import lyjew.com.lyclaw.config.ResolvedAgentConfig;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
@@ -24,17 +26,18 @@ public class AgentProxyFactory {
     private final String providerOverride;
     private final List<AgentHook> hooks;
     private final List<ReactivePipelineStage> stages;
+    private final AgentConfigResolver configResolver;
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                               ToolRegistry toolRegistry) {
-        this(chatFacade, reActEngine, toolRegistry, null, null, null, List.of(), List.of());
+        this(chatFacade, reActEngine, toolRegistry, null, null, null, List.of(), List.of(), null);
     }
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                               ToolRegistry toolRegistry, String defaultSystemPrompt,
                               String modelOverride, String providerOverride) {
         this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
-                providerOverride, List.of(), List.of());
+                providerOverride, List.of(), List.of(), null);
     }
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
@@ -42,7 +45,7 @@ public class AgentProxyFactory {
                               String modelOverride, String providerOverride,
                               List<AgentHook> hooks) {
         this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
-                providerOverride, hooks, List.of());
+                providerOverride, hooks, List.of(), null);
     }
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
@@ -50,6 +53,16 @@ public class AgentProxyFactory {
                               String modelOverride, String providerOverride,
                               List<AgentHook> hooks,
                               List<ReactivePipelineStage> stages) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
+                providerOverride, hooks, stages, null);
+    }
+
+    public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
+                              ToolRegistry toolRegistry, String defaultSystemPrompt,
+                              String modelOverride, String providerOverride,
+                              List<AgentHook> hooks,
+                              List<ReactivePipelineStage> stages,
+                              AgentConfigResolver configResolver) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
@@ -58,6 +71,7 @@ public class AgentProxyFactory {
         this.providerOverride = providerOverride;
         this.hooks = hooks != null ? List.copyOf(hooks) : List.of();
         this.stages = stages != null ? List.copyOf(stages) : List.of();
+        this.configResolver = configResolver;
     }
 
     @SuppressWarnings("unchecked")
@@ -73,26 +87,25 @@ public class AgentProxyFactory {
         }
 
         Agent ann = agentInterface.getAnnotation(Agent.class);
+        ResolvedAgentConfig resolvedConfig = (configResolver != null && ann != null)
+                ? configResolver.resolve(ann)
+                : ResolvedAgentConfig.builder().build();
 
-        String systemPrompt = defaultSystemPrompt;
-        String model = modelOverride;
-        String provider = providerOverride;
+        String systemPrompt = (defaultSystemPrompt != null) ? defaultSystemPrompt :
+                (ann != null && !ann.systemPromptOverride().isEmpty()) ? ann.systemPromptOverride() : null;
 
-        if (ann != null) {
-            if (systemPrompt == null && !ann.description().isEmpty()) {
-                systemPrompt = ann.description();
-            }
-            if ((model == null || model.isEmpty()) && !ann.model().isEmpty()) {
-                model = ann.model();
-            }
-            if ((provider == null || provider.isEmpty()) && !ann.provider().isEmpty()) {
-                provider = ann.provider();
-            }
-        }
+        String model = (modelOverride != null && !modelOverride.isEmpty()) ? modelOverride :
+                (resolvedConfig.getModel() != null && !resolvedConfig.getModel().isEmpty()) ? resolvedConfig.getModel() : null;
+
+        String provider = (providerOverride != null && !providerOverride.isEmpty()) ? providerOverride :
+                (resolvedConfig.getProvider() != null && !resolvedConfig.getProvider().isEmpty()) ? resolvedConfig.getProvider() : null;
+
+        String agentId = resolvedConfig.getAgentId();
+        String agentName = resolvedConfig.getAgentName();
 
         AgentInvocationHandler handler = new AgentInvocationHandler(
                 chatFacade, reActEngine, toolRegistry, systemPrompt, model, provider,
-                hooks, stages);
+                hooks, stages, resolvedConfig);
 
         return (T) Proxy.newProxyInstance(
                 agentInterface.getClassLoader(),

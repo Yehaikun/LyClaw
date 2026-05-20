@@ -1,36 +1,36 @@
-# Phase 1: Agent Core Enhancement — Renovation Plan
+# 第一阶段：Agent核心增强 — 改造方案
 
-> **Target**: Bring LyClaw's agent config, runtime, and hook system to OpenClaw parity.
-> **Status**: Draft
-> **Dependencies**: None (this is the foundation phase)
+> **目标**: 使LyClaw的Agent配置、运行时和Hook系统达到与OpenClaw同等的水平。
+> **状态**: 草案
+> **依赖**: 无（此为基础设施阶段）
 
 ---
 
-## Overview
+## 概述
 
-LyClaw is a Java/Spring Boot multi-agent framework. Its agent system currently has:
+LyClaw 是一个基于 Java/Spring Boot 的多Agent框架。其Agent系统目前具有：
 
-| Component | Current State | Target |
+| 组件 | 当前状态 | 目标 |
 |---|---|---|
-| `@Agent` annotation | 6 basic fields (name, description, version, model, provider, extensions) | ~30 fields with full OpenClaw parity |
-| `AgentConfig` | Flat POJO with 4 core + extensions map | 4-tier hierarchy (defaults / annotation / yaml / runtime) |
-| `AgentConfigResolver` | Priority-based merge from sources | Deep-merge resolver with ResolvedAgentConfig |
-| `AgentContext` | Flat POJO with ~12 fields | Rich context with ~25 fields + snapshot/restore |
-| `AgentHook` SPI | 5 methods + getOrder() | 36-method lifecycle SPI |
-| `AgentInvocationHandler` | JDK dynamic proxy with 5-hook dispatch | Full hook lifecycle dispatch |
-| `AgentProxyFactory` | Simple constructor + create(Class) | Config-aware factory with runtime-type support |
-| Pipeline | 6-stage SSE streaming | Same stages, enriched with hook events |
-| Runtime mode | EMBEDDED only (ReAct) | EMBEDDED + ACP dual-mode |
+| `@Agent` 注解 | 6个基本字段（name, description, version, model, provider, extensions） | 约30个字段，达到完全OpenClaw对等水平 |
+| `AgentConfig` | 扁平POJO，包含4个核心字段 + extensions Map | 4层层级结构（默认值 / 注解 / yaml / 运行时） |
+| `AgentConfigResolver` | 基于优先级的来源合并 | 深度合并解析器，生成ResolvedAgentConfig |
+| `AgentContext` | 扁平POJO，约12个字段 | 丰富的上下文，约25个字段 + 快照/恢复 |
+| `AgentHook` SPI | 5个方法 + getOrder() | 36个方法的生命周期SPI |
+| `AgentInvocationHandler` | JDK动态代理，5个Hook分发 | 完整的Hook生命周期分发 |
+| `AgentProxyFactory` | 简单构造函数 + create(Class) | 配置感知工厂，支持运行时类型 |
+| Pipeline | 6阶段SSE流式处理 | 相同阶段，增强Hook事件 |
+| 运行时模式 | 仅EMBEDDED（ReAct） | EMBEDDED + ACP双模式 |
 
 ---
 
-## 1.1 AgentConfig System Restructuring
+## 1.1 AgentConfig系统重构
 
-### 1.1.1 Problem
+### 1.1.1 问题
 
-The current `@Agent` annotation carries only 6 fields. Per-agent configuration like thinking level, sandbox setting, subagent delegation, context injection behavior, bootstrap limits, etc. are shoved into opaque `Extension[]` key-value pairs. This makes the config typeless, undiscoverable, and error-prone. There is also no concept of "global defaults" that agents inherit from.
+当前 `@Agent` 注解仅携带6个字段。每个Agent的配置（如thinking级别、沙箱设置、子Agent委托、上下文注入行为、引导限制等）都塞在不透明的 `Extension[]` 键值对中。这使得配置无类型、不可发现且容易出错。同时也没有"全局默认值"的概念供Agent继承。
 
-### 1.1.2 Design: Expanded `@Agent` Annotation
+### 1.1.2 设计：扩展的 `@Agent` 注解
 
 ```java
 package lyjew.com.lyclaw.annotation;
@@ -39,10 +39,10 @@ import java.lang.annotation.*;
 import org.springframework.stereotype.Component;
 
 /**
- * AI Agent declaration annotation — expanded to full OpenClaw parity.
+ * AI Agent声明注解 — 扩展至完全OpenClaw对等水平。
  *
- * <p>Fields are resolved with priority: agent-level > global defaults
- * ({@code lyclaw.agent.defaults.*}) > system built-in defaults.</p>
+ * <p>字段解析优先级：Agent级别 > 全局默认值
+ * ({@code lyclaw.agent.defaults.*}) > 系统内置默认值。</p>
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -50,118 +50,116 @@ import org.springframework.stereotype.Component;
 @Documented
 public @interface Agent {
 
-    // ── Identity ──────────────────────────────────────────────
-    /** Unique agent identifier. When empty, derived from the class simple name (lowerCamelCase). */
+    // ── 身份标识 ──────────────────────────────────────────────
+    /** Agent唯一标识符。为空时，从类简单名称（小驼峰）派生。 */
     String id() default "";
 
-    /** Whether this agent is the default agent (used when no specific agent is requested). */
+    /** 此Agent是否为默认Agent（未指定具体Agent时使用）。 */
     boolean defaultAgent() default false;          // was: (missing)
 
-    /** Human-readable display name. When empty, derived from id. */
+    /** 人类可读的显示名称。为空时，从id派生。 */
     String name() default "";
 
-    /** Description shown in UIs and used for agent-selection routing. */
+    /** 在UI中显示的描述信息，并用于Agent选择路由。 */
     String description() default "";
 
-    /** Semantic version string (SemVer). */
+    /** 语义化版本字符串（SemVer）。 */
     String version() default "1.0.0";
 
-    // ── Workspace ─────────────────────────────────────────────
-    /** Workspace root directory for this agent. Empty means use global workspace. */
+    // ── 工作区 ─────────────────────────────────────────────
+    /** 此Agent的工作区根目录。为空表示使用全局工作区。 */
     String workspace() default "";
 
-    /** Agent-specific subdirectory under workspace. Empty means use agent id. */
+    /** 工作区下Agent专属子目录。为空表示使用Agent id。 */
     String agentDir() default "";
 
-    // ── System prompt override ────────────────────────────────
-    /** Override the system prompt that would otherwise be bootstrapped from AGENTS.md etc. */
+    // ── 系统提示词覆盖 ────────────────────────────────
+    /** 覆盖原本从AGENTS.md等文件引导加载的系统提示词。 */
     String systemPromptOverride() default "";
 
-    // ── Model ──────────────────────────────────────────────────
-    /** Model name (e.g. "deepseek-v4-flash"). Empty = use defaults. */
+    // ── 模型 ──────────────────────────────────────────────────
+    /** 模型名称（如 "deepseek-v4-flash"）。为空 = 使用默认值。 */
     String model() default "";
 
-    /** Provider key (e.g. "deepseek", "openai"). Empty = use defaults. */
+    /** 提供商键值（如 "deepseek", "openai"）。为空 = 使用默认值。 */
     String provider() default "";
 
-    /** Ordered fallback model keys, tried in sequence when the primary model fails. */
+    /** 有序的备用模型键值列表，主模型失败时按顺序尝试。 */
     String[] fallbacks() default {};
 
-    // ── Skills ─────────────────────────────────────────────────
-    /** Skill identifiers to attach to this agent (e.g. "web-search", "code-interpreter"). */
+    // ── 技能 ─────────────────────────────────────────────────
+    /** 附加到此Agent的技能标识符（如 "web-search", "code-interpreter"）。 */
     String[] skills() default {};
 
-    // ── Thinking / Verbose / Reasoning ─────────────────────────
+    // ── 思考 / 详细度 / 推理 ─────────────────────────
     /**
-     * Default thinking level.
-     * Valid values: off, minimal, low, medium, high, xhigh, adaptive, max.
-     * Empty means use global default.
+     * 默认思考级别。
+     * 有效值: off, minimal, low, medium, high, xhigh, adaptive, max。
+     * 为空表示使用全局默认值。
      */
     String thinkingDefault() default "";
 
-    /** Default verbose level. Empty = use global default. */
+    /** 默认详细度级别。为空 = 使用全局默认值。 */
     String verboseDefault() default "";
 
-    /** Default reasoning level. Empty = use global default. */
+    /** 默认推理级别。为空 = 使用全局默认值。 */
     String reasoningDefault() default "";
 
-    /** Fast mode: skip expensive pre-processing when true. */
+    /** 快速模式：为true时跳过昂贵的预处理步骤。 */
     boolean fastModeDefault() default false;
 
-    // ── Context limits ─────────────────────────────────────────
-    /** Max context window tokens to reserve for this agent. 0 = use global default. */
+    // ── 上下文限制 ─────────────────────────────────────────
+    /** 为此Agent预留的最大上下文窗口Token数。0 = 使用全局默认值。 */
     int contextTokens() default 0;
 
-    /** Max characters to load from individual bootstrap files (e.g. AGENTS.md). */
+    /** 从单个引导文件（如AGENTS.md）中加载的最大字符数。 */
     int bootstrapMaxChars() default 20000;
 
-    /** Total max characters across all bootstrap files. */
+    /** 所有引导文件合计的最大字符数。 */
     int bootstrapTotalMaxChars() default 150000;
 
     /**
-     * When to inject AGENTS.md / CLAUDE.md content into the system prompt.
-     * Valid: always, continuation-skip, never.
+     * 何时将AGENTS.md / CLAUDE.md内容注入系统提示词。
+     * 有效值: always, continuation-skip, never。
      */
     String contextInjection() default "always";
 
-    // ── Subagent delegation ────────────────────────────────────
+    // ── 子Agent委托 ────────────────────────────────────
     /**
-     * Delegation mode for subagent spawning.
-     *   suggest — agent suggests subagent delegation, user confirms
-     *   prefer  — agent prefers to delegate, less user friction
+     * 子Agent生成的委托模式。
+     *   suggest — Agent建议子Agent委托，用户确认
+     *   prefer  — Agent倾向委托，减少用户干预
      */
     String delegationMode() default "suggest";
 
-    /** Allowlist of agent ids this agent is permitted to spawn. Empty = unrestricted. */
+    /** 此Agent允许生成的Agent id白名单。为空 = 不限制。 */
     String[] allowAgents() default {};
 
-    /** Maximum nesting depth for spawned children. */
+    /** 生成的子Agent最大嵌套深度。 */
     int maxSpawnDepth() default 1;
 
-    /** Maximum number of children this agent can spawn at one level. */
+    /** 此Agent在单层中最多可生成的子Agent数量。 */
     int maxChildrenPerAgent() default 5;
 
-    // ── Sandbox ────────────────────────────────────────────────
+    // ── 沙箱 ────────────────────────────────────────────────
     /**
-     * Sandbox mode: none, docker, podman.
-     * Empty = use global default.
+     * 沙箱模式: none, docker, podman。
+     * 为空 = 使用全局默认值。
      */
     String sandbox() default "";
 
-    // ── Extensions (backward-compatible escape hatch) ──────────
+    // ── 扩展（向后兼容的逃生舱口） ──────────
     /**
-     * Arbitrary key-value pairs for framework plugins.
-     * Prefer typed fields above; use extensions only for plugin-specific
-     * config that has no typed equivalent.
+     * 供框架插件使用的任意键值对。
+     * 优先使用上方的类型化字段；仅当插件特定配置没有类型化等价字段时使用扩展。
      */
     Extension[] extensions() default {};
 }
 ```
 
-### 1.1.3 AgentDefaultsConfig (Global Defaults)
+### 1.1.3 AgentDefaultsConfig（全局默认值）
 
-This class binds to `lyclaw.agent.defaults.*` in `application.yml` and provides
-the fallback layer that every agent inherits when its annotation-level field is empty.
+此类绑定到 `application.yml` 中的 `lyclaw.agent.defaults.*`，为每个Agent在其注解级别字段为空时提供回退层。
 
 ```java
 package lyjew.com.lyclaw.config;
@@ -172,76 +170,76 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Global agent defaults, bound from {@code lyclaw.agent.defaults.*}.
+ * 全局Agent默认值，绑定自 {@code lyclaw.agent.defaults.*}。
  *
- * <p>Every field in this class has an agent-level override in @Agent.
- * Resolution order: agent annotation > lyclaw.agent.defaults > hard-coded system defaults.
+ * <p>此类中的每个字段在 @Agent 中都有Agent级别的覆盖。
+ * 解析顺序: agent注解 > lyclaw.agent.defaults > 硬编码系统默认值。
  */
 @ConfigurationProperties(prefix = "lyclaw.agent.defaults")
 public class AgentDefaultsConfig {
 
-    // ── Model defaults ─────────────────────────────────────────
-    /** Default model name (e.g. "deepseek-v4-flash"). */
-    private String model;                    // system default: "deepseek-v4-flash"
+    // ── 模型默认值 ─────────────────────────────────────────
+    /** 默认模型名称（如 "deepseek-v4-flash"）。 */
+    private String model;                    // 系统默认值: "deepseek-v4-flash"
 
-    /** Default provider key. */
-    private String provider;                 // system default: "deepseek"
+    /** 默认提供商键值。 */
+    private String provider;                 // 系统默认值: "deepseek"
 
-    /** Default ordered fallback model keys. */
+    /** 默认有序备用模型键值列表。 */
     private List<String> fallbacks = List.of();
 
-    // ── Thinking / Verbose / Reasoning ─────────────────────────
-    /** Default thinking level: off|minimal|low|medium|high|xhigh|adaptive|max. */
-    private String thinkingDefault;          // system default: "off"
+    // ── 思考 / 详细度 / 推理 ─────────────────────────
+    /** 默认思考级别: off|minimal|low|medium|high|xhigh|adaptive|max。 */
+    private String thinkingDefault;          // 系统默认值: "off"
 
-    /** Default verbose level. */
-    private String verboseDefault;           // system default: ""
+    /** 默认详细度级别。 */
+    private String verboseDefault;           // 系统默认值: ""
 
-    /** Default reasoning level. */
-    private String reasoningDefault;         // system default: ""
+    /** 默认推理级别。 */
+    private String reasoningDefault;         // 系统默认值: ""
 
-    /** Whether fast mode is on by default. */
-    private boolean fastModeDefault;         // system default: false
+    /** 是否默认开启快速模式。 */
+    private boolean fastModeDefault;         // 系统默认值: false
 
-    // ── Context ────────────────────────────────────────────────
-    /** When to inject bootstrap content: always|continuation-skip|never. */
+    // ── 上下文 ────────────────────────────────────────────────
+    /** 何时注入引导内容: always|continuation-skip|never。 */
     private String contextInjection = "always";
 
-    /** Max chars per individual bootstrap file. */
+    /** 每个引导文件的最大字符数。 */
     private int bootstrapMaxChars = 20000;
 
-    /** Max chars total across all bootstrap files. */
+    /** 所有引导文件合计的最大字符数。 */
     private int bootstrapTotalMaxChars = 150000;
 
-    /** Reserved context window tokens. */
+    /** 预留的上下文窗口Token数。 */
     private int contextTokens = 0;
 
-    // ── Skills ─────────────────────────────────────────────────
-    /** Default skills attached to all agents. */
+    // ── 技能 ─────────────────────────────────────────────────
+    /** 附加到所有Agent的默认技能。 */
     private List<String> skills = List.of();
 
-    // ── Sandbox ────────────────────────────────────────────────
-    /** Default sandbox mode: none|docker|podman. */
+    // ── 沙箱 ────────────────────────────────────────────────
+    /** 默认沙箱模式: none|docker|podman。 */
     private String sandbox = "none";
 
-    // ── Subagents (delegation defaults) ────────────────────────
+    // ── 子Agent（委托默认值） ────────────────────────
     @NestedConfigurationProperty
     private SubagentDefaults subagents = new SubagentDefaults();
 
-    // ── Heartbeat ──────────────────────────────────────────────
+    // ── 心跳检测 ──────────────────────────────────────────────
     @NestedConfigurationProperty
     private HeartbeatDefaults heartbeat = new HeartbeatDefaults();
 
-    // ── Run retries ────────────────────────────────────────────
+    // ── 运行重试 ────────────────────────────────────────────
     @NestedConfigurationProperty
     private RunRetryDefaults runRetries = new RunRetryDefaults();
 
-    // ── Context limits (tool output trimming) ──────────────────
+    // ── 上下文限制（工具输出裁剪） ──────────────────
     @NestedConfigurationProperty
     private ContextLimitsDefaults contextLimits = new ContextLimitsDefaults();
 
-    // ── Workspace ──────────────────────────────────────────────
-    /** Default workspace directory. */
+    // ── 工作区 ──────────────────────────────────────────────
+    /** 默认工作区目录。 */
     private String workspace;
 
     // ===== Getters / Setters =====
@@ -300,23 +298,23 @@ public class AgentDefaultsConfig {
     public String getWorkspace() { return workspace; }
     public void setWorkspace(String workspace) { this.workspace = workspace; }
 
-    // ===== Nested config classes =====
+    // ===== 嵌套配置类 =====
 
-    /** Subagent delegation defaults. */
+    /** 子Agent委托默认值。 */
     public static class SubagentDefaults {
-        /** Default delegation mode: suggest|prefer. */
+        /** 默认委托模式: suggest|prefer。 */
         private String delegationMode = "suggest";
 
-        /** Allowlist of agent ids. Empty = all allowed. */
+        /** Agent id白名单。为空 = 全部允许。 */
         private List<String> allowAgents = List.of();
 
-        /** Default max spawn depth. */
+        /** 默认最大生成深度。 */
         private int maxSpawnDepth = 1;
 
-        /** Default max children per agent. */
+        /** 默认每个Agent最大子Agent数。 */
         private int maxChildrenPerAgent = 5;
 
-        // getters/setters omitted for brevity
+        // 为简洁省略getter/setter
         public String getDelegationMode() { return delegationMode; }
         public void setDelegationMode(String m) { this.delegationMode = m; }
         public List<String> getAllowAgents() { return allowAgents; }
@@ -327,15 +325,15 @@ public class AgentDefaultsConfig {
         public void setMaxChildrenPerAgent(int c) { this.maxChildrenPerAgent = c; }
     }
 
-    /** Heartbeat configuration. */
+    /** 心跳检测配置。 */
     public static class HeartbeatDefaults {
-        /** Whether heartbeat is enabled (periodic "you are still alive" prompts). */
+        /** 是否启用心跳检测（周期性的"你仍然存活"提示）。 */
         private boolean enabled = false;
 
-        /** Interval in seconds between heartbeat checks. */
+        /** 心跳检测间隔秒数。 */
         private long intervalSeconds = 60;
 
-        /** Max idle time in seconds before heartbeat fires. */
+        /** 触发心跳前的最大空闲秒数。 */
         private long maxIdleSeconds = 300;
 
         // getters/setters
@@ -347,15 +345,15 @@ public class AgentDefaultsConfig {
         public void setMaxIdleSeconds(long s) { this.maxIdleSeconds = s; }
     }
 
-    /** Run retry configuration. */
+    /** 运行重试配置。 */
     public static class RunRetryDefaults {
-        /** Max retry attempts on model failure. */
+        /** 模型失败时的最大重试次数。 */
         private int maxAttempts = 3;
 
-        /** Base delay between retries in milliseconds. */
+        /** 重试之间的基础延迟毫秒数。 */
         private long baseDelayMs = 1000;
 
-        /** Backoff strategy: fixed|exponential. */
+        /** 退避策略: fixed|exponential。 */
         private String backoff = "exponential";
 
         // getters/setters
@@ -367,15 +365,15 @@ public class AgentDefaultsConfig {
         public void setBackoff(String b) { this.backoff = b; }
     }
 
-    /** Context limits (tool output trimming / memory limits). */
+    /** 上下文限制（工具输出裁剪 / 内存限制）。 */
     public static class ContextLimitsDefaults {
-        /** Max chars to include from memory retrieval. */
+        /** 从内存检索中包括的最大字符数。 */
         private int memoryGetMaxChars = 50000;
 
-        /** Max chars of a single tool result to include in context. */
+        /** 单个工具结果包含在上下文中的最大字符数。 */
         private int toolResultMaxChars = 80000;
 
-        /** Max total chars for all tool results combined. */
+        /** 所有工具结果合计的最大字符数。 */
         private int toolResultTotalMaxChars = 200000;
 
         // getters/setters
@@ -389,18 +387,16 @@ public class AgentDefaultsConfig {
 }
 ```
 
-### 1.1.4 System Defaults (Hard-coded Fallback)
+### 1.1.4 AgentSystemDefaults（硬编码回退）
 
-When neither the annotation nor `lyclaw.agent.defaults` provides a value, the system
-uses these built-in constants. They are defined as a static inner class or a constants
-file:
+当注解和 `lyclaw.agent.defaults` 都未提供值时，系统使用这些内置常量。它们定义为静态内部类或常量文件：
 
 ```java
 package lyjew.com.lyclaw.config;
 
 /**
- * Hard-coded system defaults — the lowest-priority fallback layer.
- * Used when neither agent annotation nor lyclaw.agent.defaults supplies a value.
+ * 硬编码系统默认值 — 最低优先级的回退层。
+ * 当Agent注解和lyclaw.agent.defaults都没有提供值时使用。
  */
 public final class AgentSystemDefaults {
 
@@ -426,9 +422,9 @@ public final class AgentSystemDefaults {
 }
 ```
 
-### 1.1.5 ResolvedAgentConfig (Output of Resolution)
+### 1.1.5 ResolvedAgentConfig（解析输出）
 
-The resolver produces a fully-resolved, deeply-merged, read-only config object.
+解析器生成一个完全解析、深度合并、只读的配置对象。
 
 ```java
 package lyjew.com.lyclaw.config;
@@ -436,68 +432,67 @@ package lyjew.com.lyclaw.config;
 import java.util.*;
 
 /**
- * Fully resolved agent configuration — the output of the 3-layer deep merge.
+ * 完全解析的Agent配置 — 3层深度合并的输出。
  *
- * <p>Every field here has been resolved through:
- *   agent annotation > lyclaw.agent.defaults.* > AgentSystemDefaults
+ * <p>每个字段都经过以下解析:
+ *   agent注解 > lyclaw.agent.defaults.* > AgentSystemDefaults
  *
- * <p>This class is immutable after construction to prevent accidental mutation
- * during the agent run lifecycle.
+ * <p>此类在构造后是不可变的，以防止在Agent运行生命周期中意外修改。
  */
 public class ResolvedAgentConfig {
 
-    // ── Identity ──
+    // ── 身份标识 ──
     private final String agentId;
     private final String agentName;
     private final String description;
     private final String version;
     private final boolean defaultAgent;
 
-    // ── Workspace ──
+    // ── 工作区 ──
     private final String workspaceDir;
     private final String agentDir;
 
-    // ── System prompt ──
+    // ── 系统提示词 ──
     private final String systemPromptOverride;
 
-    // ── Model ──
+    // ── 模型 ──
     private final String model;
     private final String provider;
     private final List<String> fallbacks;
 
-    // ── Thinking / Verbose / Reasoning ──
+    // ── 思考 / 详细度 / 推理 ──
     private final String thinkingDefault;
     private final String verboseDefault;
     private final String reasoningDefault;
     private final boolean fastModeDefault;
 
-    // ── Context ──
+    // ── 上下文 ──
     private final int contextTokens;
     private final String contextInjection;
     private final int bootstrapMaxChars;
     private final int bootstrapTotalMaxChars;
 
-    // ── Skills ──
+    // ── 技能 ──
     private final List<String> skills;
 
-    // ── Delegation ──
+    // ── 委托 ──
     private final String delegationMode;
     private final List<String> allowAgents;
     private final int maxSpawnDepth;
     private final int maxChildrenPerAgent;
 
-    // ── Sandbox ──
+    // ── 沙箱 ──
     private final String sandbox;
 
-    // ── Extensions (remaining key-value pairs from @Extension[]) ──
+    // ── 扩展（来自 @Extension[] 的剩余键值对） ──
     private final Map<String, String> extensions;
 
-    // ── Runtime config (copied from defaults) ──
+    // ── 运行时配置（从默认值复制） ──
     private final AgentDefaultsConfig.HeartbeatDefaults heartbeat;
     private final AgentDefaultsConfig.RunRetryDefaults runRetries;
     private final AgentDefaultsConfig.ContextLimitsDefaults contextLimits;
 
-    // Private constructor — use Builder via AgentConfigResolver
+    // 私有构造函数 — 通过AgentConfigResolver使用Builder
     private ResolvedAgentConfig(Builder builder) {
         this.agentId              = builder.agentId;
         this.agentName            = builder.agentName;
@@ -595,7 +590,7 @@ public class ResolvedAgentConfig {
         private AgentDefaultsConfig.RunRetryDefaults runRetries = new AgentDefaultsConfig.RunRetryDefaults();
         private AgentDefaultsConfig.ContextLimitsDefaults contextLimits = new AgentDefaultsConfig.ContextLimitsDefaults();
 
-        // (setters for each field — omitted for brevity, follow the pattern:)
+        // （每个字段的setter — 为简洁省略，遵循以下模式:）
 
         public Builder agentId(String v) { this.agentId = v; return this; }
         public Builder agentName(String v) { this.agentName = v; return this; }
@@ -634,10 +629,9 @@ public class ResolvedAgentConfig {
 }
 ```
 
-### 1.1.6 AgentConfigResolver Enhancement
+### 1.1.6 AgentConfigResolver增强
 
-The resolver is enhanced with a 3-layer deep merge, list-agent support, and
-workspace-dir resolution.
+解析器增强了3层深度合并、列出Agent和支持工作区目录解析。
 
 ```java
 package lyjew.com.lyclaw.config;
@@ -652,14 +646,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * Agent config resolver — performs 3-layer deep merge:
- *   Layer 1: AgentSystemDefaults (hard-coded)
- *   Layer 2: AgentDefaultsConfig (lyclaw.agent.defaults.*)
- *   Layer 3: @Agent annotation (agent-level)
+ * Agent配置解析器 — 执行3层深度合并:
+ *   第1层: AgentSystemDefaults（硬编码）
+ *   第2层: AgentDefaultsConfig（lyclaw.agent.defaults.*）
+ *   第3层: @Agent 注解（Agent级别）
  *
- * <p>Each field uses the first non-empty/non-default value from the highest layer.
- * Lists are replaced, not merged (annotation wins completely if non-empty).
- * Maps (extensions) are merged additively (annotation wins on key conflict).
+ * <p>每个字段使用最高层中第一个非空/非默认值。
+ * 列表是替换，不是合并（如果注解非空，则完全胜出）。
+ * Map（扩展）是加法合并（键冲突时注解胜出）。
  */
 public class AgentConfigResolver {
 
@@ -667,10 +661,10 @@ public class AgentConfigResolver {
 
     private final AgentDefaultsConfig defaults;
 
-    /** Cache: agentId → ResolvedAgentConfig. Invalidation on config refresh. */
+    /** 缓存: agentId → ResolvedAgentConfig。配置刷新时失效。 */
     private final Map<String, ResolvedAgentConfig> cache = new ConcurrentHashMap<>();
 
-    /** Registered agent entries: agentId → @Agent annotation(from class). */
+    /** 已注册的Agent条目: agentId → @Agent注解(来自类)。 */
     private final Map<String, Agent> agentRegistry = new ConcurrentHashMap<>();
 
     public AgentConfigResolver(AgentDefaultsConfig defaults) {
@@ -678,28 +672,28 @@ public class AgentConfigResolver {
     }
 
     /**
-     * Register an agent class for later resolution.
-     * Called by AgentInterfaceProcessor during BFPP scan.
+     * 注册Agent类以便后续解析。
+     * 由AgentInterfaceProcessor在BFPP扫描期间调用。
      */
     public void registerAgent(String agentId, Agent ann) {
         agentRegistry.put(agentId, ann);
     }
 
     /**
-     * Resolve the full merged config for a given agent.
+     * 为给定Agent解析完整合并后的配置。
      *
-     * Resolution for each field:
-     *   1. If @Agent field is set (non-empty string, non-zero int, non-false boolean, non-empty list),
-     *      use it.
-     *   2. Else if AgentDefaultsConfig has a non-default value, use it.
-     *   3. Else use AgentSystemDefaults.
+     * 每个字段的解析规则:
+     *   1. 如果 @Agent 字段已设置（非空字符串、非零int、非false boolean、非空列表），
+     *      使用它。
+     *   2. 否则如果 AgentDefaultsConfig 有非默认值，使用它。
+     *   3. 否则使用 AgentSystemDefaults。
      */
     public ResolvedAgentConfig resolveAgentConfig(String agentId) {
         return cache.computeIfAbsent(agentId, id -> {
             Agent ann = agentRegistry.get(id);
             ResolvedAgentConfig.Builder b = new ResolvedAgentConfig.Builder();
 
-            // ── Identity ──
+            // ── 身份标识 ──
             b.agentId(id);
             b.agentName(resolveString(
                     ann != null ? ann.name() : "", defaultsField(null, "name"), id));
@@ -709,18 +703,18 @@ public class AgentConfigResolver {
                     ann != null ? ann.version() : "", "1.0.0", "1.0.0"));
             b.defaultAgent(ann != null && ann.defaultAgent());
 
-            // ── Workspace ──
+            // ── 工作区 ──
             b.workspaceDir(resolveString(
                     ann != null ? ann.workspace() : "",
                     defaults.getWorkspace(), ""));
             b.agentDir(resolveString(
                     ann != null ? ann.agentDir() : "", "", id));
 
-            // ── System prompt ──
+            // ── 系统提示词 ──
             b.systemPromptOverride(resolveString(
                     ann != null ? ann.systemPromptOverride() : "", "", ""));
 
-            // ── Model ──
+            // ── 模型 ──
             b.model(resolveString(
                     ann != null ? ann.model() : "",
                     defaults.getModel(), AgentSystemDefaults.MODEL));
@@ -731,7 +725,7 @@ public class AgentConfigResolver {
                     ann != null ? List.of(ann.fallbacks()) : List.of(),
                     defaults.getFallbacks()));
 
-            // ── Thinking / Verbose / Reasoning ──
+            // ── 思考 / 详细度 / 推理 ──
             b.thinkingDefault(resolveString(
                     ann != null ? ann.thinkingDefault() : "",
                     defaults.getThinkingDefault(), AgentSystemDefaults.THINKING_DEFAULT));
@@ -745,7 +739,7 @@ public class AgentConfigResolver {
                     (ann != null && ann.fastModeDefault())
                             || (!(ann != null && ann.fastModeDefault()) && defaults.isFastModeDefault()));
 
-            // ── Context ──
+            // ── 上下文 ──
             b.contextTokens(resolveInt(
                     ann != null ? ann.contextTokens() : 0,
                     defaults.getContextTokens(), AgentSystemDefaults.CONTEXT_TOKENS));
@@ -759,12 +753,12 @@ public class AgentConfigResolver {
                     ann != null ? ann.bootstrapTotalMaxChars() : 0,
                     defaults.getBootstrapTotalMaxChars(), AgentSystemDefaults.BOOTSTRAP_TOTAL_MAX_CHARS));
 
-            // ── Skills ──
+            // ── 技能 ──
             b.skills(resolveList(
                     ann != null ? List.of(ann.skills()) : List.of(),
                     defaults.getSkills()));
 
-            // ── Delegation ──
+            // ── 委托 ──
             b.delegationMode(resolveString(
                     ann != null ? ann.delegationMode() : "",
                     defaults.getSubagents().getDelegationMode(), AgentSystemDefaults.DELEGATION_MODE));
@@ -778,12 +772,12 @@ public class AgentConfigResolver {
                     ann != null ? ann.maxChildrenPerAgent() : 0,
                     defaults.getSubagents().getMaxChildrenPerAgent(), AgentSystemDefaults.MAX_CHILDREN));
 
-            // ── Sandbox ──
+            // ── 沙箱 ──
             b.sandbox(resolveString(
                     ann != null ? ann.sandbox() : "",
                     defaults.getSandbox(), AgentSystemDefaults.SANDBOX));
 
-            // ── Extensions: merge annotation extensions on top of any defaults
+            // ── 扩展: 将注解扩展合并到任何默认值之上
             Map<String, String> extMap = new HashMap<>();
             if (ann != null) {
                 for (Extension ext : ann.extensions()) {
@@ -792,7 +786,7 @@ public class AgentConfigResolver {
             }
             b.extensions(extMap);
 
-            // ── Runtime config (copied directly from defaults, no annotation override needed) ──
+            // ── 运行时配置（直接从默认值复制，无需注解覆盖） ──
             b.heartbeat(defaults.getHeartbeat());
             b.runRetries(defaults.getRunRetries());
             b.contextLimits(defaults.getContextLimits());
@@ -804,14 +798,14 @@ public class AgentConfigResolver {
     }
 
     /**
-     * List all registered agent IDs.
+     * 列出所有已注册的Agent ID。
      */
     public Set<String> listAgentIds() {
         return Collections.unmodifiableSet(agentRegistry.keySet());
     }
 
     /**
-     * List all registered agent entries as (id, name, description) triples.
+     * 列出所有已注册的Agent条目，作为 (id, name, description) 三元组。
      */
     public List<AgentEntry> listAgentEntries() {
         return agentRegistry.entrySet().stream()
@@ -822,8 +816,8 @@ public class AgentConfigResolver {
     }
 
     /**
-     * Resolve the default agent id. Returns the agent with defaultAgent=true,
-     * or the first registered agent, or "default".
+     * 解析默认Agent id。返回defaultAgent=true的Agent，
+     * 或第一个注册的Agent，或 "default"。
      */
     public String resolveDefaultAgentId() {
         return agentRegistry.entrySet().stream()
@@ -835,8 +829,8 @@ public class AgentConfigResolver {
     }
 
     /**
-     * Resolve the full workspace directory for an agent.
-     * Typically: {workspaceRoot}/{agentDir}
+     * 解析Agent的完整工作区目录。
+     * 通常为: {workspaceRoot}/{agentDir}
      */
     public String resolveAgentWorkspaceDir(ResolvedAgentConfig config) {
         String root = !config.getWorkspaceDir().isEmpty()
@@ -850,15 +844,15 @@ public class AgentConfigResolver {
     }
 
     /**
-     * Invalidate the config cache (called on config refresh events).
+     * 使配置缓存失效（在配置刷新事件时调用）。
      */
     public void invalidate() {
         cache.clear();
     }
 
-    // ===== Private resolution helpers =====
+    // ===== 私有解析辅助方法 =====
 
-    /** Resolve a nullable Object field: return the first non-null/non-blank value. */
+    /** 解析可为null的Object字段: 返回第一个非null/非空白的值。 */
     private String resolveString(String agentVal, String defaultsVal, String systemVal) {
         if (agentVal != null && !agentVal.isEmpty()) return agentVal;
         if (defaultsVal != null && !defaultsVal.isEmpty()) return defaultsVal;
@@ -871,13 +865,13 @@ public class AgentConfigResolver {
         return systemVal;
     }
 
-    /** Resolve a list: use agent-level if non-empty, else defaults. */
+    /** 解析列表: 如果Agent级别非空则使用它，否则使用默认值。 */
     private List<String> resolveList(List<String> agentVal, List<String> defaultsVal) {
         if (agentVal != null && !agentVal.isEmpty()) return agentVal;
         return defaultsVal != null ? defaultsVal : List.of();
     }
 
-    /** Placeholder for field not directly on AgentDefaultsConfig root. */
+    /** 不在AgentDefaultsConfig根级别的字段占位符。 */
     private String defaultsField(AgentDefaultsConfig d, String field) {
         if (d == null) return "";
         return switch (field) {
@@ -886,20 +880,20 @@ public class AgentConfigResolver {
         };
     }
 
-    // ===== Data record =====
+    // ===== 数据记录 =====
 
     public record AgentEntry(String id, String name, String description) {}
 }
 ```
 
-### 1.1.7 YAML Configuration Example
+### 1.1.7 YAML配置示例
 
 ```yaml
-# application.yml — agent configuration
+# application.yml — Agent配置
 
 lyclaw:
   agent:
-    # Global defaults inherited by all agents
+    # 所有Agent继承的全局默认值
     defaults:
       model: "deepseek-v4-flash"
       provider: "deepseek"
@@ -918,41 +912,41 @@ lyclaw:
       sandbox: "none"
       workspace: "/var/lyclaw/workspaces"
 
-      # Subagent delegation defaults
+      # 子Agent委托默认值
       subagents:
         delegationMode: "suggest"
-        allowAgents: []           # empty = allow all
+        allowAgents: []           # 空 = 允许全部
         maxSpawnDepth: 1
         maxChildrenPerAgent: 5
 
-      # Heartbeat: periodic liveness check for long-running agents
+      # 心跳检测: 对长时间运行的Agent进行周期性存活检查
       heartbeat:
         enabled: false
         intervalSeconds: 60
         maxIdleSeconds: 300
 
-      # Run retry on model failure
+      # 模型失败时的运行重试
       runRetries:
         maxAttempts: 3
         baseDelayMs: 1000
         backoff: "exponential"
 
-      # Context limits: trim tool output / memory to stay within window
+      # 上下文限制: 裁剪工具输出 / 内存以保持在窗口内
       contextLimits:
         memoryGetMaxChars: 50000
         toolResultMaxChars: 80000
         toolResultTotalMaxChars: 200000
 
-    # Per-agent overrides (legacy path "lyclaw.agents" — kept for backward compat)
+    # 每个Agent的覆盖配置（遗留路径 "lyclaw.agents" — 保留用于向后兼容）
     agents:
       code-reviewer:
-        systemPromptOverride: "You are an expert code reviewer. Be thorough but concise."
+        systemPromptOverride: "你是一位专家级代码审查员。请彻底但简洁地审查。"
         model: "deepseek-v4-pro"
         thinkingDefault: "high"
         maxToolRounds: 20
 ```
 
-### 1.1.8 Annotation Usage Example
+### 1.1.8 注解使用示例
 
 ```java
 package com.example.agents;
@@ -962,13 +956,13 @@ import lyjew.com.lyclaw.annotation.agent.UserMessage;
 import lyjew.com.lyclaw.annotation.agent.V;
 
 /**
- * Code reviewer agent — uses a pro model with high thinking for quality output.
+ * 代码审查Agent — 使用专业模型和高思考级别以输出高质量结果。
  */
 @Agent(
     id          = "code-reviewer",
     defaultAgent = false,
     name        = "Code Reviewer",
-    description = "Reviews code changes for bugs, style, and security issues",
+    description = "审查代码变更中的错误、风格和安全问题",
     version     = "2.0.0",
     model       = "deepseek-v4-pro",
     thinkingDefault = "high",
@@ -982,26 +976,23 @@ import lyjew.com.lyclaw.annotation.agent.V;
 )
 public interface CodeReviewerAgent {
 
-    @UserMessage("Review the following code changes:\n\n{{diff}}")
+    @UserMessage("审查以下代码变更:\n\n{{diff}}")
     String review(@V("diff") String diff);
 
-    @UserMessage("Review PR #{{prNumber}} in repository {{repo}}")
+    @UserMessage("审查仓库 {{repo}} 中的PR #{{prNumber}}")
     String reviewPullRequest(@V("prNumber") int prNumber, @V("repo") String repo);
 }
 ```
 
 ---
 
-## 1.2 AgentContext Enhancement
+## 1.2 AgentContext增强
 
-### 1.2.1 Problem
+### 1.2.1 问题
 
-The current `AgentContext` is a flat POJO with fields like `sessionId`, `userMessage`,
-`systemPrompt`, `toolRegistry`, `method`, `args`, plus some pipeline-state atomics.
-It has no knowledge of the agent's resolved config, no workspace paths, no runtime-type
-awareness, and no subagent tracking.
+当前 `AgentContext` 是一个扁平POJO，具有 `sessionId`、`userMessage`、`systemPrompt`、`toolRegistry`、`method`、`args` 等字段，以及一些Pipeline状态的原子变量。它缺乏对Agent已解析配置的感知、没有工作区路径、没有运行时类型感知，也没有子Agent跟踪。
 
-### 1.2.2 Enhanced AgentContext
+### 1.2.2 增强的 AgentContext
 
 ```java
 package lyjew.com.lyclaw.react;
@@ -1020,19 +1011,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.*;
 
 /**
- * Enhanced AgentContext — the unified data bus for all hook, stage, and runtime operations.
+ * 增强的AgentContext — 所有Hook、阶段和运行时操作的统一数据总线。
  *
- * <h3>New fields (Phase 1 additions in bold):</h3>
+ * <h3>新增字段（第一阶段新增用粗体标出）:</h3>
  * <ul>
- *   <li><b>agentId, agentName</b> — from ResolvedAgentConfig</li>
- *   <li><b>workspaceDir, agentDir</b> — resolved filesystem paths</li>
- *   <li><b>resolvedConfig</b> — fully merged ResolvedAgentConfig</li>
- *   <li><b>bootstrapContent</b> — loaded AGENTS.md, CLAUDE.md content</li>
- *   <li><b>contextLimits</b> — memory/tool result size caps</li>
- *   <li><b>thinkingLevel, verboseLevel, reasoningLevel</b> — effective levels</li>
+ *   <li><b>agentId, agentName</b> — 来自ResolvedAgentConfig</li>
+ *   <li><b>workspaceDir, agentDir</b> — 已解析的文件系统路径</li>
+ *   <li><b>resolvedConfig</b> — 完全合并的ResolvedAgentConfig</li>
+ *   <li><b>bootstrapContent</b> — 加载的AGENTS.md、CLAUDE.md内容</li>
+ *   <li><b>contextLimits</b> — 内存/工具结果大小上限</li>
+ *   <li><b>thinkingLevel, verboseLevel, reasoningLevel</b> — 生效的级别</li>
  *   <li><b>delegationMode, allowAgents, maxSpawnDepth, maxChildrenPerAgent</b></li>
- *   <li><b>activeSubagentIds</b> — track spawned children</li>
- *   <li><b>runtimeType</b> — EMBEDDED or ACP</li>
+ *   <li><b>activeSubagentIds</b> — 跟踪生成的子Agent</li>
+ *   <li><b>runtimeType</b> — EMBEDDED 或 ACP</li>
  *   <li><b>runMetadata</b> — runId, jobId, trigger, channelId</li>
  * </ul>
  */
@@ -1041,72 +1032,72 @@ public class AgentContext {
     public enum Lifecycle { TRANSIENT, SESSION, PERSISTENT }
 
     /**
-     * Which runtime engine backs this agent invocation.
+     * 哪个运行时引擎支持此Agent调用。
      */
     public enum AgentRuntimeType {
-        /** LyClaw's built-in ReAct engine. */
+        /** LyClaw内置的ReAct引擎。 */
         EMBEDDED,
-        /** External agent backend via Agent Communication Protocol. */
+        /** 通过Agent Communication Protocol的外部Agent后端。 */
         ACP
     }
 
-    // ==================== Agent Identity (NEW) ====================
+    // ==================== Agent身份标识（新增） ====================
 
     private final String agentId;
     private final String agentName;
     private final ResolvedAgentConfig resolvedConfig;
 
-    // ==================== Workspace (NEW) ====================
+    // ==================== 工作区（新增） ====================
 
     private final String workspaceDir;
     private final String agentDir;
 
-    // ==================== Bootstrap Content (NEW) ====================
+    // ==================== 引导内容（新增） ====================
 
     /**
-     * Content loaded from AGENTS.md, CLAUDE.md, system.md etc.
-     * Key = filename, Value = file content (truncated to bootstrapMaxChars).
+     * 从AGENTS.md、CLAUDE.md、system.md等加载的内容。
+     * Key = 文件名, Value = 文件内容（截断至bootstrapMaxChars）。
      */
     private final Map<String, Object> bootstrapContent = new LinkedHashMap<>();
 
-    // ==================== Context Limits (NEW) ====================
+    // ==================== 上下文限制（新增） ====================
 
-    /** Max chars for memory retrieval. */
+    /** 内存检索的最大字符数。 */
     private int memoryGetMaxChars = 50000;
-    /** Max chars for a single tool result. */
+    /** 单个工具结果的最大字符数。 */
     private int toolResultMaxChars = 80000;
-    /** Max total chars for all tool results. */
+    /** 所有工具结果合计的最大字符数。 */
     private int toolResultTotalMaxChars = 200000;
 
-    // ==================== Thinking / Verbose / Reasoning (NEW) ====================
+    // ==================== 思考 / 详细度 / 推理（新增） ====================
 
     private String thinkingLevel = "off";
     private String verboseLevel = "";
     private String reasoningLevel = "";
 
-    // ==================== Subagent Delegation (NEW) ====================
+    // ==================== 子Agent委托（新增） ====================
 
     private String delegationMode = "suggest";
     private List<String> allowAgents = List.of();
     private int maxSpawnDepth = 1;
     private int maxChildrenPerAgent = 5;
 
-    /** Track ids of currently-active subagents spawned by this agent. */
+    /** 跟踪此Agent当前正在运行的子Agent id。 */
     private final List<String> activeSubagentIds = new CopyOnWriteArrayList<>();
 
-    // ==================== Runtime Type (NEW) ====================
+    // ==================== 运行时类型（新增） ====================
 
     private AgentRuntimeType runtimeType = AgentRuntimeType.EMBEDDED;
 
-    // ==================== Run Metadata (NEW) ====================
+    // ==================== 运行元数据（新增） ====================
 
     /**
-     * Arbitrary metadata about the run: runId, jobId, trigger (e.g., "webhook"),
-     * channelId (e.g., Slack channel), etc.
+     * 关于运行的任意元数据: runId, jobId, trigger（如 "webhook"）,
+     * channelId（如 Slack 频道）等。
      */
     private final Map<String, Object> runMetadata = new LinkedHashMap<>();
 
-    // ==================== Legacy fields (unchanged) ====================
+    // ==================== 遗留字段（未更改） ====================
 
     private final String sessionId;
     private String userMessage;
@@ -1132,10 +1123,10 @@ public class AgentContext {
 
     private final Map<String, Object> attributes = new HashMap<>();
 
-    // ==================== Constructors ====================
+    // ==================== 构造函数 ====================
 
     /**
-     * Full constructor with ResolvedAgentConfig.
+     * 带ResolvedAgentConfig的完整构造函数。
      */
     public AgentContext(String sessionId, String userMessage, String systemPrompt,
                         ToolRegistry toolRegistry, Method method, Object[] args,
@@ -1148,7 +1139,7 @@ public class AgentContext {
         this.args = args;
         this.tracing = new TraceContext();
 
-        // Populate from resolved config
+        // 从已解析配置填充
         this.resolvedConfig = resolvedConfig;
         this.agentId = resolvedConfig.getAgentId();
         this.agentName = resolvedConfig.getAgentName();
@@ -1169,13 +1160,13 @@ public class AgentContext {
         }
     }
 
-    /** Backward-compatible constructor (no ResolvedAgentConfig). */
+    /** 向后兼容的构造函数（无ResolvedAgentConfig）。 */
     public AgentContext(String sessionId, String userMessage, String systemPrompt,
                         ToolRegistry toolRegistry, Method method, Object[] args) {
         this(sessionId, userMessage, systemPrompt, toolRegistry, method, args, null);
     }
 
-    // ==================== New Getters/Setters ====================
+    // ==================== 新增 Getters/Setters ====================
 
     public String getAgentId() { return agentId; }
     public String getAgentName() { return agentName; }
@@ -1223,7 +1214,7 @@ public class AgentContext {
     @SuppressWarnings("unchecked")
     public <T> T getRunMetadata(String key) { return (T) runMetadata.get(key); }
 
-    // ==================== Legacy Getters (unchanged) ====================
+    // ==================== 遗留 Getters（未更改） ====================
 
     public String getSessionId() { return sessionId; }
     public String getUserMessage() { return userMessage; }
@@ -1259,15 +1250,15 @@ public class AgentContext {
     public void setAttribute(String key, Object value) { attributes.put(key, value); }
     public Map<String, Object> getAttributes() { return attributes; }
 
-    // ==================== Enhanced Snapshot/Restore ====================
+    // ==================== 增强的快照/恢复 ====================
 
     /**
-     * Enhanced snapshot — includes all new fields.
+     * 增强的快照 — 包含所有新字段。
      */
     public Map<String, Object> toSnapshot() {
         Map<String, Object> snapshot = new LinkedHashMap<>();
 
-        // Legacy
+        // 遗留
         snapshot.put("sessionId", sessionId);
         snapshot.put("userMessage", userMessage);
         snapshot.put("systemPrompt", systemPrompt);
@@ -1282,50 +1273,50 @@ public class AgentContext {
         snapshot.put("toolResults", new ArrayList<>(toolResults));
         snapshot.put("tracing", Map.of("traceId", tracing.getTraceId()));
 
-        // New — identity
+        // 新增 — 身份标识
         snapshot.put("agentId", agentId);
         snapshot.put("agentName", agentName);
 
-        // New — workspace
+        // 新增 — 工作区
         snapshot.put("workspaceDir", workspaceDir);
         snapshot.put("agentDir", agentDir);
 
-        // New — levels
+        // 新增 — 级别
         snapshot.put("thinkingLevel", thinkingLevel);
         snapshot.put("verboseLevel", verboseLevel);
         snapshot.put("reasoningLevel", reasoningLevel);
 
-        // New — delegation
+        // 新增 — 委托
         snapshot.put("delegationMode", delegationMode);
         snapshot.put("allowAgents", new ArrayList<>(allowAgents));
         snapshot.put("maxSpawnDepth", maxSpawnDepth);
         snapshot.put("maxChildrenPerAgent", maxChildrenPerAgent);
 
-        // New — context limits
+        // 新增 — 上下文限制
         snapshot.put("memoryGetMaxChars", memoryGetMaxChars);
         snapshot.put("toolResultMaxChars", toolResultMaxChars);
         snapshot.put("toolResultTotalMaxChars", toolResultTotalMaxChars);
 
-        // New — runtime
+        // 新增 — 运行时
         snapshot.put("runtimeType", runtimeType.name());
         snapshot.put("activeSubagentIds", new ArrayList<>(activeSubagentIds));
         snapshot.put("runMetadata", new HashMap<>(runMetadata));
 
-        // New — bootstrap
+        // 新增 — 引导内容
         snapshot.put("bootstrapContent", new HashMap<>(bootstrapContent));
 
         return snapshot;
     }
 
     /**
-     * Restore from snapshot. Runtime references (toolRegistry, method, args)
-     * must be re-injected by the caller.
+     * 从快照恢复。运行时引用（toolRegistry, method, args）
+     * 必须由调用者重新注入。
      */
     @SuppressWarnings("unchecked")
     public void restoreFromSnapshot(Map<String, Object> snapshot) {
         if (snapshot == null) return;
 
-        // Legacy
+        // 遗留
         if (snapshot.get("sandboxLevel") != null)
             this.sandboxLevel = SandboxLevel.valueOf((String) snapshot.get("sandboxLevel"));
         if (snapshot.get("lifecycle") != null)
@@ -1347,11 +1338,11 @@ public class AgentContext {
             for (Object item : list) this.toolResults.add((String) item);
         }
 
-        // New — identity
+        // 新增 — 身份标识
         if (snapshot.get("agentId") != null)
             this.setRunMetadata("restoredAgentId", snapshot.get("agentId"));
 
-        // New — levels
+        // 新增 — 级别
         if (snapshot.get("thinkingLevel") != null)
             this.thinkingLevel = (String) snapshot.get("thinkingLevel");
         if (snapshot.get("verboseLevel") != null)
@@ -1359,7 +1350,7 @@ public class AgentContext {
         if (snapshot.get("reasoningLevel") != null)
             this.reasoningLevel = (String) snapshot.get("reasoningLevel");
 
-        // New — delegation
+        // 新增 — 委托
         if (snapshot.get("delegationMode") != null)
             this.delegationMode = (String) snapshot.get("delegationMode");
         if (snapshot.get("allowAgents") instanceof List<?> al)
@@ -1369,7 +1360,7 @@ public class AgentContext {
         if (snapshot.get("maxChildrenPerAgent") instanceof Number n)
             this.maxChildrenPerAgent = n.intValue();
 
-        // New — context limits
+        // 新增 — 上下文限制
         if (snapshot.get("memoryGetMaxChars") instanceof Number n)
             this.memoryGetMaxChars = n.intValue();
         if (snapshot.get("toolResultMaxChars") instanceof Number n)
@@ -1377,7 +1368,7 @@ public class AgentContext {
         if (snapshot.get("toolResultTotalMaxChars") instanceof Number n)
             this.toolResultTotalMaxChars = n.intValue();
 
-        // New — runtime
+        // 新增 — 运行时
         if (snapshot.get("runtimeType") != null)
             this.runtimeType = AgentRuntimeType.valueOf((String) snapshot.get("runtimeType"));
         if (snapshot.get("activeSubagentIds") instanceof List<?> sl) {
@@ -1396,7 +1387,7 @@ public class AgentContext {
         }
     }
 
-    // ==================== Factory Methods ====================
+    // ==================== 工厂方法 ====================
 
     public static AgentContext sessionScoped(String sessionId, String userMessage,
                                              String systemPrompt, ToolRegistry toolRegistry,
@@ -1422,16 +1413,13 @@ public class AgentContext {
 
 ---
 
-## 1.3 Hook System Expansion (5 to 36 Hooks)
+## 1.3 Hook系统扩展（从5个到36个Hook）
 
-### 1.3.1 Problem
+### 1.3.1 问题
 
-The current `AgentHook` has only 5 extension points: `beforeRequest`, `beforeModel`,
-`afterModel`, `wrapToolCall`, `wrapToolExecutor`, `afterResult`. There is no way to
-hook into session lifecycle, agent start/end, subagent spawning, compaction, message
-events, or heartbeat contributions.
+当前 `AgentHook` 只有5个扩展点：`beforeRequest`、`beforeModel`、`afterModel`、`wrapToolCall`、`wrapToolExecutor`、`afterResult`。无法Hook到会话生命周期、Agent启动/结束、子Agent生成、压缩、消息事件或心跳贡献。
 
-### 1.3.2 Full Hook Interface
+### 1.3.2 完整的Hook接口
 
 ```java
 package lyjew.com.lyclaw.react;
@@ -1441,170 +1429,168 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolCall;
 
 /**
- * Full agent lifecycle hook SPI — 36 extension points.
+ * 完整的Agent生命周期Hook SPI — 36个扩展点。
  *
- * <p>All methods are default (no-op) so implementors override only what they need.
- * Hooks are dispatched by {@link AgentInvocationHandler} at the appropriate
- * point in the agent lifecycle.
+ * <p>所有方法都是默认（无操作），因此实现者只需覆盖所需的方法。
+ * Hook由 {@link AgentInvocationHandler} 在Agent生命周期的适当节点进行分发。
  *
- * <h3>Execution order</h3>
- * <p>Hooks are sorted by {@link #getOrder()} (ascending) before dispatch.
- * Default order is 100.</p>
+ * <h3>执行顺序</h3>
+ * <p>Hook在分发前按 {@link #getOrder()}（升序）排序。
+ * 默认顺序为 100。</p>
  */
 public interface AgentHook {
 
     // =====================================================================
-    // EXISTING (kept for backward compatibility)
+    // 现有方法（保留用于向后兼容）
     // =====================================================================
 
-    /** Before the entire agent invocation pipeline starts.
-     *  Throwing an exception aborts the request. */
+    /** 在整个Agent调用Pipeline开始之前。
+     *  抛出异常将中止请求。 */
     default void beforeRequest(AgentContext ctx) {}
 
-    /** Before each LLM call. Can inject planning context or adjust messages. */
+    /** 每次LLM调用之前。可注入规划上下文或调整消息。 */
     default List<Message> beforeModel(List<Message> messages, AgentContext ctx) {
         return messages;
     }
 
-    /** After each LLM response. Can detect harmful content, log, or transform output. */
+    /** 每次LLM响应之后。可检测有害内容、记录日志或转换输出。 */
     default String afterModel(String response, AgentContext ctx) {
         return response;
     }
 
-    /** Wrap a single tool call (finer-grained than wrapToolExecutor). */
+    /** 包装单个工具调用（比 wrapToolExecutor 更细粒度）。 */
     default ToolCall wrapToolCall(ToolCall toolCall, AgentContext ctx) {
         return toolCall;
     }
 
-    /** Wrap the ToolExecutor, forming a decorator chain. */
+    /** 包装 ToolExecutor，形成装饰器链。 */
     default ToolExecutor wrapToolExecutor(ToolExecutor inner, AgentContext ctx) {
         return inner;
     }
 
-    /** After the final result, before returning to the caller.
-     *  Dispatched in reverse order (afterResult hooks run high-to-low). */
+    /** 最终结果之后，返回给调用者之前。
+     *  按逆序分发（afterResult Hook从高到低执行）。 */
     default String afterResult(String result, AgentContext ctx) {
         return result;
     }
 
-    /** Priority. Lower numbers execute first. Default: 100. */
+    /** 优先级。较小数字先执行。默认: 100。 */
     default int getOrder() { return 100; }
 
     // =====================================================================
-    // NEW — Model Lifecycle
+    // 新增 — 模型生命周期
     // =====================================================================
 
-    /** Before model resolution (provider + model selection). */
+    /** 模型解析（提供商 + 模型选择）之前。 */
     default void beforeModelResolve(AgentContext ctx) {}
 
-    /** Called when a model call begins (after routing, before API call). */
+    /** 当模型调用开始时调用（路由之后、API调用之前）。 */
     default void modelCallStarted(AgentContext ctx) {}
 
-    /** Called when a model call ends (success or failure). */
+    /** 当模型调用结束时调用（成功或失败）。 */
     default void modelCallEnded(AgentContext ctx) {}
 
-    /** Raw LLM input (the final assembled prompt sent to the model). */
+    /** 原始LLM输入（发送给模型的最终组装提示词）。 */
     default void llmInput(String prompt, AgentContext ctx) {}
 
-    /** Raw LLM output (the complete model response, before parsing). */
+    /** 原始LLM输出（完整的模型响应，解析之前）。 */
     default void llmOutput(String response, AgentContext ctx) {}
 
     // =====================================================================
-    // NEW — Agent Lifecycle
+    // 新增 — Agent生命周期
     // =====================================================================
 
-    /** Before an agent run starts (pipeline entry). */
+    /** Agent运行开始之前（Pipeline入口）。 */
     default void beforeAgentStart(AgentContext ctx) {}
 
     /**
-     * Before the agent's reply is sent back to the caller.
-     * @param reply the draft reply text
-     * @param ctx agent context
+     * Agent回复发送回调用者之前。
+     * @param reply 草稿回复文本
+     * @param ctx Agent上下文
      */
     default void beforeAgentReply(String reply, AgentContext ctx) {}
 
     /**
-     * Before the agent is finalized (after ReAct loop ends, before cleanup).
-     * Can return a decision to CONTINUE (default), REVISE (retry with instruction),
-     * or FINALIZE (skip revision).
+     * Agent最终化之前（ReAct循环结束后、清理之前）。
+     * 可返回 CONTINUE（默认）、REVISE（带指令重试）或 FINALIZE（跳过修订）的决策。
      */
     default AgentFinalizeResult beforeAgentFinalize(AgentContext ctx) {
         return AgentFinalizeResult.continue_();
     }
 
-    /** After the agent run completes (cleanup, metrics, notification). */
+    /** Agent运行完成之后（清理、指标收集、通知）。 */
     default void agentEnd(AgentContext ctx) {}
 
-    /** Before each individual agent invocation (per-method call on the proxy). */
+    /** 每次单独的Agent调用之前（代理上的每个方法调用）。 */
     default void beforeAgentRun(AgentContext ctx) {}
 
     // =====================================================================
-    // NEW — Tool Lifecycle
+    // 新增 — 工具生命周期
     // =====================================================================
 
-    /** Before a tool is invoked. Contains tool name, call id, serialized args. */
+    /** 工具调用之前。包含工具名称、调用ID、序列化参数。 */
     default void beforeToolCall(String toolName, String toolCallId, String args, AgentContext ctx) {}
 
-    /** After a tool completes. Contains the result string (could be error). */
+    /** 工具完成之后。包含结果字符串（可能为错误）。 */
     default void afterToolCall(String toolName, String toolCallId, String result, AgentContext ctx) {}
 
-    /** After tool result is persisted into message history. */
+    /** 工具结果持久化到消息历史之后。 */
     default void toolResultPersist(String toolName, String result, AgentContext ctx) {}
 
     // =====================================================================
-    // NEW — Session Lifecycle
+    // 新增 — 会话生命周期
     // =====================================================================
 
-    /** When a new agent session is created. */
+    /** 当新的Agent会话创建时。 */
     default void sessionStart(String sessionId, AgentContext ctx) {}
 
-    /** When an agent session ends (clean shutdown or timeout). */
+    /** 当Agent会话结束时（正常关闭或超时）。 */
     default void sessionEnd(String sessionId, AgentContext ctx) {}
 
     // =====================================================================
-    // NEW — Subagent Lifecycle
+    // 新增 — 子Agent生命周期
     // =====================================================================
 
-    /** Before a subagent is spawned. Hook can block by throwing. */
+    /** 子Agent生成之前。Hook可通过抛异常来阻止。 */
     default void subagentSpawning(String childAgentId, String task, AgentContext ctx) {}
 
-    /** After a subagent is successfully spawned and session created. */
+    /** 子Agent成功生成并创建会话之后。 */
     default void subagentSpawned(String childAgentId, String sessionKey, AgentContext ctx) {}
 
-    /** After a subagent completes (success or failure). */
+    /** 子Agent完成之后（成功或失败）。 */
     default void subagentEnded(String childAgentId, String outcome, AgentContext ctx) {}
 
     // =====================================================================
-    // NEW — Compaction
+    // 新增 — 压缩
     // =====================================================================
 
-    /** Before message history compaction (context window management). */
+    /** 消息历史压缩之前（上下文窗口管理）。 */
     default void beforeCompaction(AgentContext ctx) {}
 
-    /** After message history compaction. */
+    /** 消息历史压缩之后。 */
     default void afterCompaction(AgentContext ctx) {}
 
     // =====================================================================
-    // NEW — Message Lifecycle
+    // 新增 — 消息生命周期
     // =====================================================================
 
-    /** A message was received from the caller/user. */
+    /** 从调用者/用户收到一条消息。 */
     default void messageReceived(Message msg, AgentContext ctx) {}
 
-    /** The agent is about to send a message (before LLM call). */
+    /** Agent即将发送一条消息（LLM调用之前）。 */
     default void messageSending(String msg, AgentContext ctx) {}
 
-    /** A message was sent to the caller. */
+    /** 一条消息已发送给调用者。 */
     default void messageSent(String msg, AgentContext ctx) {}
 
     // =====================================================================
-    // NEW — Heartbeat
+    // 新增 — 心跳检测
     // =====================================================================
 
     /**
-     * Contribute content to the periodic heartbeat prompt sent to the LLM
-     * to keep long-running agents alive and aware of their context.
-     * @return contribution string (appended to heartbeat prompt), or "" for nothing.
+     * 向发送给LLM的周期性心跳提示提供贡献内容，
+     * 用于保持长时间运行的Agent存活并知晓其上下文。
+     * @return 贡献字符串（追加到心跳提示），或 "" 表示无贡献。
      */
     default String heartbeatPromptContribution(AgentContext ctx) { return ""; }
 }
@@ -1616,18 +1602,17 @@ public interface AgentHook {
 package lyjew.com.lyclaw.react;
 
 /**
- * Returned by {@link AgentHook#beforeAgentFinalize(AgentContext)}.
- * Controls whether the agent run is complete, needs revision, or should
- * finalize immediately.
+ * 由 {@link AgentHook#beforeAgentFinalize(AgentContext)} 返回。
+ * 控制Agent运行是已完成的、需要修订还是应即刻最终化。
  */
 public class AgentFinalizeResult {
 
     public enum Action {
-        /** Continue normally — proceed to finalize and return result. */
+        /** 正常继续 — 进行最终化并返回结果。 */
         CONTINUE,
-        /** Revise — loop back to respond with retryInstruction. */
+        /** 修订 — 使用retryInstruction重新循环到respond阶段。 */
         REVISE,
-        /** Finalize immediately — skip any remaining revision logic. */
+        /** 即刻最终化 — 跳过任何剩余的修订逻辑。 */
         FINALIZE
     }
 
@@ -1646,7 +1631,7 @@ public class AgentFinalizeResult {
         this.maxAttempts = maxAttempts;
     }
 
-    // ===== Factory methods =====
+    // ===== 工厂方法 =====
 
     public static AgentFinalizeResult continue_() {
         return new AgentFinalizeResult(Action.CONTINUE, null, null, null, 1);
@@ -1680,7 +1665,7 @@ public class AgentFinalizeResult {
 }
 ```
 
-### 1.3.4 HookDecision (Security / Approval)
+### 1.3.4 HookDecision（安全/审批）
 
 ```java
 package lyjew.com.lyclaw.react;
@@ -1688,22 +1673,22 @@ package lyjew.com.lyclaw.react;
 import java.util.Map;
 
 /**
- * A blocking/approval decision returned by hooks that gate execution.
- * Used by security hooks, approval hooks, etc.
+ * 由控制执行门控的Hook返回的阻止/审批决策。
+ * 供安全Hook、审批Hook等使用。
  */
 public class HookDecision {
 
     public enum Outcome {
-        /** Allow execution to proceed. */
+        /** 允许继续执行。 */
         PASS,
-        /** Block execution. */
+        /** 阻止执行。 */
         BLOCK
     }
 
     private final Outcome outcome;
     private final String reason;
-    private final String message;       // user-facing message
-    private final String category;      // e.g., "security", "approval", "rate-limit"
+    private final String message;       // 面向用户的消息
+    private final String category;      // 如 "security", "approval", "rate-limit"
     private final Map<String, Object> metadata;
 
     private HookDecision(Outcome outcome, String reason, String message,
@@ -1738,7 +1723,7 @@ public class HookDecision {
 }
 ```
 
-### 1.3.5 HookRegistration (Registry Entry)
+### 1.3.5 HookRegistration（注册表条目）
 
 ```java
 package lyjew.com.lyclaw.react;
@@ -1747,19 +1732,19 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 /**
- * A registered hook entry in the {@link HookRegistry}.
+ * {@link HookRegistry}中已注册的Hook条目。
  *
- * @param pluginId    the plugin/module that registered this hook
- * @param hookName    the hook method name (e.g. "beforeModel", "afterToolCall")
- * @param handler     the handler function (signature varies by hook)
- * @param priority    execution priority (lower = earlier)
- * @param timeoutMs   max execution time before the hook is considered hung (0 = no timeout)
- * @param source      how the hook was registered (annotation, SPI, programmatic)
+ * @param pluginId    注册此Hook的插件/模块
+ * @param hookName    Hook方法名称（如 "beforeModel", "afterToolCall"）
+ * @param handler     处理器函数（签名因Hook而异）
+ * @param priority    执行优先级（越小 = 越早）
+ * @param timeoutMs   在Hook被视为挂起之前的最大执行时间（0 = 无超时）
+ * @param source      Hook的注册方式（annotation, SPI, programmatic）
  */
 public record HookRegistration(
         String pluginId,
         String hookName,
-        Object handler,          // Function or BiConsumer depending on hook
+        Object handler,          // Function 或 BiConsumer，取决于Hook类型
         int priority,
         long timeoutMs,
         String source            // "annotation", "spi", "programmatic"
@@ -1792,21 +1777,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Central registry for hook management and dispatch.
+ * 用于Hook管理和分发的中央注册表。
  *
- * <p>Hooks are grouped by hook name (e.g., "beforeModel", "afterToolCall").
- * At dispatch time, they are sorted by priority (ascending) and invoked in order.
+ * <p>Hook按Hook名称（如 "beforeModel", "afterToolCall"）分组。
+ * 分发时按优先级（升序）排序并按顺序调用。
  */
 public class HookRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(HookRegistry.class);
 
-    /** hookName → sorted list of registrations. */
+    /** hookName → 已排序的注册列表。 */
     private final Map<String, List<HookRegistration>> registrations = new ConcurrentHashMap<>();
 
     /**
-     * Register a hook. If the hook name is new, a list is created.
-     * Registrations for the same hook name are kept sorted by priority.
+     * 注册一个Hook。如果Hook名称是新的，则创建列表。
+     * 同一Hook名称的注册保持按优先级排序。
      */
     public void register(HookRegistration reg) {
         registrations.compute(reg.hookName(), (k, list) -> {
@@ -1820,7 +1805,7 @@ public class HookRegistry {
     }
 
     /**
-     * Unregister all hooks from a given plugin.
+     * 注销给定插件的所有Hook。
      */
     public void unregisterPlugin(String pluginId) {
         registrations.forEach((hookName, list) ->
@@ -1828,21 +1813,21 @@ public class HookRegistry {
     }
 
     /**
-     * Get all registrations for a hook name, sorted by priority.
+     * 获取某个Hook名称的所有注册，按优先级排序。
      */
     public List<HookRegistration> getHooks(String hookName) {
         return registrations.getOrDefault(hookName, List.of());
     }
 
     /**
-     * Get all registered hook names.
+     * 获取所有已注册的Hook名称。
      */
     public Set<String> getHookNames() {
         return Collections.unmodifiableSet(registrations.keySet());
     }
 
     /**
-     * Clear all registrations.
+     * 清除所有注册。
      */
     public void clear() {
         registrations.clear();
@@ -1850,116 +1835,115 @@ public class HookRegistry {
 }
 ```
 
-### 1.3.7 AgentInvocationHandler — Hook Dispatch Updates
+### 1.3.7 AgentInvocationHandler — Hook分发更新
 
-The existing `AgentInvocationHandler` is updated to dispatch the new hooks at the right
-points in the lifecycle:
+现有的 `AgentInvocationHandler` 更新为在生命周期的正确节点分发新的Hook：
 
 ```java
-// Inside AgentInvocationHandler.invoke() — pseudocode for hook dispatch additions:
+// AgentInvocationHandler.invoke() 内部 — Hook分发新增内容的伪代码:
 
 @Override
 public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-    // ... (existing setup: resolve messages, build context, create AgentContext) ...
+    // ... (现有设置: 解析消息, 构建上下文, 创建 AgentContext) ...
 
     AgentContext ctx = new AgentContext(sessionId, userMessage, systemPrompt,
             toolRegistry, method, args, resolvedConfig);
 
-    // NEW: dispatch beforeAgentStart + beforeAgentRun
+    // 新增: 分发 beforeAgentStart + beforeAgentRun
     dispatch("beforeAgentStart", ctx);
     dispatch("beforeAgentRun", ctx);
 
-    // NEW: dispatch sessionStart (once per session)
+    // 新增: 分发 sessionStart（每个会话一次）
     dispatch("sessionStart", ctx.getSessionId(), ctx);
 
-    // 1. beforeRequest hooks (legacy, kept for backward compat)
+    // 1. beforeRequest hooks（遗留，保留用于向后兼容）
     List<AgentHook> sorted = sortedHooks();
     for (AgentHook hook : sorted) {
         hook.beforeRequest(ctx);
     }
 
-    // ... (existing stage pipeline or ReAct execution) ...
+    // ... (现有阶段Pipeline或ReAct执行) ...
 
-    // Inside the ReAct loop, around each model call:
+    // 在ReAct循环内，围绕每次模型调用:
 
-    // NEW: beforeModelResolve
+    // 新增: beforeModelResolve
     dispatch("beforeModelResolve", ctx);
 
-    // NEW: modelCallStarted
+    // 新增: modelCallStarted
     dispatch("modelCallStarted", ctx);
 
-    // LEGACY: beforeModel (kept)
+    // 遗留: beforeModel（保留）
     for (AgentHook hook : sorted) {
         messages = hook.beforeModel(messages, ctx);
     }
 
-    // NEW: llmInput
+    // 新增: llmInput
     dispatch("llmInput", assembledPrompt, ctx);
 
-    // ... (actual LLM call) ...
+    // ... (实际LLM调用) ...
 
-    // NEW: llmOutput
+    // 新增: llmOutput
     dispatch("llmOutput", response, ctx);
 
-    // LEGACY: afterModel (kept)
+    // 遗留: afterModel（保留）
     for (AgentHook hook : sorted) {
         response = hook.afterModel(response, ctx);
     }
 
-    // NEW: modelCallEnded
+    // 新增: modelCallEnded
     dispatch("modelCallEnded", ctx);
 
-    // Around each tool call in the ReAct loop:
+    // 围绕ReAct循环中每次工具调用:
 
-    // NEW: beforeToolCall
+    // 新增: beforeToolCall
     dispatch("beforeToolCall", toolName, toolCallId, argsJson, ctx);
 
-    // ... (actual tool execution) ...
+    // ... (实际工具执行) ...
 
-    // NEW: afterToolCall
+    // 新增: afterToolCall
     dispatch("afterToolCall", toolName, toolCallId, result, ctx);
 
-    // NEW: toolResultPersist
+    // 新增: toolResultPersist
     dispatch("toolResultPersist", toolName, result, ctx);
 
-    // After ReAct loop ends (before returning result):
+    // ReAct循环结束后（返回结果之前）:
 
-    // NEW: beforeAgentFinalize — allows REVISE gate
+    // 新增: beforeAgentFinalize — 允许REVISE门控
     AgentFinalizeResult finalizeResult = dispatchFinalize(ctx);
     if (finalizeResult.isRevise()) {
-        // loop back to ReAct with retryInstruction
+        // 使用 retryInstruction 重新循环到ReAct
     }
 
-    // LEGACY: afterResult (kept, reverse order)
+    // 遗留: afterResult（保留，逆序）
     for (int i = sorted.size() - 1; i >= 0; i--) {
         result = sorted.get(i).afterResult(result, ctx);
     }
 
-    // NEW: agentEnd
+    // 新增: agentEnd
     dispatch("agentEnd", ctx);
 
-    // NEW: sessionEnd (if session is ending)
+    // 新增: sessionEnd（如果会话正在结束）
     dispatch("sessionEnd", ctx.getSessionId(), ctx);
 
     return result;
 }
 ```
 
-The dispatch helpers used within AgentInvocationHandler:
+AgentInvocationHandler中使用的分发辅助方法：
 
 ```java
-// Generic dispatch by hook name — uses HookRegistry for new hooks
-// and direct AgentHook calls for legacy SPI methods.
+// 根据Hook名称通用分发 — 对新增Hook使用HookRegistry，
+// 对遗留SPI方法使用直接AgentHook调用。
 
 private void dispatch(String hookName, Object... args) {
     List<HookRegistration> hooks = hookRegistry.getHooks(hookName);
     for (HookRegistration reg : hooks) {
         try {
-            // Invoke handler (type-safe dispatch)
+            // 调用处理器（类型安全分发）
             invokeHandler(reg, args);
         } catch (Exception e) {
             log.warn("Hook {} (plugin={}) failed: {}", hookName, reg.pluginId(), e.getMessage());
-            // Hook failures are non-fatal by default; SecurityHook can throw to block
+            // Hook失败默认是非致命的；SecurityHook可抛异常来阻止
         }
     }
 }
@@ -1973,7 +1957,7 @@ private AgentFinalizeResult dispatchFinalize(AgentContext ctx) {
                     (Function<AgentContext, AgentFinalizeResult>) reg.handler();
             AgentFinalizeResult result = handler.apply(ctx);
             if (result.isRevise() || result.isFinalize()) {
-                return result; // first non-continue short-circuits
+                return result; // 第一个非CONTINUE立即短路返回
             }
         } catch (Exception e) {
             log.warn("Finalize hook {} (plugin={}) failed: {}",
@@ -1984,11 +1968,9 @@ private AgentFinalizeResult dispatchFinalize(AgentContext ctx) {
 }
 ```
 
-### 1.3.8 Example: Migrating Existing Hooks
+### 1.3.8 示例：迁移现有Hook
 
-Existing hooks like `SecurityCheckHook`, `ApprovalHook`, `OutputGuardHook`,
-`PlanningHook`, `SandboxHook` continue to implement `AgentHook` and work identically.
-New hooks targeting specific lifecycle points register via `HookRegistry`:
+现有的Hook如 `SecurityCheckHook`、`ApprovalHook`、`OutputGuardHook`、`PlanningHook`、`SandboxHook` 继续实现 `AgentHook`，行为完全相同。针对特定生命周期节点的新Hook通过 `HookRegistry` 注册：
 
 ```java
 package com.example.hooks;
@@ -2000,8 +1982,8 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 
 /**
- * Example: a compaction logger hook that traces when context compaction happens.
- * Registered programmatically via HookRegistry rather than implementing AgentHook.
+ * 示例: 一个压缩日志记录Hook，用于追踪上下文压缩的发生。
+ * 通过HookRegistry编程方式注册，而非实现AgentHook。
  */
 @Component
 public class CompactionLogger {
@@ -2018,7 +2000,7 @@ public class CompactionLogger {
                 "compaction-logger",
                 "beforeCompaction",
                 (java.util.function.Consumer<AgentContext>) ctx -> {
-                    // log context size before compaction
+                    // 在压缩之前记录上下文大小
                 },
                 200
         ));
@@ -2027,7 +2009,7 @@ public class CompactionLogger {
                 "compaction-logger",
                 "afterCompaction",
                 (java.util.function.Consumer<AgentContext>) ctx -> {
-                    // log context size after compaction
+                    // 在压缩之后记录上下文大小
                 },
                 200
         ));
@@ -2037,41 +2019,37 @@ public class CompactionLogger {
 
 ---
 
-## 1.4 AgentRuntime Modes
+## 1.4 AgentRuntime 模式
 
-### 1.4.1 Problem
+### 1.4.1 问题
 
-LyClaw currently only supports EMBEDDED mode (the built-in ReAct engine). OpenClaw
-supports ACP (Agent Communication Protocol) mode where the agent backend runs in an
-external process (e.g., a Node.js Codex CLI instance) and communicates via a
-bidirectional protocol. Adding ACP support requires a clean abstraction.
+LyClaw当前仅支持EMBEDDED模式（内置ReAct引擎）。OpenClaw支持ACP（Agent Communication Protocol）模式，其中Agent后端在外部进程（如Node.js Codex CLI实例）中运行，并通过双向协议进行通信。添加ACP支持需要一个清晰的抽象。
 
-### 1.4.2 AgentRuntimeType Enum
+### 1.4.2 AgentRuntimeType 枚举
 
 ```java
 package lyjew.com.lyclaw.react;
 
 /**
- * The runtime mode that backs an agent invocation.
+ * 支持Agent调用的运行时模式。
  */
 public enum AgentRuntimeType {
 
     /**
-     * Default mode — LyClaw's built-in ReAct engine handles the
-     * full reasoning-acting loop internally.
+     * 默认模式 — LyClaw的内置ReAct引擎在内部处理
+     * 完整的推理-行动循环。
      */
     EMBEDDED,
 
     /**
-     * Agent Communication Protocol mode — the agent backend runs
-     * in an external process. LyClaw communicates with it via
-     * a bidirectional protocol (events, turns, sessions).
+     * Agent Communication Protocol模式 — Agent后端在外部进程中运行。
+     * LyClaw通过双向协议（事件、回合、会话）与其通信。
      */
     ACP
 }
 ```
 
-### 1.4.3 AcpRuntime Interface
+### 1.4.3 AcpRuntime 接口
 
 ```java
 package lyjew.com.lyclaw.react;
@@ -2081,44 +2059,44 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 
 /**
- * ACP (Agent Communication Protocol) runtime SPI.
+ * ACP (Agent Communication Protocol) 运行时SPI。
  *
- * <p>Implementations manage sessions and turns with external agent backends
- * (e.g., Codex CLI, custom agent servers). The protocol is:
+ * <p>实现管理外部Agent后端（如Codex CLI、自定义Agent服务器）的会话和回合。
+ * 协议为:
  * <ol>
- *   <li>{@link #ensureSession(AcpRuntimeEnsureInput)} — get or create a session</li>
- *   <li>{@link #startTurn(AcpRuntimeTurnInput)} — start a conversational turn,
- *       receiving a Flux of events (text deltas, tool calls, status updates)</li>
- *   <li>{@link #cancel(AcpRuntimeHandle, String)} — cancel a running turn</li>
- *   <li>{@link #close(AcpRuntimeHandle, String)} — tear down the session</li>
+ *   <li>{@link #ensureSession(AcpRuntimeEnsureInput)} — 获取或创建会话</li>
+ *   <li>{@link #startTurn(AcpRuntimeTurnInput)} — 开始一个对话回合，
+ *       接收事件流（文本增量、工具调用、状态更新）</li>
+ *   <li>{@link #cancel(AcpRuntimeHandle, String)} — 取消正在运行的回合</li>
+ *   <li>{@link #close(AcpRuntimeHandle, String)} — 销毁会话</li>
  * </ol>
  */
 public interface AcpRuntime {
 
     /**
-     * Ensure a session exists for the given agent + session key.
-     * Returns a handle that can be used for subsequent turn/cancel/close calls.
+     * 确保给定Agent + 会话键存在一个会话。
+     * 返回可用于后续turn/cancel/close调用的句柄。
      */
     Mono<AcpRuntimeHandle> ensureSession(AcpRuntimeEnsureInput input);
 
     /**
-     * Start a conversational turn. Returns a Flux of AcpRuntimeEvent:
-     * text_delta (streaming tokens), tool_call, tool_result, status, done, error.
+     * 开始一个对话回合。返回 AcpRuntimeEvent 的 Flux:
+     * text_delta（流式令牌）, tool_call, tool_result, status, done, error。
      */
     Flux<AcpRuntimeEvent> startTurn(AcpRuntimeTurnInput input);
 
     /**
-     * Query the backend's capabilities (model, tools, features).
+     * 查询后端的能（模型、工具、特性）。
      */
     Mono<AcpRuntimeCapabilities> getCapabilities(AcpRuntimeHandle handle);
 
     /**
-     * Cancel an in-progress turn.
+     * 取消正在进行的回合。
      */
     Mono<Void> cancel(AcpRuntimeHandle handle, String reason);
 
     /**
-     * Close (tear down) a session.
+     * 关闭（销毁）一个会话。
      */
     Mono<Void> close(AcpRuntimeHandle handle, String reason);
 }
@@ -2130,29 +2108,29 @@ public interface AcpRuntime {
 package lyjew.com.lyclaw.react;
 
 /**
- * Opaque handle to an active ACP session.
+ * 指向活跃ACP会话的不透明句柄。
  *
- * <p>Contains identifiers needed by the AcpRuntime implementation to route
- * subsequent turn/cancel/close requests to the correct backend session.
+ * <p>包含AcpRuntime实现所需的标识符，用于将
+ * 后续turn/cancel/close请求路由到正确的后端会话。
  */
 public class AcpRuntimeHandle {
 
-    /** The session key used when the session was created. */
+    /** 会话创建时使用的会话键。 */
     private final String sessionKey;
 
-    /** Which backend this session is on (e.g., "codex-cli", "custom-agent-server"). */
+    /** 此会话所在的后端（如 "codex-cli", "custom-agent-server"）。 */
     private final String backend;
 
-    /** The runtime-level session name (may differ from the user-facing session key). */
+    /** 运行时级别会话名称（可能与面向用户的会话键不同）。 */
     private final String runtimeSessionName;
 
-    /** Working directory for this session. */
+    /** 此会话的工作目录。 */
     private final String cwd;
 
-    /** Backend-specific session identifier (e.g., a process PID or UUID). */
+    /** 后端特定的会话标识符（如进程PID或UUID）。 */
     private final String backendSessionId;
 
-    /** LyClaw-level agent session identifier. */
+    /** LyClaw级别的Agent会话标识符。 */
     private final String agentSessionId;
 
     public AcpRuntimeHandle(String sessionKey, String backend, String runtimeSessionName,
@@ -2182,24 +2160,24 @@ package lyjew.com.lyclaw.react;
 import java.util.Map;
 
 /**
- * An event emitted during an ACP turn.
+ * ACP回合期间发出的事件。
  *
- * <p>Events are streamed as a Flux from {@link AcpRuntime#startTurn(AcpRuntimeTurnInput)}.
+ * <p>事件通过 {@link AcpRuntime#startTurn(AcpRuntimeTurnInput)} 以 Flux 形式流式传输。
  */
 public class AcpRuntimeEvent {
 
     public enum EventType {
-        /** A delta of text content (streaming token). */
+        /** 文本内容增量（流式令牌）。 */
         TEXT_DELTA,
-        /** The backend wants to invoke a tool. */
+        /** 后端想要调用工具。 */
         TOOL_CALL,
-        /** A tool result to send back to the backend. */
+        /** 发送回后端的工具结果。 */
         TOOL_RESULT,
-        /** Status update (e.g., "thinking", "executing tool"). */
+        /** 状态更新（如 "thinking", "executing tool"）。 */
         STATUS,
-        /** Turn completed successfully. */
+        /** 回合成功完成。 */
         DONE,
-        /** Turn failed with an error. */
+        /** 回合失败，带有错误。 */
         ERROR
     }
 
@@ -2213,7 +2191,7 @@ public class AcpRuntimeEvent {
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
     }
 
-    // ===== Factory methods =====
+    // ===== 工厂方法 =====
 
     public static AcpRuntimeEvent textDelta(String text) {
         return new AcpRuntimeEvent(EventType.TEXT_DELTA, text, null);
@@ -2222,7 +2200,7 @@ public class AcpRuntimeEvent {
     public static AcpRuntimeEvent toolCall(String toolName, String toolCallId,
                                             String arguments, Map<String, Object> metadata) {
         return new AcpRuntimeEvent(EventType.TOOL_CALL,
-                toolName,  // data carries the tool name; metadata has id + args
+                toolName,  // data携带工具名称; metadata包含id和参数
                 Map.of("toolCallId", toolCallId, "arguments", arguments));
     }
 
@@ -2257,7 +2235,7 @@ public class AcpRuntimeEvent {
 }
 ```
 
-### 1.4.6 Supporting Types
+### 1.4.6 支持类型
 
 ```java
 package lyjew.com.lyclaw.react;
@@ -2265,17 +2243,17 @@ package lyjew.com.lyclaw.react;
 import java.util.Map;
 
 /**
- * Input for {@link AcpRuntime#ensureSession(AcpRuntimeEnsureInput)}.
+ * {@link AcpRuntime#ensureSession(AcpRuntimeEnsureInput)} 的输入。
  */
 public class AcpRuntimeEnsureInput {
     private String agentId;
     private String sessionKey;
-    private String backend;        // which backend implementation to use
+    private String backend;        // 使用哪个后端实现
     private String workspaceDir;
     private Map<String, Object> env;
-    private Map<String, Object> extra;  // backend-specific options
+    private Map<String, Object> extra;  // 后端特定的选项
 
-    // constructor, getters, setters omitted for brevity
+    // 为简洁省略构造函数、getter、setter
     public AcpRuntimeEnsureInput() {}
 
     public String getAgentId() { return agentId; }
@@ -2299,13 +2277,13 @@ package lyjew.com.lyclaw.react;
 import java.util.Map;
 
 /**
- * Input for {@link AcpRuntime#startTurn(AcpRuntimeTurnInput)}.
+ * {@link AcpRuntime#startTurn(AcpRuntimeTurnInput)} 的输入。
  */
 public class AcpRuntimeTurnInput {
     private AcpRuntimeHandle handle;
     private String userMessage;
     private String systemPrompt;
-    private Map<String, Object> context;  // additional context
+    private Map<String, Object> context;  // 附加上下文
 
     // getters/setters
     public AcpRuntimeHandle getHandle() { return handle; }
@@ -2326,13 +2304,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Backend capabilities reported by an ACP runtime.
+ * ACP运行时报告的后端能力。
  */
 public class AcpRuntimeCapabilities {
     private String modelProvider;
     private String modelName;
     private List<String> availableTools;
-    private Map<String, Object> features;  // arbitrary feature flags
+    private Map<String, Object> features;  // 任意特性标志
 
     // getters/setters
     public String getModelProvider() { return modelProvider; }
@@ -2350,20 +2328,20 @@ public class AcpRuntimeCapabilities {
 package lyjew.com.lyclaw.react;
 
 /**
- * Result of a completed ACP turn.
+ * 完成的ACP回结果。
  */
 public class AcpRuntimeTurnResult {
 
     public enum Status {
-        COMPLETED,   // turn finished normally
-        CANCELLED,   // turn was cancelled by user or system
-        FAILED       // turn failed with an error
+        COMPLETED,   // 回合正常完成
+        CANCELLED,   // 回合被用户或系统取消
+        FAILED       // 回合失败，带有错误
     }
 
     private final Status status;
     private final String stopReason;
     private final String error;
-    private final String fullText;  // accumulated text output
+    private final String fullText;  // 累积的文本输出
 
     public AcpRuntimeTurnResult(Status status, String stopReason, String error, String fullText) {
         this.status = status;
@@ -2381,16 +2359,13 @@ public class AcpRuntimeTurnResult {
 
 ---
 
-## 1.5 AgentProxyFactory Restructuring
+## 1.5 AgentProxyFactory 重构
 
-### 1.5.1 Problem
+### 1.5.1 问题
 
-The current `AgentProxyFactory` uses a telescoping constructor chain (5 constructors)
-that bakes in `modelOverride`/`providerOverride` as flat strings. It has no awareness
-of `AgentDefaultsConfig`, no `ResolvedAgentConfig` production, and no concept of
-runtime-type selection.
+当前 `AgentProxyFactory` 使用了层层叠加的构造函数链（5个构造函数），将 `modelOverride`/`providerOverride` 硬编码为扁平字符串。它缺乏对 `AgentDefaultsConfig` 的感知，不产生 `ResolvedAgentConfig`，也没有运行时类型选择的概念。
 
-### 1.5.2 Restructured AgentProxyFactory
+### 1.5.2 重构后的 AgentProxyFactory
 
 ```java
 package lyjew.com.lyclaw.react;
@@ -2407,16 +2382,15 @@ import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
 /**
- * Agent proxy factory — creates JDK dynamic proxies for @Agent interfaces.
+ * Agent代理工厂 — 为 @Agent 接口创建JDK动态代理。
  *
- * <h3>Phase 1 changes:</h3>
+ * <h3>第一阶段变更:</h3>
  * <ul>
- *   <li>Accepts {@link AgentDefaultsConfig} in constructor</li>
- *   <li>{@code create(Class)} reads @Agent annotation → resolves against defaults
- *       → produces {@link ResolvedAgentConfig}</li>
- *   <li>Passes ResolvedAgentConfig to AgentInvocationHandler</li>
- *   <li>Supports creating agent proxies with different runtime types
- *       (EMBEDDED vs ACP)</li>
+ *   <li>构造函数中接受 {@link AgentDefaultsConfig}</li>
+ *   <li>{@code create(Class)} 读取 @Agent 注解 → 针对默认值解析
+ *       → 生成 {@link ResolvedAgentConfig}</li>
+ *   <li>将 ResolvedAgentConfig 传递给 AgentInvocationHandler</li>
+ *   <li>支持创建不同运行时类型（EMBEDDED vs ACP）的Agent代理</li>
  * </ul>
  */
 public class AgentProxyFactory {
@@ -2431,16 +2405,16 @@ public class AgentProxyFactory {
     private final HookRegistry hookRegistry;
 
     /**
-     * Primary constructor — accepts the full dependency set.
+     * 主构造函数 — 接受完整的依赖集。
      *
-     * @param chatFacade        Chat facade for LLM calls
-     * @param reActEngine       ReAct engine for EMBEDDED runtime
-     * @param toolRegistry      Tool registry
-     * @param configResolver    Agent config resolver (with defaults loaded)
-     * @param defaultSystemPrompt Fallback system prompt when none is specified
-     * @param hooks             Global agent hooks (applied to all agents)
-     * @param stages            Pipeline stages
-     * @param hookRegistry      Hook registry for new-style hook dispatch
+     * @param chatFacade        用于LLM调用的Chat门面
+     * @param reActEngine       用于EMBEDDED运行时的ReAct引擎
+     * @param toolRegistry      工具注册表
+     * @param configResolver    已加载默认值的Agent配置解析器
+     * @param defaultSystemPrompt 未指定时的回退系统提示词
+     * @param hooks             全局Agent Hook（应用于所有Agent）
+     * @param stages            Pipeline阶段
+     * @param hookRegistry      用于新式Hook分发的Hook注册表
      */
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                              ToolRegistry toolRegistry,
@@ -2460,8 +2434,8 @@ public class AgentProxyFactory {
     }
 
     /**
-     * Backward-compatible constructor — no standalone config resolver.
-     * Creates an inline resolver from the provided defaults.
+     * 向后兼容的构造函数 — 无独立的配置解析器。
+     * 从提供的默认值创建内联解析器。
      */
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                              ToolRegistry toolRegistry,
@@ -2475,7 +2449,7 @@ public class AgentProxyFactory {
     }
 
     /**
-     * Minimal backward-compatible constructor (no defaults, no hooks, no stages).
+     * 最小化的向后兼容构造函数（无默认值、无Hook、无阶段）。
      */
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                              ToolRegistry toolRegistry) {
@@ -2484,18 +2458,18 @@ public class AgentProxyFactory {
     }
 
     /**
-     * Create a dynamic proxy for the given @Agent interface.
+     * 为给定的 @Agent 接口创建动态代理。
      *
-     * <p>Resolution flow:
+     * <p>解析流程:
      * <ol>
-     *   <li>Read @Agent annotation from the interface</li>
-     *   <li>Extract agentId, model, provider from annotation</li>
-     *   <li>Register agent with configResolver (if not already)</li>
+     *   <li>从接口读取 @Agent 注解</li>
+     *   <li>从注解中提取 agentId、model、provider</li>
+     *   <li>向configResolver注册Agent（如果尚未注册）</li>
      *   <li>resolveAgentConfig(agentId) → ResolvedAgentConfig</li>
-     *   <li>Use resolved model/provider (annotation overrides defaults)</li>
-     *   <li>Determine runtimeType from resolved config or system property</li>
-     *   <li>Build AgentInvocationHandler with ResolvedAgentConfig</li>
-     *   <li>Return proxy</li>
+     *   <li>使用解析后的model/provider（注解覆盖默认值）</li>
+     *   <li>根据解析后的配置或系统属性确定runtimeType</li>
+     *   <li>使用ResolvedAgentConfig构建AgentInvocationHandler</li>
+     *   <li>返回代理</li>
      * </ol>
      */
     @SuppressWarnings("unchecked")
@@ -2508,7 +2482,7 @@ public class AgentProxyFactory {
 
         String agentId = resolveAgentId(agentInterface, ann);
 
-        // Resolve system prompt: annotation override > default
+        // 解析系统提示词: 注解覆盖 > 默认值
         String systemPrompt = defaultSystemPrompt;
         if (ann != null && !ann.description().isEmpty() && defaultSystemPrompt == null) {
             systemPrompt = ann.description();
@@ -2517,17 +2491,17 @@ public class AgentProxyFactory {
             systemPrompt = ann.systemPromptOverride();
         }
 
-        // Register agent with config resolver and resolve full config
+        // 向配置解析器注册Agent并解析完整配置
         if (ann != null) {
             configResolver.registerAgent(agentId, ann);
         }
         ResolvedAgentConfig resolvedConfig = configResolver.resolveAgentConfig(agentId);
 
-        // Model/provider: annotation overrides defaults
+        // 模型/提供商: 注解覆盖默认值
         String model = resolvedConfig.getModel();
         String provider = resolvedConfig.getProvider();
 
-        // Determine runtime type
+        // 确定运行时类型
         AgentContext.AgentRuntimeType runtimeType = resolveRuntimeType(resolvedConfig);
 
         AgentInvocationHandler handler = new AgentInvocationHandler(
@@ -2542,17 +2516,17 @@ public class AgentProxyFactory {
     }
 
     /**
-     * Create a proxy with explicit runtime type override.
+     * 创建具有显式运行时类型覆盖的代理。
      */
     @SuppressWarnings("unchecked")
     public <T> T create(Class<T> agentInterface, AgentContext.AgentRuntimeType runtimeType) {
         T proxy = create(agentInterface);
-        // The handler stores the runtimeType; we could also pass it through
-        // a setter on the handler after creation
+        // 处理器存储了runtimeType；我们也可以在创建后通过
+        // 处理器的setter来传入
         return proxy;
     }
 
-    // ===== Private helpers =====
+    // ===== 私有辅助方法 =====
 
     private String resolveAgentId(Class<?> agentInterface, Agent ann) {
         if (ann != null && !ann.id().isEmpty()) {
@@ -2566,12 +2540,12 @@ public class AgentProxyFactory {
     }
 
     private AgentContext.AgentRuntimeType resolveRuntimeType(ResolvedAgentConfig config) {
-        // Check system property override
+        // 检查系统属性覆盖
         String sysProp = System.getProperty("lyclaw.agent.runtime");
         if ("acp".equalsIgnoreCase(sysProp)) {
             return AgentContext.AgentRuntimeType.ACP;
         }
-        // Check config extension
+        // 检查配置扩展
         String extVal = config.getExtensions().get("runtimeType");
         if ("acp".equalsIgnoreCase(extVal)) {
             return AgentContext.AgentRuntimeType.ACP;
@@ -2581,13 +2555,12 @@ public class AgentProxyFactory {
 }
 ```
 
-### 1.5.3 Updated AgentInterfaceProcessor (FactoryBean)
+### 1.5.3 更新后的 AgentInterfaceProcessor（FactoryBean）
 
-The `AgentProxyFactoryBean` inner class in `AgentInterfaceProcessor` needs a minor
-update to resolve the `AgentProxyFactory` bean and call the new `create()` signature:
+`AgentInterfaceProcessor` 中的 `AgentProxyFactoryBean` 内部类需要小幅更新，以解析 `AgentProxyFactory` bean并调用新的 `create()` 签名：
 
 ```java
-// Inside AgentInterfaceProcessor.AgentProxyFactoryBean:
+// AgentInterfaceProcessor.AgentProxyFactoryBean 内部:
 
 @Override
 public Object getObject() {
@@ -2599,7 +2572,7 @@ public Object getObject() {
     }
     AgentProxyFactory factory = registry.getBean(AgentProxyFactory.class);
 
-    // Phase 1 change: create() now internally resolves config and passes it to handler
+    // 第一阶段变更: create() 现在内部解析配置并将其传递给处理器
     Object proxy = factory.create(agentInterface);
 
     String beanName = resolveBeanName();
@@ -2609,7 +2582,7 @@ public Object getObject() {
 }
 ```
 
-### 1.5.4 Updated Autoconfiguration
+### 1.5.4 更新后的自动配置
 
 ```java
 package lyjew.com.lyclaw.autoconfigure.autoconfigure;
@@ -2678,32 +2651,30 @@ public class AgentProxyAutoConfiguration {
 
 ---
 
-## Summary: Phase 1 Deliverables
+## 总结：第一阶段交付物
 
-| # | Component | Change | Impact |
+| # | 组件 | 变更 | 影响 |
 |---|---|---|---|
-| 1.1a | `@Agent` annotation | 6 → ~30 fields | Typed, discoverable agent config |
-| 1.1b | `AgentDefaultsConfig` | New class | Global defaults from `application.yml` |
-| 1.1c | `AgentSystemDefaults` | New class | Hard-coded fallback constants |
-| 1.1d | `ResolvedAgentConfig` | New immutable class | Output of 3-layer deep merge |
-| 1.1e | `AgentConfigResolver` | Enhanced | resolveAgentConfig, listAgentIds, workspace dirs |
-| 1.2 | `AgentContext` | +15 new fields + enhanced snapshot/restore | Rich runtime data bus |
-| 1.3a | `AgentHook` | 5 → 36 methods | Full lifecycle coverage |
-| 1.3b | `AgentFinalizeResult` | New class | CONTINUE/REVISE/FINALIZE gate |
-| 1.3c | `HookDecision` | New class | PASS/BLOCK with reason + metadata |
-| 1.3d | `HookRegistration` | New record | Typed hook registry entry |
-| 1.3e | `HookRegistry` | New class | Register, dispatch, unregister hooks |
-| 1.4a | `AgentRuntimeType` | New enum | EMBEDDED / ACP |
-| 1.4b | `AcpRuntime` | New interface | ensureSession, startTurn, cancel, close |
-| 1.4c | `AcpRuntimeHandle/Event/...` | New types | ACP protocol data objects |
-| 1.5 | `AgentProxyFactory` | Restructured | Config-aware, runtime-type support |
+| 1.1a | `@Agent` 注解 | 6个 → 约30个字段 | 类型化、可发现的Agent配置 |
+| 1.1b | `AgentDefaultsConfig` | 新类 | 来自 `application.yml` 的全局默认值 |
+| 1.1c | `AgentSystemDefaults` | 新类 | 硬编码回退常量 |
+| 1.1d | `ResolvedAgentConfig` | 新的不可变类 | 3层深度合并的输出 |
+| 1.1e | `AgentConfigResolver` | 增强 | resolveAgentConfig、listAgentIds、工作区目录 |
+| 1.2 | `AgentContext` | +15个新字段 + 增强的快照/恢复 | 丰富的运行时数据总线 |
+| 1.3a | `AgentHook` | 5个 → 36个方法 | 完整的生命周期覆盖 |
+| 1.3b | `AgentFinalizeResult` | 新类 | CONTINUE/REVISE/FINALIZE门控 |
+| 1.3c | `HookDecision` | 新类 | PASS/BLOCK 附带原因和元数据 |
+| 1.3d | `HookRegistration` | 新 record | 类型化的Hook注册表条目 |
+| 1.3e | `HookRegistry` | 新类 | 注册、分发、注销Hook |
+| 1.4a | `AgentRuntimeType` | 新枚举 | EMBEDDED / ACP |
+| 1.4b | `AcpRuntime` | 新接口 | ensureSession、startTurn、cancel、close |
+| 1.4c | `AcpRuntimeHandle/Event/...` | 新类型 | ACP协议数据对象 |
+| 1.5 | `AgentProxyFactory` | 重构 | 配置感知、运行时类型支持 |
 
-### Backward Compatibility
+### 向后兼容性
 
-- Existing `@Agent` annotation fields (`name`, `description`, `version`, `model`,
-  `provider`, `extensions`) are unchanged — all new fields have sensible defaults.
-- Existing `AgentHook` methods are kept as-is — new methods are `default` (no-op).
-- `AgentContext` constructor overloads maintain the old signature alongside the new
-  one that accepts `ResolvedAgentConfig`.
-- `AgentProxyFactory` retains backward-compatible constructors.
-- `LyClawAgent.Builder` continues to work for non-Spring environments.
+- 现有 `@Agent` 注解字段（`name`、`description`、`version`、`model`、`provider`、`extensions`）保持不变 — 所有新字段都有合理的默认值。
+- 现有 `AgentHook` 方法保持原样 — 新方法均为 `default`（无操作）。
+- `AgentContext` 构造函数重载保持了旧签名，同时也提供了接受 `ResolvedAgentConfig` 的新签名。
+- `AgentProxyFactory` 保留了向后兼容的构造函数。
+- `LyClawAgent.Builder` 在非Spring环境中继续正常工作。

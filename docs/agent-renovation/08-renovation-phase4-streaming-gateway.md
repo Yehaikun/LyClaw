@@ -1,56 +1,56 @@
-# Phase 4: Streaming & Gateway Enhancement + Sandbox + Heartbeat + Run Retries
+# 第四阶段：流式与网关增强 + 沙箱 + 心跳 + 运行重试
 
-## Overview
+## 概述
 
-Phase 4 targets four high-impact subsystems that underpin LyClaw's production readiness:
-1. **Block Streaming & Human Delay** — replaces naive `splitIntoEvents()` in `DefaultReActEngine` with boundary-aware block streaming, coalescing, human typing simulation, and typing indicators.
-2. **Container Sandbox** — upgrades `ToolSandbox` / `SandboxLevel=PROCESS` to Docker/Podman-backed isolation with filesystem bridging, resource limits, and `SandboxExecutionService`.
-3. **Agent Heartbeat** — introduces a cron-like scheduler that can ping agents periodically, produce `heartbeat_*` SSE events, and deliver isolated-session turn results.
-4. **Run Retries Enhancement** — replaces the hardcoded `maxRetries` in `ReflexionLoop` with `RunRetryManager`, per-fallback-profile budgeting, and retry-strategy selection.
+第四阶段针对支撑 LyClaw 生产就绪性的四个高影响力子系统：
+1. **块流式与人类延迟** — 用边界感知的块流式、合并、人类输入模拟和输入中指示器替换 `DefaultReActEngine` 中简单的 `splitIntoEvents()`。
+2. **容器沙箱** — 将 `ToolSandbox` / `SandboxLevel=PROCESS` 升级为基于 Docker/Podman 的隔离，支持文件系统桥接、资源限制和 `SandboxExecutionService`。
+3. **智能体心跳** — 引入类 cron 调度器，可定期 ping 智能体，产生 `heartbeat_*` SSE 事件，并传递隔离会话的轮次结果。
+4. **运行重试增强** — 用 `RunRetryManager`、按回退配置文件预算和重试策略选择替换 `ReflexionLoop` 中硬编码的 `maxRetries`。
 
-All new code lives under existing packages:
-- Streaming configs → `lyjew.com.lyclaw.config`
-- Block streaming logic → `lyjew.com.lyclaw.react.stream`
-- Sandbox → `lyjew.com.lyclaw.security.sandbox`
-- Heartbeat → `lyjew.com.lyclaw.react.heartbeat`
-- Run retries → `lyjew.com.lyclaw.react.retry`
-
----
-
-## Table of Contents
-
-1. [4.1 Block Streaming Enhancement](#41-block-streaming-enhancement)
-2. [4.2 Sandbox Enhancement](#42-sandbox-enhancement)
-3. [4.3 Heartbeat System](#43-heartbeat-system)
-4. [4.4 Run Retries Enhancement](#44-run-retries-enhancement)
-5. [Integration Diagram](#integration-diagram)
-6. [SSE Event Schema Reference](#sse-event-schema-reference)
+所有新代码位于现有包下：
+- 流式配置 → `lyjew.com.lyclaw.config`
+- 块流式逻辑 → `lyjew.com.lyclaw.react.stream`
+- 沙箱 → `lyjew.com.lyclaw.security.sandbox`
+- 心跳 → `lyjew.com.lyclaw.react.heartbeat`
+- 运行重试 → `lyjew.com.lyclaw.react.retry`
 
 ---
 
-## 4.1 Block Streaming Enhancement
+## 目录
 
-### 4.1.1 Motivation
+1. [4.1 块流式增强](#41-块流式增强)
+2. [4.2 沙箱增强](#42-沙箱增强)
+3. [4.3 心跳系统](#43-心跳系统)
+4. [4.4 运行重试增强](#44-运行重试增强)
+5. [集成架构图](#集成架构图)
+6. [SSE 事件模式参考](#sse-事件模式参考)
 
-The current `DefaultReActEngine.splitIntoEvents(String text)` splits at Chinese punctuation boundaries (`\n`, `。`, `！`, `？`, `；`) and emits each segment as a single SSE `message` event. This works for short replies but has several issues:
+---
 
-- **No block awareness**: Does not understand LLM natural text boundaries (paragraphs, code fences, lists).
-- **No coalescing**: A single-character chunk creates a separate SSE frame — wasteful.
-- **No human delay**: All events arrive at once, giving no sense of "the AI is typing."
-- **No typing indicator**: Frontend cannot show a "thinking" or "typing" state during response generation.
+## 4.1 块流式增强
 
-Phase 4 introduces a layered streaming pipeline inside `RespondStage` and `DefaultReActEngine`:
+### 4.1.1 动机
+
+当前 `DefaultReActEngine.splitIntoEvents(String text)` 在中文标点边界处（`\n`、`。`、`！`、`？`、`；`）进行分割，并将每个片段作为单个 SSE `message` 事件发出。这对于短回复可行，但存在若干问题：
+
+- **无块感知**：不理解 LLM 自然文本边界（段落、代码围栏、列表）。
+- **无合并**：单字符块创建单独的 SSE 帧 — 浪费资源。
+- **无人类延迟**：所有事件同时到达，没有"AI 正在打字"的感觉。
+- **无输入中指示器**：前端无法在响应生成期间显示"思考中"或"输入中"状态。
+
+第四阶段在 `RespondStage` 和 `DefaultReActEngine` 内部引入了分层流式管道：
 
 ```
 LLM token stream
-  → BlockStreamingChunk (soft boundary detection)
-    → BlockStreamingCoalesce (merge small blocks)
-      → HumanDelay (inter-block stagger)
-        → TypingIndicator (periodic "typing" events)
+  → BlockStreamingChunk (软边界检测)
+    → BlockStreamingCoalesce (合并小块)
+      → HumanDelay (块间错开)
+        → TypingIndicator (周期性"输入中"事件)
           → SSE emit
 ```
 
-### 4.1.2 Configuration
+### 4.1.2 配置
 
 #### BlockStreamingConfig
 
@@ -60,53 +60,53 @@ package lyjew.com.lyclaw.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Block-based streaming configuration.
- * <p>Controls how LLM token streams are chunked and delivered to SSE clients.
- * Replaces the simple splitIntoEvents() with boundary-aware, coalesced, human-delayed streaming.
+ * 基于块的流式配置。
+ * <p>控制 LLM token 流如何分块并传递给 SSE 客户端。
+ * 用边界感知、合并、人类延迟的流式替换简单的 splitIntoEvents()。
  */
 @ConfigurationProperties(prefix = "lyclaw.streaming.block")
 public class BlockStreamingConfig {
 
-    /** Enable block-based streaming. When false, falls back to legacy splitIntoEvents(). */
+    /** 启用基于块的流式。设为 false 时，回退到旧的 splitIntoEvents()。 */
     private boolean enabled = false;
 
     /**
-     * When to break streaming blocks.
+     * 何时断开流式块。
      * <ul>
-     *   <li>TEXT_END — break after each complete text segment (paragraph, list item, etc.)</li>
-     *   <li>MESSAGE_END — break only at end of entire assistant message</li>
+     *   <li>TEXT_END — 每个完整文本段落后断开（段落、列表项等）</li>
+     *   <li>MESSAGE_END — 仅在整条助手消息结束时断开</li>
      * </ul>
      */
     private BlockStreamingBreak breakMode = BlockStreamingBreak.TEXT_END;
 
-    /** Soft block chunking configuration. */
+    /** 软块分块配置。 */
     private BlockStreamingChunk chunk = new BlockStreamingChunk();
 
-    /** Block reply coalescing configuration. */
+    /** 块回复合并配置。 */
     private BlockStreamingCoalesce coalesce = new BlockStreamingCoalesce();
 
-    /** Maximum characters per individual chunk frame. */
+    /** 每个块帧的最大字符数。 */
     private int maxChunkChars = 2000;
 
-    /** If true, suppress repeated identical text blocks. */
+    /** 如果为 true，抑制重复的相同文本块。 */
     private boolean repeatSuppression = true;
 
     /**
-     * Streaming delivery mode.
+     * 流式投递模式。
      * <ul>
-     *   <li>LIVE — emit blocks as they are formed (default)</li>
-     *   <li>FINAL_ONLY — buffer everything, emit single event at end</li>
+     *   <li>LIVE — 块形成后立即发出（默认）</li>
+     *   <li>FINAL_ONLY — 缓冲所有内容，结束时发出单个事件</li>
      * </ul>
      */
     private StreamingDeliveryMode deliveryMode = StreamingDeliveryMode.LIVE;
 
     /**
-     * Hidden boundary separator for multi-block messages.
-     * Inserted as an invisible delimiter between blocks for clients that parse responses.
+     * 多块消息的隐藏边界分隔符。
+     * 作为块之间的不可见分隔符插入，供解析响应的客户端使用。
      */
     private HiddenBoundarySeparator hiddenBoundary = HiddenBoundarySeparator.NEWLINE;
 
-    // getters and setters omitted for brevity
+    // 此处省略 getter 和 setter
 
     public enum BlockStreamingBreak { TEXT_END, MESSAGE_END }
     public enum StreamingDeliveryMode { LIVE, FINAL_ONLY }
@@ -120,39 +120,38 @@ public class BlockStreamingConfig {
 package lyjew.com.lyclaw.config;
 
 /**
- * Soft block chunking configuration.
- * <p>Chunking means deciding where to cut the token stream into discrete blocks.
- * This is "soft" because chunks can be coalesced later.
+ * 软块分块配置。
+ * <p>分块意味着决定在何处将 token 流切割为离散块。
+ * 这是"软"的，因为块可以在之后被合并。
  */
 public class BlockStreamingChunk {
 
     /**
-     * Soft maximum characters per chunk (bytes for CJK text).
-     * A chunk will be flushed when it exceeds this size,
-     * but the actual boundary is still subject to preferNewlines.
+     * 每个块的软最大字符数（中日韩文本按字节计）。
+     * 当块超过此大小时将刷新，
+     * 但实际边界仍受 preferNewlines 影响。
      */
     private int maxChars = 500;
 
     /**
-     * Maximum idle time (ms) before flushing the current chunk.
-     * If no new tokens arrive for this duration, the accumulated chunk is emitted.
+     * 刷新当前块的最大空闲时间（毫秒）。
+     * 如果在此持续时间内没有新 token 到达，累积的块将被发出。
      */
     private int maxIdleMs = 1000;
 
     /**
-     * If true, prefer splitting at newline boundaries (\n, \r\n, \n\n).
-     * When a newline is encountered and the current chunk is at least 50% of maxChars,
-     * the chunk is flushed at that boundary regardless of exact size.
+     * 如果为 true，优先在换行边界处分割（\n、\r\n、\n\n）。
+     * 当遇到换行且当前块至少达到 maxChars 的 50% 时，
+     * 块将在该边界处刷新，不考虑确切大小。
      */
     private boolean preferNewlines = true;
 
     /**
-     * When preferNewlines is true, the minimum fill percentage (0.0-1.0)
-     * before a newline triggers flush.
+     * 当 preferNewlines 为 true 时，触发换行刷新的最小填充百分比（0.0-1.0）。
      */
     private double newlineFlushThreshold = 0.5;
 
-    // getters and setters omitted
+    // 省略 getter 和 setter
 }
 ```
 
@@ -162,25 +161,25 @@ public class BlockStreamingChunk {
 package lyjew.com.lyclaw.config;
 
 /**
- * Block reply coalescing configuration.
- * <p>Coalescing merges multiple small blocks into one larger block before SSE delivery.
- * This reduces the number of SSE frames and improves network efficiency.
+ * 块回复合并配置。
+ * <p>合并将多个小块合并为一个较大的块再进行 SSE 投递。
+ * 这减少了 SSE 帧的数量，提高了网络效率。
  */
 public class BlockStreamingCoalesce {
 
-    /** Enable block coalescing. */
+    /** 启用块合并。 */
     private boolean enabled = true;
 
-    /** Maximum characters in a coalesced block before forced flush. */
+    /** 合并块强制刷新前的最大字符数。 */
     private int maxChars = 8000;
 
     /**
-     * Maximum idle time (ms) before flushing the coalesced buffer.
-     * If no new blocks arrive for this duration, the accumulated content is emitted.
+     * 刷新合并缓冲区的最大空闲时间（毫秒）。
+     * 如果在此持续时间内没有新块到达，累积的内容将被发出。
      */
     private int maxIdleMs = 3000;
 
-    // getters and setters omitted
+    // 省略 getter 和 setter
 }
 ```
 
@@ -192,49 +191,48 @@ package lyjew.com.lyclaw.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Human-like typing delay configuration.
- * <p>Introduces variable delays between streaming blocks to simulate
- * natural typing speed, improving UX in chat interfaces.
+ * 类人输入延迟配置。
+ * <p>在流式块之间引入可变延迟，模拟自然输入速度，改善聊天界面用户体验。
  */
 @ConfigurationProperties(prefix = "lyclaw.streaming.human-delay")
 public class HumanDelayConfig {
 
-    /** Enable human-like delay simulation. */
+    /** 启用类人延迟模拟。 */
     private boolean enabled = false;
 
-    /** Minimum delay between blocks (ms). */
+    /** 块之间的最小延迟（毫秒）。 */
     private int minDelayMs = 200;
 
-    /** Maximum delay between blocks (ms). */
+    /** 块之间的最大延迟（毫秒）。 */
     private int maxDelayMs = 1500;
 
     /**
-     * Simulated typing speed in characters per second.
-     * Used to calculate dynamic delay: delayMs = blockChars / charsPerSecond * 1000.
-     * Typical human typing speed is 40-80 CPS; 50 is a natural default.
+     * 模拟输入速度，以每秒字符数计。
+     * 用于计算动态延迟：delayMs = blockChars / charsPerSecond * 1000。
+     * 典型人类输入速度为 40-80 CPS；50 是一个自然的默认值。
      */
     private int charsPerSecond = 50;
 
     /**
-     * If true, adaptive speed adjusts typing rate for long replies.
-     * The agent "speeds up" as response length grows to avoid excessive wait times.
+     * 如果为 true，自适应速度会根据长回复调整输入速率。
+     * 随着响应长度增长，智能体"加速"以避免过长的等待时间。
      */
     private boolean adaptiveSpeed = true;
 
     /**
-     * Character threshold for triggering the speed-up adjustment.
-     * When the total accumulated response exceeds this, charsPerSecond is
-     * gradually increased (up to 3x) for remaining blocks.
+     * 触发加速调整的字符阈值。
+     * 当总累积响应超过此值时，charsPerSecond 会
+     * 逐渐增加（最多 3 倍）用于后续块。
      */
     private int longReplyThreshold = 2000;
 
-    // getters and setters omitted
+    // 省略 getter 和 setter
 }
 ```
 
 ### 4.1.3 BlockStreamingController
 
-This is the core component that replaces `splitIntoEvents()`.
+这是替换 `splitIntoEvents()` 的核心组件。
 
 ```java
 package lyjew.com.lyclaw.react.stream;
@@ -255,18 +253,18 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Block-based streaming controller that replaces DefaultReActEngine.splitIntoEvents().
+ * 基于块的流式控制器，替代 DefaultReActEngine.splitIntoEvents()。
  *
- * <p>Converts a raw text response into a boundary-aware, coalesced, human-delayed
- * Flux of SSE events. Integrates with RespondStage's streaming pipeline.</p>
+ * <p>将原始文本响应转换为边界感知、合并、人类延迟的
+ * SSE 事件 Flux。与 RespondStage 的流式管道集成。</p>
  *
- * <h3>Processing pipeline:</h3>
+ * <h3>处理管道：</h3>
  * <ol>
- *   <li>Parse raw text into blocks at natural boundaries</li>
- *   <li>Coalesce small adjacent blocks</li>
- *   <li>Apply human delay between blocks</li>
- *   <li>Apply repeat suppression</li>
- *   <li>Emit SSE message events</li>
+ *   <li>将原始文本按自然边界解析为块</li>
+ *   <li>合并相邻小块</li>
+ *   <li>在块之间应用人类延迟</li>
+ *   <li>应用重复抑制</li>
+ *   <li>发出 SSE message 事件</li>
  * </ol>
  */
 public class BlockStreamingController {
@@ -277,10 +275,10 @@ public class BlockStreamingController {
     private final HumanDelayConfig humanDelayConfig;
     private final TypingIndicatorController typingIndicator;
 
-    // Track previously emitted text for repeat suppression
+    // 跟踪先前发出的文本用于重复抑制
     private String lastEmittedBlock = "";
 
-    // Track total emitted chars for adaptive speed
+    // 跟踪总发出字符数用于自适应速度
     private int totalEmittedChars = 0;
 
     public BlockStreamingController(BlockStreamingConfig config,
@@ -292,11 +290,11 @@ public class BlockStreamingController {
     }
 
     /**
-     * Convert a complete text response into a block-streamed Flux of SSE events.
-     * Used when tool calls are detected and the ReAct loop produces a final text response.
+     * 将完整文本响应转换为块流式的 SSE 事件 Flux。
+     * 当检测到工具调用且 ReAct 循环产生最终文本响应时使用。
      *
-     * @param text the complete assistant response text
-     * @return Flux of SSE message events
+     * @param text 完整的助手响应文本
+     * @return SSE message 事件的 Flux
      */
     public Flux<ServerSentEvent<String>> streamResponse(String text) {
         if (!config.isEnabled() || text == null || text.isEmpty()) {
@@ -317,7 +315,7 @@ public class BlockStreamingController {
                 return Flux.just(sseMessage(joined));
             }
 
-            // LIVE mode: emit blocks with human delay
+            // LIVE 模式：以人类延迟发出块
             return Flux.fromIterable(blocks)
                     .concatMap(block ->
                             Mono.just(sseMessage(block))
@@ -327,16 +325,16 @@ public class BlockStreamingController {
     }
 
     /**
-     * Segment raw text into blocks at natural boundaries.
+     * 按自然边界将原始文本分割为块。
      *
-     * <p>Boundary detection recognizes:
+     * <p>边界检测识别：
      * <ul>
-     *   <li>Paragraph breaks (double newline) — strongest boundary</li>
-     *   <li>Code fences (```), list items (-, *, 1.) — strong boundary</li>
-     *   <li>Table rows (|) — strong boundary</li>
-     *   <li>Sentence endings (.!?。) — medium boundary</li>
-     *   <li>Newline — weak boundary</li>
-     *   <li>Comma/colon — soft boundary (only if approaching maxChars)</li>
+     *   <li>段落分隔（双换行）— 最强边界</li>
+     *   <li>代码围栏 (```)、列表项 (-、*、1.) — 强边界</li>
+     *   <li>表格行 (|) — 强边界</li>
+     *   <li>句子结束 (.!?。) — 中等边界</li>
+     *   <li>换行 — 弱边界</li>
+     *   <li>逗号/冒号 — 软边界（仅在接近 maxChars 时）</li>
      * </ul></p>
      */
     List<String> segmentIntoBlocks(String text) {
@@ -348,20 +346,20 @@ public class BlockStreamingController {
         List<String> blocks = new ArrayList<>();
         StringBuilder buf = new StringBuilder();
 
-        // First pass: split by double newlines (paragraph breaks — strongest boundary)
+        // 第一遍：按双换行分割（段落分隔 — 最强边界）
         String[] paragraphs = text.split("\\n\\s*\\n", -1);
 
         for (int p = 0; p < paragraphs.length; p++) {
             String paragraph = paragraphs[p];
             if (paragraph.isEmpty()) {
                 if (p > 0 && p < paragraphs.length - 1) {
-                    // Empty paragraph = intentional blank line, add as separator
+                    // 空段落 = 有意的空白行，添加为分隔符
                     blocks.add("\n\n");
                 }
                 continue;
             }
 
-            // Within each paragraph, split by strong boundaries
+            // 在每个段落内，按强边界分割
             int i = 0;
             while (i < paragraph.length()) {
                 char c = paragraph.charAt(i);
@@ -370,20 +368,20 @@ public class BlockStreamingController {
                 boolean shouldFlush = false;
 
                 if (breakMode == BlockStreamingConfig.BlockStreamingBreak.MESSAGE_END) {
-                    // Only flush at paragraph boundaries
+                    // 仅在段落边界处刷新
                     shouldFlush = false;
                 } else if (buf.length() >= maxChars) {
-                    // Hard flush at maxChars
+                    // 达到 maxChars 时强制刷新
                     shouldFlush = true;
                 } else if (c == '\n' && preferNewlines
                         && buf.length() >= (int)(maxChars * newlineThreshold)) {
-                    // Soft flush at newline when sufficiently full
+                    // 当缓冲区足够满时在换行处软刷新
                     shouldFlush = true;
                 } else if (isStrongBoundary(c, paragraph, i)) {
-                    // Strong boundary character
-                    shouldFlush = buf.length() >= 20; // avoid single-char blocks
+                    // 强边界字符
+                    shouldFlush = buf.length() >= 20; // 避免单字符块
                 } else if (isMediumBoundary(c) && buf.length() >= (int)(maxChars * 0.5)) {
-                    // Medium boundary when > 50% full
+                    // 当 > 50% 满时，在中等边界处刷新
                     shouldFlush = true;
                 }
 
@@ -395,7 +393,7 @@ public class BlockStreamingController {
             }
         }
 
-        // Flush remaining
+        // 刷新剩余内容
         if (buf.length() > 0) {
             String rem = buf.toString().trim();
             if (!rem.isEmpty()) {
@@ -407,7 +405,7 @@ public class BlockStreamingController {
     }
 
     /**
-     * Coalesce small adjacent blocks into larger ones.
+     * 合并相邻小块为较大块。
      */
     List<String> coalesceBlocks(List<String> blocks) {
         BlockStreamingCoalesce c = config.getCoalesce();
@@ -420,7 +418,7 @@ public class BlockStreamingController {
 
         for (String block : blocks) {
             if (buffer.length() + block.length() > c.getMaxChars()) {
-                // Buffer would overflow — flush it
+                // 缓冲区将溢出 — 刷新它
                 coalesced.add(buffer.toString().trim());
                 buffer.setLength(0);
             }
@@ -439,7 +437,7 @@ public class BlockStreamingController {
     }
 
     /**
-     * Remove repeated identical blocks.
+     * 移除重复的相同块。
      */
     List<String> applyRepeatSuppression(List<String> blocks) {
         if (!config.isRepeatSuppression() || blocks.isEmpty()) {
@@ -457,7 +455,7 @@ public class BlockStreamingController {
     }
 
     /**
-     * Calculate human delay for a block.
+     * 计算块的人类延迟。
      */
     Duration calculateDelay(String block) {
         if (!humanDelayConfig.isEnabled()) {
@@ -467,21 +465,21 @@ public class BlockStreamingController {
         int charsPerSec = humanDelayConfig.getCharsPerSecond();
 
         if (humanDelayConfig.isAdaptiveSpeed() && totalEmittedChars > humanDelayConfig.getLongReplyThreshold()) {
-            // Speed up for long replies: gradually increase CPS up to 3x
+            // 长回复加速：逐步将 CPS 提高到 3 倍
             double excessRatio = Math.min(1.0,
                     (double)(totalEmittedChars - humanDelayConfig.getLongReplyThreshold())
                             / humanDelayConfig.getLongReplyThreshold());
             charsPerSec = (int)(charsPerSec * (1.0 + excessRatio * 2.0));
         }
 
-        // Base delay proportional to block length
+        // 基础延迟与块长度成正比
         int baseDelayMs = (int)((double)block.length() / charsPerSec * 1000);
 
-        // Clamp between min and max
+        // 限制在最小和最大值之间
         int delayMs = Math.max(humanDelayConfig.getMinDelayMs(),
                 Math.min(humanDelayConfig.getMaxDelayMs(), baseDelayMs));
 
-        // Add small random jitter (±20%)
+        // 添加小幅随机抖动（±20%）
         double jitter = 0.8 + Math.random() * 0.4;
         delayMs = (int)(delayMs * jitter);
 
@@ -490,12 +488,12 @@ public class BlockStreamingController {
     }
 
     /**
-     * Join blocks with the configured hidden boundary separator.
+     * 使用配置的隐藏边界分隔符连接块。
      */
     String joinWithHiddenBoundary(List<String> blocks) {
         String sep;
         switch (config.getHiddenBoundary()) {
-            case NULL_CHAR: sep = " "; break;
+            case NULL_CHAR: sep = "\0"; break;
             case NONE: sep = ""; break;
             default: sep = "\n";
         }
@@ -503,16 +501,16 @@ public class BlockStreamingController {
     }
 
     private boolean isStrongBoundary(char c, String text, int pos) {
-        // Heading markers: # at line start
+        // 标题标记：行首的 #
         if (c == '#') {
             return pos == 0 || (pos > 0 && text.charAt(pos - 1) == '\n');
         }
-        // Code fence backticks: ```
+        // 代码围栏反引号：```
         if (c == '`' && text.length() > pos + 2
                 && text.charAt(pos + 1) == '`' && text.charAt(pos + 2) == '`') {
             return true;
         }
-        // Horizontal rule: ---, ***, ___
+        // 水平分隔线：---、***、___
         if ((c == '-' || c == '*' || c == '_') && text.length() > pos + 2) {
             boolean hr = text.charAt(pos + 1) == c && text.charAt(pos + 2) == c;
             if (hr) {
@@ -559,10 +557,10 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Controls typing indicator SSE events sent to the client during
- * agent processing gaps (tool execution, thinking, etc.).
+ * 控制在智能体处理间隙期间（工具执行、思考等）
+ * 发送给客户端的输入中指示器 SSE 事件。
  *
- * <p>Usage in RespondStage:
+ * <p>在 RespondStage 中的用法：
  * <pre>{@code
  *   Flux<ServerSentEvent<String>> typingFlux = typingIndicator.startTyping(ctx);
  *   Flux<ServerSentEvent<String>> bodyFlux = reactWithReActEngine(ctx, traceId, toolDefs);
@@ -579,13 +577,13 @@ public class TypingIndicatorController {
     private volatile boolean active = false;
 
     public enum TypingMode {
-        /** Never send typing indicators. */
+        /** 从不发送输入中指示器。 */
         NEVER,
-        /** Send a typing indicator immediately upon entering a processing gap. */
+        /** 进入处理间隙时立即发送输入中指示器。 */
         INSTANT,
-        /** Send typing indicators at intervals during "thinking" phases. */
+        /** 在"思考"阶段按间隔发送输入中指示器。 */
         THINKING,
-        /** Send typing indicators at intervals during message generation. */
+        /** 在消息生成期间按间隔发送输入中指示器。 */
         MESSAGE
     }
 
@@ -595,11 +593,11 @@ public class TypingIndicatorController {
     }
 
     /**
-     * Returns a Flux that emits typing indicator SSE events at the configured interval.
-     * Events are automatically stopped when stopTyping() is called.
+     * 返回一个 Flux，按配置的间隔发出输入中指示器 SSE 事件。
+     * 当调用 stopTyping() 时事件自动停止。
      *
-     * @param ctx the agent context for which to emit typing indicators
-     * @return Flux of "typing" SSE events, emitted every intervalSeconds
+     * @param ctx 要为其发出输入中指示器的智能体上下文
+     * @return "typing" SSE 事件的 Flux，每 intervalSeconds 发出一次
      */
     public Flux<ServerSentEvent<String>> startTyping(AgentContext ctx) {
         if (mode == TypingMode.NEVER) {
@@ -612,8 +610,8 @@ public class TypingIndicatorController {
     }
 
     /**
-     * Stop emitting typing indicators. The Flux from startTyping() will complete
-     * on its next tick.
+     * 停止发出输入中指示器。startTyping() 的 Flux 将在
+     * 下一次 tick 时完成。
      */
     public void stopTyping() {
         this.active = false;
@@ -622,7 +620,7 @@ public class TypingIndicatorController {
     private ServerSentEvent<String> buildTypingEvent(AgentContext ctx) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "typing");
-        payload.put("agentId", ctx.getSessionId());  // sessionId serves as agentId
+        payload.put("agentId", ctx.getSessionId());  // sessionId 用作 agentId
         payload.put("stage", ctx.getCurrentStage().get());
         try {
             return ServerSentEvent.<String>builder()
@@ -639,17 +637,17 @@ public class TypingIndicatorController {
 }
 ```
 
-### 4.1.5 Integration with RespondStage
+### 4.1.5 与 RespondStage 的集成
 
-The modified `RespondStage` integrates block streaming as follows:
+修改后的 `RespondStage` 按如下方式集成块流式：
 
 ```java
-// Inside RespondStage.reactWithReActEngine():
+// 在 RespondStage.reactWithReActEngine() 内部：
 //
-// Before (current):
+// 之前（当前）：
 //   return reActEngine.executeStream(chatFacade, request, toolExecutor);
 //
-// After (Phase 4):
+// 之后（第四阶段）：
 //   BlockStreamingController streamingCtrl = streamingControllerFactory.get(ctx);
 //   TypingIndicatorController typingCtrl = typingControllerFactory.get(ctx);
 //
@@ -660,12 +658,12 @@ The modified `RespondStage` integrates block streaming as follows:
 //       .flatMap(event -> {
 //           if ("message".equals(event.event()) && event.data() != null) {
 //               String data = event.data();
-//               // If the event is a final text block (not streaming token), apply block streaming
+//               // 如果事件是最终文本块（非流式 token），应用块流式
 //               if (isBlockCandidates(data)) {
 //                   streamingCtrl.reset();
 //                   return streamingCtrl.streamResponse(data);
 //               }
-//               // Otherwise pass through as-is (streaming tokens are already granular)
+//               // 否则原样透传（流式 token 已经是细粒度的）
 //               return Flux.just(event);
 //           }
 //           return Flux.just(event);
@@ -674,28 +672,28 @@ The modified `RespondStage` integrates block streaming as follows:
 //       .mergeWith(typingFlux);
 ```
 
-And in `DefaultReActEngine`, the `splitIntoEvents()` method is replaced by delegating to `BlockStreamingController`:
+在 `DefaultReActEngine` 中，`splitIntoEvents()` 方法被委托给 `BlockStreamingController` 替换：
 
 ```java
-// In DefaultReActEngine, replace:
+// 在 DefaultReActEngine 中，替换：
 //   private Flux<ServerSentEvent<String>> splitIntoEvents(String text) { ... }
 //
-// With:
+// 替换为：
 //   private final BlockStreamingController streamingController;
 //
 //   private Flux<ServerSentEvent<String>> streamFinalText(String text) {
 //       if (streamingController != null) {
 //           return streamingController.streamResponse(text);
 //       }
-//       // Legacy fallback
-//       // ... (old splitIntoEvents logic kept for backward compat)
+//       // 旧版回退
+//       // ... （保留旧的 splitIntoEvents 逻辑以向后兼容）
 //   }
 ```
 
-### 4.1.6 YAML Configuration
+### 4.1.6 YAML 配置
 
 ```yaml
-# application.yml — block streaming configuration
+# application.yml — 块流式配置
 lyclaw:
   streaming:
     block:
@@ -728,21 +726,21 @@ lyclaw:
 
 ---
 
-## 4.2 Sandbox Enhancement
+## 4.2 沙箱增强
 
-### 4.2.1 Motivation
+### 4.2.1 动机
 
-The current sandbox system (via `ToolSandbox` interface and `SandboxLevel` enum) supports:
-- `DIRECT` — execute on current thread (read-only tools)
-- `SANDBOX` — daemon thread + temporary working directory
-- `PROCESS` — independent OS process via `CommandExecutor`
+当前沙箱系统（通过 `ToolSandbox` 接口和 `SandboxLevel` 枚举）支持：
+- `DIRECT` — 在当前线程上执行（只读工具）
+- `SANDBOX` — 守护线程 + 临时工作目录
+- `PROCESS` — 通过 `CommandExecutor` 的独立操作系统进程
 
-What is missing:
-- **Container isolation**: No Docker/Podman support; `PROCESS` level still runs as a child of the JVM process.
-- **Resource limits**: No memory/CPU/timeout enforcement at the OS level.
-- **Filesystem bridging**: No bidirectional file transfer between host and sandbox.
-- **Health monitoring**: `ToolSandbox.isHealthy()` is not backed by actual container health checks.
-- **Network control**: No way to disable network access for untrusted code.
+缺失的内容：
+- **容器隔离**：无 Docker/Podman 支持；`PROCESS` 级别仍作为 JVM 进程的子进程运行。
+- **资源限制**：无操作系统级别的内存/CPU/超时强制执行。
+- **文件系统桥接**：主机与沙箱之间无双向文件传输。
+- **健康监控**：`ToolSandbox.isHealthy()` 没有实际的容器健康检查支持。
+- **网络控制**：无法为不受信任的代码禁用网络访问。
 
 ### 4.2.2 AgentSandboxConfig
 
@@ -755,100 +753,100 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Container-based sandbox configuration.
- * <p>Controls Docker/Podman container settings for tool execution isolation.
+ * 基于容器的沙箱配置。
+ * <p>控制用于工具执行隔离的 Docker/Podman 容器设置。
  */
 @ConfigurationProperties(prefix = "lyclaw.sandbox")
 public class AgentSandboxConfig {
 
     /**
-     * Sandbox backend provider.
+     * 沙箱后端提供者。
      * <ul>
-     *   <li>NONE — no container isolation (use legacy process sandbox)</li>
-     *   <li>DOCKER — use docker-java SDK</li>
-     *   <li>PODMAN — use podman CLI (compatible with rootless setups)</li>
+     *   <li>NONE — 无容器隔离（使用旧版进程沙箱）</li>
+     *   <li>DOCKER — 使用 docker-java SDK</li>
+     *   <li>PODMAN — 使用 podman CLI（兼容 rootless 设置）</li>
      * </ul>
      */
     private SandboxBackend backend = SandboxBackend.NONE;
 
-    /** Container image to use for sandbox execution. */
+    /** 用于沙箱执行的容器镜像。 */
     private String image = "ubuntu:22.04";
 
-    /** Root directory inside the container for sandbox operations. */
+    /** 容器内沙箱操作的根目录。 */
     private String rootDir = "/sandbox";
 
-    /** Command whitelist: only these commands may execute inside the sandbox. */
+    /** 命令白名单：仅允许这些命令在沙箱内执行。 */
     private List<String> allowedCommands = new ArrayList<>();
 
-    /** Command blacklist: these commands are explicitly forbidden. */
+    /** 命令黑名单：明确禁止这些命令。 */
     private List<String> deniedCommands = new ArrayList<>();
 
-    /** Whether the sandbox container has network access. Default false for security. */
+    /** 沙箱容器是否有网络访问权限。默认 false 以保安全。 */
     private boolean networkEnabled = false;
 
-    /** Whether the sandbox container can write to the filesystem. */
+    /** 沙箱容器是否可以写入文件系统。 */
     private boolean fileSystemWriteEnabled = true;
 
-    /** Memory limit in MB for the container. */
+    /** 容器的内存限制（MB）。 */
     private long memoryLimitMb = 512;
 
-    /** CPU limit in cores (can be fractional). */
+    /** CPU 限制（核数，可为小数）。 */
     private double cpuLimit = 1.0;
 
-    /** Maximum execution time for a single tool call in seconds. */
+    /** 单次工具调用的最大执行时间（秒）。 */
     private int timeoutSeconds = 300;
 
-    /** Filesystem bridge configuration. */
+    /** 文件系统桥接配置。 */
     private SandboxFsBridge fsBridge = new SandboxFsBridge();
 
-    /** Container startup timeout in seconds. */
+    /** 容器启动超时（秒）。 */
     private int startupTimeoutSeconds = 30;
 
-    /** If true, reuse containers across tool calls within the same session. */
+    /** 如果为 true，在同一会话的工具调用之间复用容器。 */
     private boolean reuseContainer = true;
 
-    /** Maximum container idle time in seconds before automatic cleanup. */
+    /** 容器自动清理前的最大空闲时间（秒）。 */
     private int containerIdleTimeoutSeconds = 600;
 
-    /** Docker socket path (default: unix:///var/run/docker.sock). */
+    /** Docker socket 路径（默认：unix:///var/run/docker.sock）。 */
     private String dockerSocket = "unix:///var/run/docker.sock";
 
-    /** Podman socket path for podman backend. */
+    /** Podman 后端的 Podman socket 路径。 */
     private String podmanSocket = "unix:///run/podman/podman.sock";
 
-    // getters and setters omitted
+    // 省略 getter 和 setter
 
     public enum SandboxBackend { NONE, DOCKER, PODMAN }
 }
 ```
 
-#### SandboxFsBridge (inner config)
+#### SandboxFsBridge（内部配置）
 
 ```java
 /**
- * Filesystem bridge configuration for host-sandbox file sharing.
+ * 主机-沙箱文件共享的文件系统桥接配置。
  */
 public class SandboxFsBridge {
 
-    /** Host workspace directory to bridge into the sandbox (read-only). */
+    /** 要桥接到沙箱中的主机工作空间目录（只读）。 */
     private String hostWorkspace = "./workspace";
 
-    /** Path inside the container where host workspace is mounted. */
+    /** 容器内挂载主机工作空间的路径。 */
     private String sandboxWorkspace = "/workspace";
 
-    /** Whether the workspace mount is read-only inside the container. */
+    /** 容器内的工作空间挂载是否为只读。 */
     private boolean workspaceReadOnly = true;
 
-    /** Host temp directory for sandbox writable files. */
+    /** 沙箱可写文件的主机临时目录。 */
     private String hostTmp = "./sandbox-tmp";
 
-    /** Path inside the container for writable temp files. */
+    /** 容器内可写临时文件的路径。 */
     private String sandboxTmp = "/tmp/sandbox";
 
-    /** Maximum size in MB for the tmp volume. */
+    /** tmp 卷的最大大小（MB）。 */
     private long tmpMaxSizeMb = 500;
 
-    // getters and setters omitted
+    // 省略 getter 和 setter
 }
 ```
 
@@ -881,18 +879,18 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Container-backed sandbox execution service.
+ * 基于容器的沙箱执行服务。
  *
- * <p>Manages Docker/Podman container lifecycle for isolated tool execution.
- * Integrates with SandboxHook (replacing direct ToolSandbox delegation for
- * SandboxLevel.PROCESS when container backend is configured).
+ * <p>管理 Docker/Podman 容器生命周期，用于隔离的工具执行。
+ * 与 SandboxHook 集成（在配置了容器后端时替换 SandboxLevel.PROCESS 下
+ * 的直接 ToolSandbox 委托）。
  *
- * <h3>Lifecycle:</h3>
+ * <h3>生命周期：</h3>
  * <ol>
- *   <li>createSandbox(config) — pull image, create container, start it</li>
- *   <li>executeInSandbox(handle, tool, args) — execute tool via docker exec</li>
- *   <li>isHealthy(handle) — check container running status</li>
- *   <li>destroy(handle) — stop and remove container</li>
+ *   <li>createSandbox(config) — 拉取镜像，创建容器，启动它</li>
+ *   <li>executeInSandbox(handle, tool, args) — 通过 docker exec 执行工具</li>
+ *   <li>isHealthy(handle) — 检查容器运行状态</li>
+ *   <li>destroy(handle) — 停止并删除容器</li>
  * </ol>
  */
 public class SandboxExecutionService {
@@ -909,7 +907,7 @@ public class SandboxExecutionService {
                 ? buildDockerClient(config) : null;
     }
 
-    // ── Docker Client Factory ──────────────────────────────────────────
+    // ── Docker 客户端工厂 ──────────────────────────────────────────
 
     private DockerClient buildDockerClient(AgentSandboxConfig config) {
         DefaultDockerClientConfig clientConfig = DefaultDockerClientConfig.createDefaultConfigBuilder()
@@ -927,13 +925,13 @@ public class SandboxExecutionService {
         return DockerClientImpl.getInstance(clientConfig, httpClient);
     }
 
-    // ── Sandbox Lifecycle ──────────────────────────────────────────────
+    // ── 沙箱生命周期 ──────────────────────────────────────────────
 
     /**
-     * Create and start a sandbox container.
+     * 创建并启动沙箱容器。
      *
-     * @param sessionId the session this sandbox belongs to
-     * @return Mono emitting the SandboxHandle on success
+     * @param sessionId 此沙箱所属的会话
+     * @return 成功时发出 SandboxHandle 的 Mono
      */
     public Mono<SandboxHandle> createSandbox(String sessionId) {
         if (config.getBackend() == AgentSandboxConfig.SandboxBackend.NONE) {
@@ -943,27 +941,27 @@ public class SandboxExecutionService {
         return Mono.fromCallable(() -> {
             String containerName = "lyclaw-sandbox-" + sessionId + "-" + UUID.randomUUID().toString().substring(0, 8);
 
-            log.info("Creating sandbox container: name={} image={}", containerName, config.getImage());
+            log.info("创建沙箱容器：name={} image={}", containerName, config.getImage());
 
-            // Pull image if not present
+            // 如果不存在则拉取镜像
             try {
                 dockerClient.pullImageCmd(config.getImage()).start().awaitCompletion();
             } catch (Exception e) {
-                log.warn("Image pull failed (may already exist locally): {}", e.getMessage());
+                log.warn("镜像拉取失败（可能本地已存在）：{}", e.getMessage());
             }
 
-            // Build host config with resource limits
+            // 构建带资源限制的主机配置
             HostConfig hostConfig = HostConfig.newHostConfig()
-                    .withMemory(config.getMemoryLimitMb() * 1024 * 1024) // bytes
+                    .withMemory(config.getMemoryLimitMb() * 1024 * 1024) // 字节
                     .withNanoCPUs((long)(config.getCpuLimit() * 1_000_000_000L))
                     .withNetworkMode(config.isNetworkEnabled() ? "bridge" : "none")
                     .withReadonlyRootfs(!config.isFileSystemWriteEnabled())
                     .withAutoRemove(true);
 
-            // Mount volumes
+            // 挂载卷
             List<com.github.dockerjava.api.model.Bind> binds = new ArrayList<>();
 
-            // Workspace mount (read-only if configured)
+            // 工作空间挂载（如配置则为只读）
             Path hostWorkspace = Paths.get(config.getFsBridge().getHostWorkspace())
                     .toAbsolutePath().normalize();
             Files.createDirectories(hostWorkspace);
@@ -972,7 +970,7 @@ public class SandboxExecutionService {
                     new com.github.dockerjava.api.model.Volume(config.getFsBridge().getSandboxWorkspace()),
                     AccessMode.valueOf(workspaceMode)));
 
-            // Tmp mount (read-write)
+            // Tmp 挂载（读写）
             Path hostTmp = Paths.get(config.getFsBridge().getHostTmp())
                     .toAbsolutePath().normalize();
             Files.createDirectories(hostTmp);
@@ -982,12 +980,12 @@ public class SandboxExecutionService {
 
             hostConfig.withBinds(binds);
 
-            // Create container
+            // 创建容器
             CreateContainerCmd createCmd = dockerClient.createContainerCmd(config.getImage())
                     .withName(containerName)
                     .withHostConfig(hostConfig)
                     .withWorkingDir(config.getRootDir())
-                    .withCmd("sleep", "infinity") // keep container alive
+                    .withCmd("sleep", "infinity") // 保持容器存活
                     .withAttachStdin(false)
                     .withAttachStdout(true)
                     .withAttachStderr(true);
@@ -995,46 +993,46 @@ public class SandboxExecutionService {
             CreateContainerResponse createResp = createCmd.exec();
             String containerId = createResp.getId();
 
-            // Start container
+            // 启动容器
             dockerClient.startContainerCmd(containerId).exec();
 
-            // Wait for container to be ready
+            // 等待容器就绪
             boolean ready = waitForContainerReady(containerId, config.getStartupTimeoutSeconds());
             if (!ready) {
-                throw new RuntimeException("Sandbox container failed to start within timeout: " + containerName);
+                throw new RuntimeException("沙箱容器启动超时：" + containerName);
             }
 
             SandboxHandle handle = new SandboxHandle(sessionId, containerId, containerName);
             activeHandles.put(sessionId, handle);
 
-            log.info("Sandbox container started: containerId={} name={}", containerId, containerName);
+            log.info("沙箱容器已启动：containerId={} name={}", containerId, containerName);
             return handle;
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
-    // ── Tool Execution ─────────────────────────────────────────────────
+    // ── 工具执行 ─────────────────────────────────────────────────
 
     /**
-     * Execute a tool inside the sandbox container.
+     * 在沙箱容器内执行工具。
      *
-     * @param handle the sandbox to execute in
-     * @param tool   the tool definition
-     * @param args   tool arguments
-     * @return Mono emitting the execution result
+     * @param handle 要在其中执行的沙箱
+     * @param tool   工具定义
+     * @param args   工具参数
+     * @return 发出执行结果的 Mono
      */
     public Mono<ToolExecutionResult> executeInSandbox(SandboxHandle handle, Tool tool,
                                                        Map<String, Object> args) {
         if (handle.isNone()) {
-            return Mono.just(ToolExecutionResult.failure("No sandbox container available"));
+            return Mono.just(ToolExecutionResult.failure("没有可用的沙箱容器"));
         }
 
         return Mono.fromCallable(() -> {
-            // Build the docker exec command
+            // 构建 docker exec 命令
             String[] cmd = buildExecCommand(tool, args);
 
-            // Validate against allow/deny lists
+            // 对照允许/拒绝列表验证
             if (!isCommandAllowed(cmd[0])) {
-                return ToolExecutionResult.failure("Command '" + cmd[0] + "' is not allowed in sandbox");
+                return ToolExecutionResult.failure("命令 '" + cmd[0] + "' 不允许在沙箱中执行");
             }
 
             ExecCreateCmdResponse execCreate = dockerClient.execCreateCmd(handle.getContainerId())
@@ -1044,7 +1042,7 @@ public class SandboxExecutionService {
                     .withTty(false)
                     .exec();
 
-            // Capture output
+            // 捕获输出
             StringBuilder stdout = new StringBuilder();
             StringBuilder stderr = new StringBuilder();
 
@@ -1064,11 +1062,11 @@ public class SandboxExecutionService {
                         })
                         .awaitCompletion(config.getTimeoutSeconds(), java.util.concurrent.TimeUnit.SECONDS);
             } catch (Exception e) {
-                log.error("Sandbox execution timed out or failed: {}", e.getMessage());
-                return ToolExecutionResult.failure("Sandbox execution error: " + e.getMessage());
+                log.error("沙箱执行超时或失败：{}", e.getMessage());
+                return ToolExecutionResult.failure("沙箱执行错误：" + e.getMessage());
             }
 
-            // Check exit code
+            // 检查退出码
             InspectExecResponse execInspect = dockerClient.inspectExecCmd(execCreate.getId()).exec();
             int exitCode = execInspect.getExitCode() != null ? execInspect.getExitCode() : -1;
 
@@ -1076,15 +1074,15 @@ public class SandboxExecutionService {
                 return ToolExecutionResult.success(stdout.toString().trim());
             } else {
                 String error = stderr.length() > 0 ? stderr.toString().trim() : stdout.toString().trim();
-                return ToolExecutionResult.failure("Exit code " + exitCode + ": " + error);
+                return ToolExecutionResult.failure("退出码 " + exitCode + "：" + error);
             }
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
-    // ── Filesystem Bridge ──────────────────────────────────────────────
+    // ── 文件系统桥接 ──────────────────────────────────────────────
 
     /**
-     * Copy a file from host to sandbox container.
+     * 将文件从主机复制到沙箱容器。
      */
     public Mono<Void> bridgeFileToSandbox(String hostPath, String sandboxPath,
                                           SandboxHandle handle) {
@@ -1094,7 +1092,7 @@ public class SandboxExecutionService {
             try {
                 Path hostFile = Paths.get(hostPath);
                 if (!Files.exists(hostFile)) {
-                    log.warn("Host file does not exist: {}", hostPath);
+                    log.warn("主机文件不存在：{}", hostPath);
                     return;
                 }
 
@@ -1104,16 +1102,16 @@ public class SandboxExecutionService {
                             .withTarInputStream(tarStream)
                             .exec();
                 }
-                log.debug("File bridged to sandbox: {} -> {}:{}",
+                log.debug("文件已桥接到沙箱：{} -> {}:{}",
                         hostPath, handle.getContainerId(), sandboxPath);
             } catch (Exception e) {
-                log.error("Failed to bridge file to sandbox: {}", e.getMessage());
+                log.error("桥接文件到沙箱失败：{}", e.getMessage());
             }
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
 
     /**
-     * Copy a file from sandbox container to host.
+     * 将文件从沙箱容器复制到主机。
      */
     public Mono<Void> bridgeFileFromSandbox(String sandboxPath, String hostPath,
                                             SandboxHandle handle) {
@@ -1130,18 +1128,18 @@ public class SandboxExecutionService {
                         handle.getContainerId(), sandboxPath).exec()) {
                     extractTarArchive(tarStream, Paths.get(hostPath));
                 }
-                log.debug("File bridged from sandbox: {}:{} -> {}",
+                log.debug("文件已从沙箱桥接：{}:{} -> {}",
                         handle.getContainerId(), sandboxPath, hostPath);
             } catch (Exception e) {
-                log.error("Failed to bridge file from sandbox: {}", e.getMessage());
+                log.error("从沙箱桥接文件失败：{}", e.getMessage());
             }
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
 
-    // ── Health Check ───────────────────────────────────────────────────
+    // ── 健康检查 ───────────────────────────────────────────────────
 
     /**
-     * Check if a sandbox container is still healthy.
+     * 检查沙箱容器是否仍然健康。
      */
     public Mono<Boolean> isHealthy(SandboxHandle handle) {
         if (handle.isNone()) return Mono.just(false);
@@ -1151,16 +1149,16 @@ public class SandboxExecutionService {
                 InspectContainerResponse inspect = dockerClient.inspectContainerCmd(handle.getContainerId()).exec();
                 return inspect.getState() != null && Boolean.TRUE.equals(inspect.getState().getRunning());
             } catch (Exception e) {
-                log.warn("Health check failed for container {}: {}", handle.getContainerId(), e.getMessage());
+                log.warn("容器 {} 健康检查失败：{}", handle.getContainerId(), e.getMessage());
                 return false;
             }
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
-    // ── Destroy ────────────────────────────────────────────────────────
+    // ── 销毁 ────────────────────────────────────────────────────────
 
     /**
-     * Stop and remove a sandbox container, releasing all resources.
+     * 停止并删除沙箱容器，释放所有资源。
      */
     public Mono<Void> destroy(SandboxHandle handle) {
         if (handle.isNone()) return Mono.empty();
@@ -1170,18 +1168,18 @@ public class SandboxExecutionService {
                 dockerClient.stopContainerCmd(handle.getContainerId())
                         .withTimeout(10)
                         .exec();
-                // Auto-remove is configured, so explicit remove is optional
-                log.info("Sandbox container destroyed: containerId={}", handle.getContainerId());
+                // 已配置自动删除，所以显式删除是可选的
+                log.info("沙箱容器已销毁：containerId={}", handle.getContainerId());
             } catch (Exception e) {
-                log.warn("Error destroying sandbox container {}: {}",
+                log.warn("销毁沙箱容器 {} 出错：{}",
                         handle.getContainerId(), e.getMessage());
-                // Force remove as fallback
+                // 作为回退方案强制删除
                 try {
                     dockerClient.removeContainerCmd(handle.getContainerId())
                             .withForce(true)
                             .exec();
                 } catch (Exception f) {
-                    log.error("Force remove also failed for container {}: {}",
+                    log.error("容器 {} 强制删除也失败：{}",
                             handle.getContainerId(), f.getMessage());
                 }
             } finally {
@@ -1191,7 +1189,7 @@ public class SandboxExecutionService {
     }
 
     /**
-     * Destroy all active sandbox containers. Called on application shutdown.
+     * 销毁所有活跃沙箱容器。在应用关闭时调用。
      */
     public Mono<Void> destroyAll() {
         return Flux.fromIterable(new ArrayList<>(activeHandles.values()))
@@ -1199,7 +1197,7 @@ public class SandboxExecutionService {
                 .then();
     }
 
-    // ── Private Helpers ────────────────────────────────────────────────
+    // ── 私有辅助方法 ────────────────────────────────────────────────
 
     private boolean waitForContainerReady(String containerId, int timeoutSeconds) {
         long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
@@ -1211,15 +1209,15 @@ public class SandboxExecutionService {
                 }
                 Thread.sleep(500);
             } catch (Exception e) {
-                // Container may not be ready yet
+                // 容器可能尚未就绪
             }
         }
         return false;
     }
 
     private String[] buildExecCommand(Tool tool, Map<String, Object> args) {
-        // For command tools, wrap in bash -c
-        // For script tools, write script to /tmp then execute
+        // 对于命令工具，包装在 bash -c 中
+        // 对于脚本工具，先写入脚本到 /tmp 然后执行
         String command = args.getOrDefault("command", "").toString();
         if (command.isEmpty()) {
             command = tool.getDescription();
@@ -1231,34 +1229,34 @@ public class SandboxExecutionService {
         List<String> allowed = config.getAllowedCommands();
         List<String> denied = config.getDeniedCommands();
 
-        // If whitelist is configured, only allowlisted commands pass
+        // 如果配置了白名单，只有白名单中的命令可以通过
         if (!allowed.isEmpty()) {
             return allowed.stream().anyMatch(cmd -> command.startsWith(cmd));
         }
 
-        // If blacklist is configured, deny matching commands
+        // 如果配置了黑名单，拒绝匹配的命令
         if (!denied.isEmpty()) {
             if (denied.stream().anyMatch(cmd -> command.startsWith(cmd))) {
                 return false;
             }
         }
 
-        // No explicit rules = allow all (backward compatible)
+        // 无显式规则 = 允许全部（向后兼容）
         return true;
     }
 
     private InputStream createTarArchive(Path file) throws IOException {
-        // Minimal TAR creation for single file (in production, use Apache Commons Compress)
+        // 单文件的最小 TAR 创建（生产环境中使用 Apache Commons Compress）
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        // Simplified: in real code, use a proper TAR library
-        // This is a placeholder showing the integration pattern
+        // 简化：实际代码中使用适当的 TAR 库
+        // 这是展示集成模式的占位符
         baos.write(("tar-content:" + file.getFileName()).getBytes());
         return new java.io.ByteArrayInputStream(baos.toByteArray());
     }
 
     private void extractTarArchive(InputStream tarStream, Path destPath) {
-        // Simplified: in real code, use a proper TAR library
-        // Placeholder showing the integration pattern
+        // 简化：实际代码中使用适当的 TAR 库
+        // 展示集成模式的占位符
     }
 }
 ```
@@ -1269,8 +1267,8 @@ public class SandboxExecutionService {
 package lyjew.com.lyclaw.security.sandbox;
 
 /**
- * Handle to an active sandbox container.
- * <p>Immutable after creation; used as a key for sandbox lifecycle operations.
+ * 活跃沙箱容器的句柄。
+ * <p>创建后不可变；用作沙箱生命周期操作的键。
  */
 public class SandboxHandle {
 
@@ -1290,7 +1288,7 @@ public class SandboxHandle {
         this(sessionId, containerId, containerName, false);
     }
 
-    /** Create a no-op handle when no sandbox backend is configured. */
+    /** 当没有配置沙箱后端时创建空操作句柄。 */
     public static SandboxHandle none() {
         return new SandboxHandle("", "", "", true);
     }
@@ -1308,46 +1306,46 @@ public class SandboxHandle {
 }
 ```
 
-### 4.2.5 Integration with SandboxHook
+### 4.2.5 与 SandboxHook 的集成
 
-The existing `SandboxHook` currently delegates to `ToolSandbox.execute(tool, args, level)`. In Phase 4, `SandboxHook` is updated to use `SandboxExecutionService` when `SandboxLevel.PROCESS` is requested and the container backend is configured:
+现有的 `SandboxHook` 当前委托给 `ToolSandbox.execute(tool, args, level)`。在第四阶段中，`SandboxHook` 更新为当请求 `SandboxLevel.PROCESS` 且配置了容器后端时使用 `SandboxExecutionService`：
 
 ```java
-// Updated SandboxHook.wrapToolExecutor():
+// 更新后的 SandboxHook.wrapToolExecutor()：
 //
 //   SandboxLevel level = ctx.getSandboxLevel() != null ? ctx.getSandboxLevel() : SandboxLevel.DIRECT;
 //
 //   if (level == SandboxLevel.PROCESS && sandboxExecutionService != null) {
-//       // Container-backed sandbox
+//       // 基于容器的沙箱
 //       SandboxHandle handle = ctx.getSandboxHandle();
 //       if (handle == null) {
-//           // Lazy-create sandbox for this session
+//           // 为此会话延迟创建沙箱
 //           handle = sandboxExecutionService.createSandbox(ctx.getSessionId()).block();
 //           ctx.setSandboxHandle(handle);
 //       }
 //       return sandboxExecutionService.executeInSandbox(handle, tool, args)
-//               .map(result -> result.isSuccess() ? result.getResult() : "Error: " + result.getError())
+//               .map(result -> result.isSuccess() ? result.getResult() : "错误：" + result.getError())
 //               .block();
 //   }
 //
-//   // Fallback: legacy toolSandbox for DIRECT and SANDBOX levels
+//   // 回退：DIRECT 和 SANDBOX 级别的旧版 toolSandbox
 //   ToolExecutionResult result = toolSandbox.execute(tool, args, level);
-//   return result.isSuccess() ? result.getResult() : "Error: " + result.getError();
+//   return result.isSuccess() ? result.getResult() : "错误：" + result.getError();
 ```
 
-`AgentContext` is extended with a new field:
+`AgentContext` 扩展了新的字段：
 
 ```java
-// Added to AgentContext:
+// 添加到 AgentContext：
 private volatile SandboxHandle sandboxHandle;
 public SandboxHandle getSandboxHandle() { return sandboxHandle; }
 public void setSandboxHandle(SandboxHandle handle) { this.sandboxHandle = handle; }
 ```
 
-### 4.2.6 YAML Configuration
+### 4.2.6 YAML 配置
 
 ```yaml
-# application.yml — sandbox configuration
+# application.yml — 沙箱配置
 lyclaw:
   sandbox:
     backend: DOCKER                  # NONE | DOCKER | PODMAN
@@ -1389,17 +1387,17 @@ lyclaw:
 
 ---
 
-## 4.3 Heartbeat System
+## 4.3 心跳系统
 
-### 4.3.1 Motivation
+### 4.3.1 动机
 
-Long-running agents need periodic "check-in" pings to:
-- Verify the agent is still operational
-- Provide proactive status updates to users
-- Execute scheduled maintenance tasks
-- Support "daily briefing" / "morning summary" patterns
+长期运行的智能体需要定期的"签到"ping 以：
+- 验证智能体仍在运行
+- 向用户提供主动状态更新
+- 执行计划中的维护任务
+- 支持"每日简报" / "早晨摘要"模式
 
-The heartbeat system is a cron-like scheduler that runs single-turn ReAct invocations on a schedule, with configurable lightweight context, isolated sessions, and target delivery.
+心跳系统是一个类 cron 调度器，按计划运行单轮 ReAct 调用，具有可配置的轻量上下文、隔离会话和目标投递。
 
 ### 4.3.2 HeartbeatConfig
 
@@ -1411,100 +1409,100 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.time.Duration;
 
 /**
- * Agent heartbeat configuration.
- * <p>Controls scheduled "ping" invocations that keep agents active
- * and deliver periodic updates to users.
+ * 智能体心跳配置。
+ * <p>控制计划中的"ping"调用，保持智能体活跃
+ * 并向用户传递定期更新。
  */
 @ConfigurationProperties(prefix = "lyclaw.heartbeat")
 public class HeartbeatConfig {
 
-    /** Enable the heartbeat scheduler for this agent. */
+    /** 为此智能体启用心跳调度器。 */
     private boolean enabled = false;
 
-    /** Cron-like interval between heartbeat runs. */
+    /** 心跳运行之间的类 Cron 间隔。 */
     private Duration every = Duration.ofMinutes(30);
 
-    /** Active hours window (cron expression for time range, e.g. "0 0 9 ? * MON-FRI"). */
+    /** 活跃时间窗口（时间范围的 cron 表达式，例如 "0 0 9 ? * MON-FRI"）。 */
     private String activeHoursCron;
 
-    /** Active hours configuration using human-readable format. */
+    /** 使用人类可读格式的活跃时间配置。 */
     private ActiveHours activeHours = new ActiveHours();
 
-    /** Model override for heartbeat runs (uses agent default if null). */
+    /** 心跳运行的模型覆盖（null 时使用智能体默认值）。 */
     private String model;
 
-    /** Session key for heartbeat run grouping (defaults to agent name). */
+    /** 心跳运行分组的会话键（默认为智能体名称）。 */
     private String sessionKey;
 
-    /** Where to deliver heartbeat results. */
+    /** 投递心跳结果的目标。 */
     private DeliveryTarget target = DeliveryTarget.LAST;
 
-    /** Direct message policy when target specifies a user/channel. */
+    /** 当目标指定用户/频道时的私信策略。 */
     private DirectPolicy directPolicy = DirectPolicy.ALLOW;
 
-    /** Target recipient: E.164 phone number or chat channel ID. */
+    /** 目标接收者：E.164 电话号码或聊天频道 ID。 */
     private String to;
 
-    /** Account ID for multi-account channel selection. */
+    /** 多账户频道选择的账户 ID。 */
     private String accountId;
 
-    /** Custom heartbeat prompt. If empty/null, uses default system prompt. */
+    /** 自定义心跳提示。如果为空/null，使用默认系统提示。 */
     private String prompt;
 
-    /** If true, include the system prompt section in the heartbeat context. */
+    /** 如果为 true，在心跳上下文中包含系统提示部分。 */
     private boolean includeSystemPromptSection = true;
 
-    /** Maximum characters in the heartbeat acknowledgment message. */
+    /** 心跳确认消息的最大字符数。 */
     private int ackMaxChars = 30;
 
-    /** Suppress tool execution error warnings in heartbeat runs. */
+    /** 抑制心跳运行中的工具执行错误警告。 */
     private boolean suppressToolErrorWarnings = true;
 
-    /** Heartbeat execution timeout in seconds. */
+    /** 心跳执行超时（秒）。 */
     private int timeoutSeconds = 120;
 
     /**
-     * If true, use lightweight context (HEARTBEAT.md only).
-     * When false, load full agent context including all memory files.
+     * 如果为 true，使用轻量上下文（仅 HEARTBEAT.md）。
+     * 为 false 时，加载包含所有记忆文件的完整智能体上下文。
      */
     private boolean lightContext = true;
 
     /**
-     * If true, create a fresh isolated session for each heartbeat run.
-     * The sessionKey is reused but message history is not carried forward.
+     * 如果为 true，为每次心跳运行创建全新的隔离会话。
+     * sessionKey 被复用但消息历史不会延续。
      */
     private boolean isolatedSession = true;
 
     /**
-     * If true, skip heartbeat when sub-agents are actively running.
-     * Prevents heartbeat from interrupting ongoing delegation tasks.
+     * 如果为 true，当子智能体活跃运行时跳过心跳。
+     * 防止心跳中断正在进行的委派任务。
      */
     private boolean skipWhenBusy = true;
 
     /**
-     * If true, include reasoning/thinking content in heartbeat responses.
+     * 如果为 true，在心跳响应中包含推理/思考内容。
      */
     private boolean includeReasoning = false;
 
-    // getters and setters omitted
+    // 省略 getter 和 setter
 
     public enum DeliveryTarget { LAST, NONE }
     public enum DirectPolicy { ALLOW, BLOCK }
 
     /**
-     * Active hours window configuration.
+     * 活跃时间窗口配置。
      */
     public static class ActiveHours {
-        /** Window start time in HH:mm format. */
+        /** 窗口开始时间，HH:mm 格式。 */
         private String start = "09:00";
-        /** Window end time in HH:mm format. */
+        /** 窗口结束时间，HH:mm 格式。 */
         private String end = "18:00";
-        /** Timezone identifier, e.g. "Asia/Shanghai", "America/New_York". */
+        /** 时区标识符，例如 "Asia/Shanghai"、"America/New_York"。 */
         private String timezone = "Asia/Shanghai";
-        /** Days of week (MON, TUE, ..., SUN) or empty for all days. */
+        /** 星期几（MON、TUE、...、SUN）或空表示所有天。 */
         private String daysOfWeek = "";
 
-        // getters and setters omitted
+        // 省略 getter 和 setter
     }
 }
 ```
@@ -1543,20 +1541,20 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Cron-based heartbeat scheduler for agents.
+ * 基于 Cron 的智能体心跳调度器。
  *
- * <p>Implements {@link SchedulingConfigurer} to dynamically register heartbeat
- * tasks based on each agent's {@link HeartbeatConfig}.
+ * <p>实现 {@link SchedulingConfigurer} 以根据每个智能体的
+ * {@link HeartbeatConfig} 动态注册心跳任务。
  *
- * <h3>Execution flow for each heartbeat tick:</h3>
+ * <h3>每次心跳 tick 的执行流程：</h3>
  * <ol>
- *   <li>Check activeHours window — skip if outside</li>
- *   <li>Check skipWhenBusy — skip if sub-agents are active</li>
- *   <li>Create isolated session (if isolatedSession is true)</li>
- *   <li>Load light context (if lightContext — HEARTBEAT.md only)</li>
- *   <li>Run single-turn ReAct with heartbeat prompt</li>
- *   <li>Deliver result to target channel/user</li>
- *   <li>Dispatch heartbeat_start / heartbeat_reply / heartbeat_complete events</li>
+ *   <li>检查 activeHours 窗口 — 如果不在范围内则跳过</li>
+ *   <li>检查 skipWhenBusy — 如果子智能体活跃则跳过</li>
+ *   <li>创建隔离会话（如果 isolatedSession 为 true）</li>
+ *   <li>加载轻量上下文（如果 lightContext — 仅 HEARTBEAT.md）</li>
+ *   <li>运行带心跳提示的单轮 ReAct</li>
+ *   <li>将结果投递到目标频道/用户</li>
+ *   <li>分发 heartbeat_start / heartbeat_reply / heartbeat_complete 事件</li>
  * </ol>
  */
 public class HeartbeatScheduler {
@@ -1568,13 +1566,13 @@ public class HeartbeatScheduler {
     private final EventBus eventBus;
     private final SecurityManager securityManager;
 
-    // Map of agent sessionKey → config for dynamic scheduling
+    // 智能体 sessionKey → 配置的映射，用于动态调度
     private final Map<String, HeartbeatConfig> agentConfigs = new ConcurrentHashMap<>();
 
-    // Track active sub-agent count per agent
+    // 跟踪每个智能体的活跃子智能体数量
     private final Map<String, AtomicInteger> activeSubAgents = new ConcurrentHashMap<>();
 
-    // ScheduledFuture handles for cancellation
+    // 用于取消的 ScheduledFuture 句柄
     private final Map<String, ScheduledFuture<?>> scheduledTasks = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
@@ -1588,15 +1586,15 @@ public class HeartbeatScheduler {
     }
 
     /**
-     * Register or update a heartbeat configuration for an agent.
-     * Called at agent initialization time.
+     * 为智能体注册或更新心跳配置。
+     * 在智能体初始化时调用。
      *
-     * @param agentId the agent identifier
-     * @param config  the heartbeat configuration
+     * @param agentId 智能体标识符
+     * @param config  心跳配置
      */
     public void registerAgent(String agentId, HeartbeatConfig config) {
         if (config == null || !config.isEnabled()) {
-            // Remove any existing schedule
+            // 移除任何现有的调度
             cancelSchedule(agentId);
             agentConfigs.remove(agentId);
             return;
@@ -1604,14 +1602,14 @@ public class HeartbeatScheduler {
 
         agentConfigs.put(agentId, config);
 
-        // Cancel existing schedule and create new one
+        // 取消现有调度并创建新的
         cancelSchedule(agentId);
         scheduleAgent(agentId, config);
     }
 
     /**
-     * Notify the scheduler that a sub-agent has started for the given parent agent.
-     * Used by skipWhenBusy to defer heartbeats during delegation.
+     * 通知调度器给定父智能体的子智能体已启动。
+     * 由 skipWhenBusy 用于在委派期间推迟心跳。
      */
     public void onSubAgentStarted(String parentAgentId) {
         activeSubAgents.computeIfAbsent(parentAgentId, k -> new AtomicInteger(0))
@@ -1619,7 +1617,7 @@ public class HeartbeatScheduler {
     }
 
     /**
-     * Notify the scheduler that a sub-agent has completed for the given parent agent.
+     * 通知调度器给定父智能体的子智能体已完成。
      */
     public void onSubAgentCompleted(String parentAgentId) {
         AtomicInteger count = activeSubAgents.get(parentAgentId);
@@ -1628,20 +1626,20 @@ public class HeartbeatScheduler {
         }
     }
 
-    // ── Internal Scheduling ────────────────────────────────────────────
+    // ── 内部调度 ────────────────────────────────────────────
 
     private void scheduleAgent(String agentId, HeartbeatConfig config) {
         long intervalMs = config.getEvery().toMillis();
 
         ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(
                 () -> executeHeartbeat(agentId, config),
-                intervalMs, // initial delay same as interval
+                intervalMs, // 初始延迟与间隔相同
                 intervalMs,
                 TimeUnit.MILLISECONDS
         );
 
         scheduledTasks.put(agentId, future);
-        log.info("Heartbeat scheduled for agent '{}': every {}s", agentId,
+        log.info("已为智能体 '{}' 安排心跳：每 {} 秒", agentId,
                 config.getEvery().getSeconds());
     }
 
@@ -1649,56 +1647,56 @@ public class HeartbeatScheduler {
         ScheduledFuture<?> future = scheduledTasks.remove(agentId);
         if (future != null) {
             future.cancel(false);
-            log.info("Heartbeat cancelled for agent '{}'", agentId);
+            log.info("已取消智能体 '{}' 的心跳", agentId);
         }
     }
 
-    // ── Heartbeat Execution ────────────────────────────────────────────
+    // ── 心跳执行 ────────────────────────────────────────────
 
     private void executeHeartbeat(String agentId, HeartbeatConfig config) {
         try {
-            // 1. Check active hours window
+            // 1. 检查活跃时间窗口
             if (!isWithinActiveHours(config.getActiveHours())) {
-                log.debug("Heartbeat skipped for '{}': outside active hours", agentId);
+                log.debug("智能体 '{}' 心跳跳过：不在活跃时间内", agentId);
                 return;
             }
 
-            // 2. Check skipWhenBusy
+            // 2. 检查 skipWhenBusy
             if (config.isSkipWhenBusy()) {
                 AtomicInteger count = activeSubAgents.get(agentId);
                 if (count != null && count.get() > 0) {
-                    log.debug("Heartbeat skipped for '{}': {} sub-agents active", agentId, count.get());
+                    log.debug("智能体 '{}' 心跳跳过：{} 个子智能体活跃中", agentId, count.get());
                     return;
                 }
             }
 
-            // 3. Create session key
+            // 3. 创建会话键
             String sessionKey = config.getSessionKey() != null ? config.getSessionKey() : agentId;
             String runId = sessionKey + "-" + UUID.randomUUID().toString().substring(0, 8);
             long startMs = System.currentTimeMillis();
 
-            log.info("Heartbeat starting: agent={} runId={}", agentId, runId);
+            log.info("心跳开始：agent={} runId={}", agentId, runId);
 
-            // 4. Prepare context
+            // 4. 准备上下文
             AgentContext ctx = buildHeartbeatContext(agentId, sessionKey, runId, config);
 
-            // 5. Run single-turn ReAct
+            // 5. 运行单轮 ReAct
             String result = runHeartbeatReAct(ctx, config);
 
             long elapsedMs = System.currentTimeMillis() - startMs;
 
-            // 6. Deliver result
+            // 6. 投递结果
             deliverHeartbeatResult(agentId, config, result);
 
-            // 7. Dispatch events
+            // 7. 分发事件
             dispatchHeartbeatEvent("heartbeat_complete", agentId, runId,
                     Map.of("elapsedMs", elapsedMs, "message", result.substring(0,
                             Math.min(result.length(), config.getAckMaxChars()))));
 
-            log.info("Heartbeat completed: agent={} runId={} elapsed={}ms", agentId, runId, elapsedMs);
+            log.info("心跳完成：agent={} runId={} 耗时={}ms", agentId, runId, elapsedMs);
 
         } catch (Exception e) {
-            log.error("Heartbeat failed for agent '{}': {}", agentId, e.getMessage(), e);
+            log.error("智能体 '{}' 心跳失败：{}", agentId, e.getMessage(), e);
             dispatchHeartbeatEvent("heartbeat_error", agentId, null,
                     Map.of("error", e.getMessage()));
         }
@@ -1708,25 +1706,25 @@ public class HeartbeatScheduler {
                                                 String runId, HeartbeatConfig config) {
         String prompt = config.getPrompt();
         if (prompt == null || prompt.isEmpty()) {
-            prompt = "Heartbeat check-in. Provide a brief status update on your current state and any pending tasks.";
+            prompt = "心跳签到。提供关于当前状态和待处理任务的简要状态更新。";
         }
 
         if (config.isIncludeSystemPromptSection()) {
-            prompt = "[System Status Check]\n" + prompt;
+            prompt = "[系统状态检查]\n" + prompt;
         }
 
-        // Create a transient context for this single heartbeat run
+        // 为此次单次心跳运行创建临时上下文
         AgentContext ctx = new AgentContext(
                 config.isIsolatedSession() ? runId : sessionKey,
                 prompt,
-                null, // system prompt handled by agent config
+                null, // 系统提示由智能体配置处理
                 toolRegistry,
-                null, // no method — heartbeat is not a user invocation
+                null, // 无方法 — 心跳不是用户调用
                 null
         );
 
         if (config.isLightContext()) {
-            // Load only HEARTBEAT.md context (implemented by memory system)
+            // 仅加载 HEARTBEAT.md 上下文（由记忆系统实现）
             ctx.setAttribute("heartbeatMode", true);
             ctx.setAttribute("contextFiles", List.of("HEARTBEAT.md"));
         }
@@ -1735,36 +1733,36 @@ public class HeartbeatScheduler {
     }
 
     private String runHeartbeatReAct(AgentContext ctx, HeartbeatConfig config) {
-        // Build a minimal ChatRequest for the heartbeat
+        // 构建心跳的最小 ChatRequest
         ChatRequest request = ChatRequest.builder()
                 .messages(new ArrayList<>(List.of(Message.user(ctx.getUserMessage()))))
-                .stream(false) // non-streaming for heartbeat
+                .stream(false) // 心跳不使用流式
                 .build();
 
-        // Use a ReActEngine instance with no tools for lightweight execution
+        // 使用不带工具的 ReActEngine 实例以进行轻量执行
         DefaultReActEngine engine = new DefaultReActEngine(null, null) {
             @Override
             public String execute(ChatFacade chatFacade, ChatRequest request,
                                   ToolExecutor toolExecutor) {
-                // Single-turn: no tool calling for heartbeat by default
+                // 单轮：心跳默认不进行工具调用
                 try {
                     var model = chatFacade.resolveModel(chatFacade.route(request, null));
                     var response = model.chat(request);
                     String content = response.getContent();
                     request.getMessages().add(Message.assistant(content != null ? content : ""));
-                    return content != null ? content : "(no response)";
+                    return content != null ? content : "（无响应）";
                 } catch (Exception e) {
-                    log.error("Heartbeat LLM call failed: {}", e.getMessage());
-                    return "[Heartbeat LLM error: " + e.getMessage() + "]";
+                    log.error("心跳 LLM 调用失败：{}", e.getMessage());
+                    return "[心跳 LLM 错误：" + e.getMessage() + "]";
                 }
             }
         };
 
         try {
             String result = engine.execute(chatFacade, request, null);
-            return result != null ? result : "(empty response)";
+            return result != null ? result : "（空响应）";
         } catch (Exception e) {
-            return "[Heartbeat error: " + e.getMessage() + "]";
+            return "[心跳错误：" + e.getMessage() + "]";
         }
     }
 
@@ -1773,8 +1771,8 @@ public class HeartbeatScheduler {
             return;
         }
 
-        // Delivery to target channel/user (implementation depends on channel adapter)
-        // For now, publish as an event for the channel adapter to pick up
+        // 投递到目标频道/用户（实现取决于频道适配器）
+        // 目前发布为事件供频道适配器获取
         Map<String, Object> delivery = new LinkedHashMap<>();
         delivery.put("agentId", agentId);
         delivery.put("message", result);
@@ -1794,11 +1792,11 @@ public class HeartbeatScheduler {
         eventBus.publish(new HeartbeatEvent("heartbeat-scheduler", eventType, payload));
     }
 
-    // ── Active Hours Check ─────────────────────────────────────────────
+    // ── 活跃时间检查 ─────────────────────────────────────────────
 
     private boolean isWithinActiveHours(HeartbeatConfig.ActiveHours hours) {
         if (hours == null || hours.getStart() == null || hours.getEnd() == null) {
-            return true; // no restriction
+            return true; // 无限制
         }
 
         try {
@@ -1809,7 +1807,7 @@ public class HeartbeatScheduler {
             LocalTime end = LocalTime.parse(hours.getEnd(), DateTimeFormatter.ofPattern("HH:mm"));
             LocalTime current = now.toLocalTime();
 
-            // Check days of week if configured
+            // 如果配置了星期几则检查
             if (hours.getDaysOfWeek() != null && !hours.getDaysOfWeek().isEmpty()) {
                 String today = now.getDayOfWeek().name().substring(0, 3).toUpperCase();
                 if (!hours.getDaysOfWeek().toUpperCase().contains(today)) {
@@ -1818,21 +1816,21 @@ public class HeartbeatScheduler {
             }
 
             if (start.isBefore(end)) {
-                // Normal range: e.g., 09:00 - 18:00
+                // 正常范围：例如 09:00 - 18:00
                 return !current.isBefore(start) && current.isBefore(end);
             } else {
-                // Overnight range: e.g., 22:00 - 06:00
+                // 跨夜范围：例如 22:00 - 06:00
                 return !current.isBefore(start) || current.isBefore(end);
             }
         } catch (Exception e) {
-            log.warn("Active hours check failed, defaulting to allowed: {}", e.getMessage());
+            log.warn("活跃时间检查失败，默认允许：{}", e.getMessage());
             return true;
         }
     }
 }
 ```
 
-### 4.3.4 Heartbeat Event Types
+### 4.3.4 心跳事件类型
 
 ```java
 package lyjew.com.lyclaw.react.heartbeat;
@@ -1842,15 +1840,15 @@ import lyjew.com.lyclaw.event.Event;
 import java.util.Map;
 
 /**
- * Heartbeat lifecycle event. Published at each phase of a heartbeat run.
+ * 心跳生命周期事件。在心跳运行的每个阶段发布。
  *
- * <p>Event types:
+ * <p>事件类型：
  * <ul>
- *   <li>heartbeat_start — agentId, sessionKey, timestamp</li>
- *   <li>heartbeat_thinking — agentId (LLM is generating)</li>
- *   <li>heartbeat_reply — agentId, message</li>
- *   <li>heartbeat_complete — agentId, elapsedMs, message preview</li>
- *   <li>heartbeat_error — agentId, error</li>
+ *   <li>heartbeat_start — agentId、sessionKey、timestamp</li>
+ *   <li>heartbeat_thinking — agentId（LLM 正在生成）</li>
+ *   <li>heartbeat_reply — agentId、message</li>
+ *   <li>heartbeat_complete — agentId、elapsedMs、消息预览</li>
+ *   <li>heartbeat_error — agentId、error</li>
  * </ul>
  */
 public class HeartbeatEvent extends Event {
@@ -1866,8 +1864,8 @@ public class HeartbeatEvent extends Event {
 }
 
 /**
- * Heartbeat delivery event. Published when a heartbeat result needs to be
- * delivered to a target channel or user.
+ * 心跳投递事件。当心跳结果需要投递到
+ * 目标频道或用户时发布。
  */
 class HeartbeatDeliveryEvent extends Event {
 
@@ -1882,38 +1880,38 @@ class HeartbeatDeliveryEvent extends Event {
 }
 ```
 
-### 4.3.5 SSE Event Schema
+### 4.3.5 SSE 事件模式
 
-Heartbeat SSE events (when the heartbeat is triggered by an external request rather than cron):
+心跳 SSE 事件（当心跳由外部请求而非 cron 触发时）：
 
-| Event | `event:` field | `data:` structure |
+| 事件 | `event:` 字段 | `data:` 结构 |
 |---|---|---|
 | `heartbeat_start` | `heartbeat_start` | `{"agentId":"...", "sessionKey":"...", "timestamp":"..."}` |
 | `heartbeat_thinking` | `heartbeat_thinking` | `{"agentId":"..."}` |
 | `heartbeat_reply` | `heartbeat_reply` | `{"agentId":"...", "message":"...", "..."}` |
-| `heartbeat_complete` | `heartbeat_complete` | `{"agentId":"...", "elapsedMs":1234, "message":"preview..."}` |
+| `heartbeat_complete` | `heartbeat_complete` | `{"agentId":"...", "elapsedMs":1234, "message":"预览..."}` |
 | `heartbeat_error` | `heartbeat_error` | `{"agentId":"...", "error":"..."}` |
 
-### 4.3.6 YAML Configuration
+### 4.3.6 YAML 配置
 
 ```yaml
-# application.yml — heartbeat configuration per agent
+# application.yml — 每个智能体的心跳配置
 lyclaw:
   heartbeat:
     enabled: true
-    every: 30m                      # Duration: 30m, 1h, etc.
+    every: 30m                      # 持续时间：30m、1h 等
     active-hours:
       start: "09:00"
       end: "18:00"
       timezone: Asia/Shanghai
       days-of-week: MON,TUE,WED,THU,FRI
-    model: null                     # null = use agent default
+    model: null                     # null = 使用智能体默认值
     session-key: daily-checkin
     target: LAST                    # LAST | NONE
     direct-policy: ALLOW            # ALLOW | BLOCK
-    to: null                        # E.164 phone or chat id
-    account-id: null                # multi-account selector
-    prompt: "Good morning! Here is your daily briefing. What are the top priorities today?"
+    to: null                        # E.164 电话或聊天 ID
+    account-id: null                # 多账户选择器
+    prompt: "早上好！这是您的每日简报。今天的首要任务是什么？"
     include-system-prompt-section: true
     ack-max-chars: 30
     suppress-tool-error-warnings: true
@@ -1926,16 +1924,16 @@ lyclaw:
 
 ---
 
-## 4.4 Run Retries Enhancement
+## 4.4 运行重试增强
 
-### 4.4.1 Motivation
+### 4.4.1 动机
 
-The current `ReflexionLoop` uses a simple `maxRetries` parameter (typically 2) and a static `qualityThreshold` (0.6). This is insufficient for production:
+当前的 `ReflexionLoop` 使用简单的 `maxRetries` 参数（通常为 2）和静态的 `qualityThreshold`（0.6）。这对生产环境来说是不够的：
 
-- **Hardcoded retry budget**: No per-agent or per-fallback-model differentiation
-- **No retry history**: Cannot learn from previous failures to adjust strategy
-- **No model fallback chain**: If primary model consistently fails, no mechanism to try alternative (cheaper/faster/smaller) models
-- **No retry metadata**: Current `ReflexionResult.Attempt` records only score and feedback, not model/provider used
+- **硬编码的重试预算**：无按智能体或按回退模型的区分
+- **无重试历史**：无法从之前的失败中学习以调整策略
+- **无模型回退链**：如果主模型持续失败，没有机制来尝试替代（更便宜/更快/更小）模型
+- **无重试元数据**：当前 `ReflexionResult.Attempt` 仅记录分数和反馈，不记录使用的模型/提供者
 
 ### 4.4.2 RunRetriesConfig
 
@@ -1945,81 +1943,81 @@ package lyjew.com.lyclaw.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Run retry configuration for ReAct loop reflection retries.
- * <p>Controls the retry budget, strategy selection, and model fallback behavior.
+ * ReAct 循环反思重试的运行重试配置。
+ * <p>控制重试预算、策略选择和模型回退行为。
  */
 @ConfigurationProperties(prefix = "lyclaw.retry")
 public class RunRetriesConfig {
 
     /**
-     * Base number of retry iterations for the primary model.
-     * Total retries = base + (perProfile * numberOfFallbackProfiles)
+     * 主模型的基础重试迭代次数。
+     * 总重试次数 = base + (perProfile * numberOfFallbackProfiles)
      */
     private int base = 24;
 
     /**
-     * Additional retry iterations allocated per fallback model profile.
-     * Each fallback model in the chain gets this many extra attempts.
+     * 每个回退模型配置文件分配的额外重试迭代次数。
+     * 链中的每个回退模型获得此数量的额外尝试。
      */
     private int perProfile = 8;
 
     /**
-     * Minimum floor for total retry iterations.
-     * Even if base+perProfile*count calculates lower, this floor applies.
+     * 总重试迭代次数的最小下限。
+     * 即使 base+perProfile*count 计算值更低，此下限也适用。
      */
     private int min = 32;
 
     /**
-     * Maximum ceiling for total retry iterations.
-     * Prevents unbounded retry loops.
+     * 总重试迭代次数的最大上限。
+     * 防止无限制的重试循环。
      */
     private int max = 160;
 
     /**
-     * Quality threshold for retry termination.
-     * If the reflection score meets or exceeds this threshold, retries stop early.
+     * 重试终止的质量阈值。
+     * 如果反思分数达到或超过此阈值，重试提前停止。
      */
     private double qualityThreshold = 0.7;
 
     /**
-     * Strategy for selecting the next model when a retry is needed.
+     * 当需要重试时选择下一个模型的策略。
      * <ul>
-     *   <li>SAME_MODEL — retry with the same model (default)</li>
-     *   <li>FALLBACK_CHAIN — try next model in the fallback chain</li>
-     *   <li>ADAPTIVE — switch to fallback after 3 consecutive same-model failures</li>
+     *   <li>SAME_MODEL — 使用相同模型重试（默认）</li>
+     *   <li>FALLBACK_CHAIN — 尝试回退链中的下一个模型</li>
+     *   <li>ADAPTIVE — 在 3 次连续的相同模型失败后切换到回退模型</li>
      * </ul>
      */
     private RetryStrategy defaultStrategy = RetryStrategy.ADAPTIVE;
 
     /**
-     * Maximum consecutive failures before escalating to fallback model
-     * (only applies when strategy is ADAPTIVE).
+     * 在升级到回退模型之前允许的最大连续失败次数
+     * （仅在策略为 ADAPTIVE 时适用）。
      */
     private int maxConsecutiveFailuresBeforeFallback = 3;
 
     /**
-     * Exponential backoff configuration for retry delays.
+     * 重试延迟的指数退避配置。
      */
     private RetryBackoff backoff = new RetryBackoff();
 
-    // getters and setters omitted
+    // 省略 getter 和 setter
 
     public enum RetryStrategy { SAME_MODEL, FALLBACK_CHAIN, ADAPTIVE }
 
     /**
-     * Exponential backoff for retry delays.
+     * 重试延迟的指数退避。
      */
     public static class RetryBackoff {
-        /** Initial delay in milliseconds. */
+        /** 初始延迟（毫秒）。 */
         private long initialDelayMs = 500;
-        /** Maximum delay in milliseconds. */
+        /** 最大延迟（毫秒）。 */
         private long maxDelayMs = 30_000;
-        /** Backoff multiplier (e.g., 2.0 = double each retry). */
+        /** 退避乘数（例如 2.0 = 每次重试翻倍）。 */
         private double multiplier = 2.0;
-        /** Backoff applies to: BOTH = model call + reflection, LLM_ONLY, REFLECTION_ONLY */
+        /** 退避适用于：BOTH = 模型调用 + 反思，LLM_ONLY、REFLECTION_ONLY */
         private BackoffTarget target = BackoffTarget.BOTH;
 
-        // getters and setters omitted
+        // 省略 getter 和 setter
         public enum BackoffTarget { BOTH, LLM_ONLY, REFLECTION_ONLY }
     }
 }
@@ -2042,35 +2040,35 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages retry budget, tracking, and strategy for ReAct loop reflection retries.
+ * 管理 ReAct 循环反思重试的重试预算、跟踪和策略。
  *
- * <p>Replaces hardcoded MAX_REFLECTION_RETRIES=2 with a configurable, model-aware
- * retry system that supports fallback chains and adaptive strategy selection.
+ * <p>用可配置的、模型感知的重试系统替换硬编码的 MAX_REFLECTION_RETRIES=2，
+ * 支持回退链和自适应策略选择。
  *
- * <h3>Retry Budget Formula:</h3>
+ * <h3>重试预算公式：</h3>
  * <pre>
  *   totalRetries = max(min, min(max, base + perProfile * fallbackProfileCount))
  * </pre>
  *
- * <h3>Retry State Machine:</h3>
+ * <h3>重试状态机：</h3>
  * <pre>
- *   [Execute with model M]
+ *   [使用模型 M 执行]
  *        |
  *        v
- *   [Reflect] ──score >= threshold──> [DONE]
+ *   [反思] ──score >= threshold──> [完成]
  *        |
  *   score < threshold
  *        |
  *        v
- *   [Check retry budget] ──exhausted──> [DONE with best result]
+ *   [检查重试预算] ──已耗尽──> [以最佳结果完成]
  *        |
- *   budget available
- *        |
- *        v
- *   [Select strategy: same model / fallback]
+ *   预算可用
  *        |
  *        v
- *   [Plan revision] ──> [Execute with (new) model M']
+ *   [选择策略：相同模型 / 回退]
+ *        |
+ *        v
+ *   [计划修订] ──> [使用（新）模型 M' 执行]
  * </pre>
  */
 public class RunRetryManager {
@@ -2081,7 +2079,7 @@ public class RunRetryManager {
     private final List<String> fallbackProfiles;
     private final int maxRetries;
 
-    // Per-session retry history
+    // 每个会话的重试历史
     private final Map<String, RetrySession> sessions = new ConcurrentHashMap<>();
 
     public RunRetryManager(RunRetriesConfig config, List<String> fallbackProfiles) {
@@ -2091,7 +2089,7 @@ public class RunRetryManager {
     }
 
     /**
-     * Calculate total retry budget.
+     * 计算总重试预算。
      */
     private int calculateMaxRetries(RunRetriesConfig config, int fallbackCount) {
         int total = config.getBase() + config.getPerProfile() * fallbackCount;
@@ -2099,17 +2097,17 @@ public class RunRetryManager {
     }
 
     /**
-     * Get the maximum retry count for a session.
+     * 获取会话的最大重试次数。
      */
     public int getMaxRetries(String sessionId) {
         return maxRetries;
     }
 
     /**
-     * Check if more retries are available for the given session.
+     * 检查给定会话是否有更多重试可用。
      *
-     * @param sessionId the session to check
-     * @return true if at least one more retry is budgeted
+     * @param sessionId 要检查的会话
+     * @return 如果至少还有一次重试预算则返回 true
      */
     public boolean canRetry(String sessionId) {
         RetrySession session = sessions.get(sessionId);
@@ -2120,25 +2118,25 @@ public class RunRetryManager {
     }
 
     /**
-     * Record a retry attempt for the session.
+     * 记录会话的重试尝试。
      *
-     * @param sessionId the session identifier
-     * @param attempt   the completed retry attempt
+     * @param sessionId 会话标识符
+     * @param attempt   已完成的重试尝试
      */
     public void recordRetry(String sessionId, RetryAttempt attempt) {
         RetrySession session = sessions.computeIfAbsent(sessionId, RetrySession::new);
         session.addAttempt(attempt);
-        log.debug("Retry recorded: session={} attempt={}/{} score={} model={}",
+        log.debug("重试已记录：session={} attempt={}/{} score={} model={}",
                 sessionId, session.getAttemptCount(), maxRetries,
                 attempt.getQualityScore(), attempt.getModelUsed());
     }
 
     /**
-     * Determine the retry strategy based on history.
+     * 根据历史确定重试策略。
      *
-     * @param sessionId the session identifier
-     * @param primaryModel the primary model name
-     * @return the model to use for the next attempt
+     * @param sessionId    会话标识符
+     * @param primaryModel 主模型名称
+     * @return 下一次尝试要使用的模型
      */
     public String determineNextModel(String sessionId, String primaryModel) {
         RetrySession session = sessions.get(sessionId);
@@ -2153,30 +2151,30 @@ public class RunRetryManager {
                 return primaryModel;
 
             case FALLBACK_CHAIN: {
-                // Rotate through fallback models on each retry
+                // 每次重试轮换回退模型
                 int attemptIndex = session.getAttemptCount();
                 if (attemptIndex < fallbackProfiles.size()) {
                     return fallbackProfiles.get(attemptIndex);
                 }
-                // Cycle back through fallbacks
+                // 循环回退模型
                 return fallbackProfiles.get(attemptIndex % fallbackProfiles.size());
             }
 
             case ADAPTIVE:
             default: {
-                // Check consecutive failures with current model
+                // 检查当前模型的连续失败次数
                 int consecutiveFailures = session.countConsecutiveFailuresWithCurrentModel();
                 if (consecutiveFailures >= config.getMaxConsecutiveFailuresBeforeFallback()) {
-                    // Switch to next fallback
+                    // 切换到下一个回退模型
                     int fallbackIndex = session.getCurrentFallbackIndex();
                     if (fallbackIndex < fallbackProfiles.size()) {
                         session.incrementFallbackIndex();
                         String fallback = fallbackProfiles.get(fallbackIndex);
-                        log.info("Adaptive retry switching to fallback model: {} -> {} ({} consecutive failures)",
+                        log.info("自适应重试切换到回退模型：{} -> {}（连续失败 {} 次）",
                                 session.getCurrentModel(), fallback, consecutiveFailures);
                         return fallback;
                     }
-                    // All fallbacks exhausted, stick with primary
+                    // 所有回退模型已用尽，继续使用主模型
                     return primaryModel;
                 }
                 return session.getCurrentModel() != null ? session.getCurrentModel() : primaryModel;
@@ -2185,7 +2183,7 @@ public class RunRetryManager {
     }
 
     /**
-     * Calculate exponential backoff delay for the next retry.
+     * 计算下一次重试的指数退避延迟。
      */
     public long calculateBackoffMs(String sessionId) {
         RetrySession session = sessions.get(sessionId);
@@ -2198,14 +2196,14 @@ public class RunRetryManager {
     }
 
     /**
-     * Clear retry state for a session (called on session completion/reset).
+     * 清除会话的重试状态（在会话完成/重置时调用）。
      */
     public void clearSession(String sessionId) {
         sessions.remove(sessionId);
     }
 
     /**
-     * Get retry statistics for monitoring.
+     * 获取监控用的重试统计信息。
      */
     public RetryStats getStats(String sessionId) {
         RetrySession session = sessions.get(sessionId);
@@ -2215,10 +2213,10 @@ public class RunRetryManager {
         return session.computeStats(maxRetries);
     }
 
-    // ── Inner Types ────────────────────────────────────────────────────
+    // ── 内部类型 ────────────────────────────────────────────────────
 
     /**
-     * Per-session retry tracking.
+     * 每个会话的重试跟踪。
      */
     static class RetrySession {
         private final String sessionId;
@@ -2266,7 +2264,7 @@ public class RunRetryManager {
     }
 
     /**
-     * A single retry attempt record.
+     * 单次重试尝试记录。
      */
     public static class RetryAttempt {
         private final int attemptNumber;
@@ -2297,7 +2295,7 @@ public class RunRetryManager {
                     attempt.getQualityScore(),
                     fb != null ? fb.getDetectedErrors() : List.of(),
                     fb != null ? fb.getSuggestedStrategy() : null,
-                    0 // elapsedMs tracked separately
+                    0 // elapsedMs 单独跟踪
             );
         }
 
@@ -2311,7 +2309,7 @@ public class RunRetryManager {
     }
 
     /**
-     * Retry statistics snapshot for monitoring dashboards.
+     * 监控仪表盘用的重试统计快照。
      */
     public static class RetryStats {
         private final int attemptsUsed;
@@ -2339,14 +2337,14 @@ public class RunRetryManager {
 }
 ```
 
-### 4.4.4 Integration with AgentContext
+### 4.4.4 与 AgentContext 的集成
 
-Extend `AgentContext` to carry retry metadata:
+扩展 `AgentContext` 以携带重试元数据：
 
 ```java
-// Additions to AgentContext:
+// AgentContext 新增内容：
 
-/** Run metadata for retry tracking. Stored in attributes for serializability. */
+/** 用于重试跟踪的运行元数据。存储在 attributes 中以保持可序列化。 */
 public Map<String, Object> getRunMetadata() {
     @SuppressWarnings("unchecked")
     Map<String, Object> meta = (Map<String, Object>) getAttribute("runMetadata");
@@ -2373,18 +2371,18 @@ public void recordRetryState(String modelUsed, double score, List<String> errors
 }
 ```
 
-### 4.4.5 Integration with ReflexionLoop
+### 4.4.5 与 ReflexionLoop 的集成
 
-The existing `ReflexionLoop` is enhanced to use `RunRetryManager`:
+现有的 `ReflexionLoop` 增强为使用 `RunRetryManager`：
 
 ```java
-// Enhanced ReflexionLoop (diff from current):
+// 增强后的 ReflexionLoop（与当前版本的差异）：
 //
-// Before:
+// 之前：
 //   public ReflexionLoop(ReflectionEngine engine, TaskPlanner planner,
 //                         int maxRetries, double qualityThreshold) { ... }
 //
-// After:
+// 之后：
 //   public class ReflexionLoop {
 //       private final RunRetryManager retryManager;
 //       private final String primaryModel;
@@ -2411,31 +2409,31 @@ The existing `ReflexionLoop` is enhanced to use `RunRetryManager`:
 //               log.info("[Reflexion {}] 尝试 {}/{} model={}", loopId,
 //                       attempt + 1, retryManager.getMaxRetries(context.getSessionId()), currentModel);
 //
-//               // Execute with current model
+//               // 使用当前模型执行
 //               ActionResult result = executePlan(currentPlan, executor);
 //
-//               // Reflect
+//               // 反思
 //               double score = reflect(context, result);
 //
-//               // Record retry
+//               // 记录重试
 //               retryManager.recordRetry(context.getSessionId(),
 //                       new RunRetryManager.RetryAttempt(attempt, currentModel, score,
 //                               extractErrors(result), null, 0));
 //
 //               attempts.add(new ReflexionResult.Attempt(attempt, result, score, buildFeedback(result)));
 //
-//               // Check quality threshold
+//               // 检查质量阈值
 //               if (score >= qualityThreshold) break;
 //
-//               // Determine next model
+//               // 确定下一个模型
 //               currentModel = retryManager.determineNextModel(
 //                       context.getSessionId(), primaryModel);
 //
-//               // Apply backoff
+//               // 应用退避
 //               long backoffMs = retryManager.calculateBackoffMs(context.getSessionId());
 //               if (backoffMs > 0) Thread.sleep(backoffMs);
 //
-//               // Revise plan
+//               // 修订计划
 //               currentPlan = taskPlanner.revise(currentPlan, buildFeedback(result));
 //               attempt++;
 //           }
@@ -2446,10 +2444,10 @@ The existing `ReflexionLoop` is enhanced to use `RunRetryManager`:
 //   }
 ```
 
-### 4.4.6 YAML Configuration
+### 4.4.6 YAML 配置
 
 ```yaml
-# application.yml — retry configuration
+# application.yml — 重试配置
 lyclaw:
   retry:
     base: 24
@@ -2468,16 +2466,16 @@ lyclaw:
 
 ---
 
-## Integration Diagram
+## 集成架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Phase 4 — System Architecture                       │
+│                          第四阶段 — 系统架构                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────┐    ┌──────────────────┐    ┌───────────────────────────┐  │
-│  │ User Request │───>│  Pipeline Stages  │───>│  SSE Event Stream         │  │
-│  │ (HTTP/MQTT)  │    │                   │    │  (to Web/App client)      │  │
+│  │ 用户请求     │───>│  管道阶段         │───>│  SSE 事件流               │  │
+│  │ (HTTP/MQTT)  │    │                   │    │  (到 Web/App 客户端)      │  │
 │  └─────────────┘    │  ContextBuild     │    └───────────────────────────┘  │
 │                      │  SecurityCheck    │              ▲                    │
 │                      │  PlanExecution    │              │                    │
@@ -2494,25 +2492,25 @@ lyclaw:
 │              v               v                  v                          │
 │  ┌─────────────────┐ ┌────────────┐ ┌───────────────────┐                 │
 │  │  ReActEngine     │ │ SandboxHook│ │  HeartbeatScheduler│                │
-│  │  (streaming)     │ │            │ │                    │                 │
-│  │                  │ │ SandboxExe-│ │  Cron: every 30m   │                 │
-│  │  BlockStreaming  │ │ cutionSvc  │ │  ActiveHours check │                 │
-│  │  Coalesce        │ │            │ │  LightContext      │                 │
-│  │  HumanDelay      │ │ Docker/Pod-│ │  IsolatedSession   │                 │
-│  │  TypingIndicator │ │ man backend│ │  SkipWhenBusy      │                 │
+│  │  (流式)           │ │            │ │                    │                 │
+│  │                  │ │ SandboxExe-│ │  Cron: 每 30 分钟   │                 │
+│  │  BlockStreaming  │ │ cutionSvc  │ │  活跃时间检查       │                 │
+│  │  Coalesce        │ │            │ │  轻量上下文         │                 │
+│  │  HumanDelay      │ │ Docker/Pod-│ │  隔离会话           │                 │
+│  │  TypingIndicator │ │ man 后端   │ │  忙时跳过           │                 │
 │  └────────┬─────────┘ └─────┬──────┘ └─────────┬─────────┘                 │
 │           │                 │                   │                           │
 │           v                 v                   v                           │
 │  ┌──────────────────────────────────────────────────┐                      │
 │  │               RunRetryManager                     │                      │
 │  │                                                   │                      │
-│  │  Retry Budget: base + perProfile * fallbackCount  │                      │
-│  │  Strategy: ADAPTIVE / FALLBACK_CHAIN / SAME_MODEL │                      │
-│  │  Backoff: exponential with configurable ceiling   │                      │
-│  │  Session tracking: per-session retry history      │                      │
+│  │  重试预算：base + perProfile * fallbackCount       │                      │
+│  │  策略：ADAPTIVE / FALLBACK_CHAIN / SAME_MODEL     │                      │
+│  │  退避：指数级，具有可配置的上限                     │                      │
+│  │  会话跟踪：每个会话的重试历史                       │                      │
 │  └──────────────────────────────────────────────────┘                      │
 │                                                                             │
-│  ┌─────────────────────── Event Bus ───────────────────────┐               │
+│  ┌─────────────────────── 事件总线 ───────────────────────┐               │
 │  │                                                         │               │
 │  │  heartbeat_start   heartbeat_thinking  heartbeat_reply  │               │
 │  │  heartbeat_complete  heartbeat_error  heartbeat_delivery│               │
@@ -2525,23 +2523,23 @@ lyclaw:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Data Flow: Streaming Pipeline
+### 数据流：流式管道
 
 ```
 LLM Token Stream (Flux<ModelResponse>)
      │
      ▼
 ┌──────────────────┐
-│ State Machine    │  0=buffering(thinking), 1=relaying(stream tokens), 2=tools_detected
+│ 状态机            │  0=缓冲(思考中), 1=中继(流式token), 2=检测到工具
 │ (DefaultReAct    │
 │  Engine)         │
 └────────┬─────────┘
-         │  Case 1: state=1 (pure text stream)
-         │    → tokens emitted as fine-grained SSE "message" events
+         │  情况 1：state=1（纯文本流）
+         │    → token 作为细粒度 SSE "message" 事件发出
          │
-         │  Case 2: state=2 (tools detected)
-         │    → tool execution, then final text response
-         │    → final text passed to BlockStreamingController
+         │  情况 2：state=2（检测到工具）
+         │    → 工具执行，然后是最终文本响应
+         │    → 最终文本传递给 BlockStreamingController
          │
          ▼
 ┌──────────────────┐
@@ -2556,17 +2554,17 @@ LLM Token Stream (Flux<ModelResponse>)
          │
          ▼
 ┌──────────────────┐
-│ TypingIndicator  │  Emits "typing" SSE events at intervals during gaps
+│ TypingIndicator  │  在间隙期间按间隔发出 "typing" SSE 事件
 └────────┬─────────┘
          │
          ▼
-    SSE Client
+    SSE 客户端
 ```
 
-### Sandbox Execution Flow
+### 沙箱执行流程
 
 ```
-    Tool Call Request
+    工具调用请求
          │
          ▼
     SandboxHook.wrapToolExecutor()
@@ -2575,21 +2573,21 @@ LLM Token Stream (Flux<ModelResponse>)
     ctx.getSandboxLevel() == PROCESS && backend != NONE ?
          │
     ┌────┴────┐
-    │   YES   │               │   NO    │
+    │   是    │               │   否    │
     ▼         ▼               ▼         ▼
 ┌─────────────────┐   ┌──────────────────┐
 │ SandboxExecSvc  │   │ ToolSandbox       │
-│                 │   │ (legacy DIRECT/   │
-│ createSandbox() │   │  SANDBOX modes)   │
-│ if not exists   │   └──────────────────┘
+│                 │   │ （旧版 DIRECT/     │
+│ createSandbox() │   │  SANDBOX 模式）   │
+│ 如果不存在      │   └──────────────────┘
 │                 │
 │ executeInSandbox│
 │                 │
 │ docker exec     │
 │ cmd [bash -c]   │
 │                 │
-│ capture stdout  │
-│ check exit code │
+│ 捕获 stdout     │
+│ 检查退出码      │
 └────────┬────────┘
          │
          ▼
@@ -2598,37 +2596,37 @@ LLM Token Stream (Flux<ModelResponse>)
 
 ---
 
-## SSE Event Schema Reference
+## SSE 事件模式参考
 
-### Block Streaming Events
+### 块流式事件
 
-| Event Name | `event:` | `data:` schema |
+| 事件名称 | `event:` | `data:` 模式 |
 |---|---|---|
-| message (block) | `message` | `{"type":"message","content":"block text..."}` |
+| message（块） | `message` | `{"type":"message","content":"块文本..."}` |
 | typing | `typing` | `{"type":"typing","agentId":"...","stage":"RESPOND"}` |
 
-### Sandbox Events
+### 沙箱事件
 
-| Event Name | `event:` | `data:` schema |
+| 事件名称 | `event:` | `data:` 模式 |
 |---|---|---|
 | sandbox_created | `sandbox_created` | `{"containerId":"...","sessionId":"...","image":"..."}` |
 | sandbox_executing | `sandbox_executing` | `{"toolName":"...","containerId":"..."}` |
 | sandbox_result | `sandbox_result` | `{"toolName":"...","exitCode":0,"stdout":"..."}` |
 | sandbox_destroyed | `sandbox_destroyed` | `{"containerId":"..."}` |
 
-### Heartbeat Events
+### 心跳事件
 
-| Event Name | `event:` | `data:` schema |
+| 事件名称 | `event:` | `data:` 模式 |
 |---|---|---|
 | heartbeat_start | `heartbeat_start` | `{"agentId":"...","sessionKey":"...","timestamp":"..."}` |
 | heartbeat_thinking | `heartbeat_thinking` | `{"agentId":"..."}` |
 | heartbeat_reply | `heartbeat_reply` | `{"agentId":"...","message":"..."}` |
-| heartbeat_complete | `heartbeat_complete` | `{"agentId":"...","elapsedMs":1234,"message":"preview..."}` |
+| heartbeat_complete | `heartbeat_complete` | `{"agentId":"...","elapsedMs":1234,"message":"预览..."}` |
 | heartbeat_error | `heartbeat_error` | `{"agentId":"...","error":"..."}` |
 
-### Retry Events
+### 重试事件
 
-| Event Name | `event:` | `data:` schema |
+| 事件名称 | `event:` | `data:` 模式 |
 |---|---|---|
 | retry_attempt | `retry_attempt` | `{"sessionId":"...","attempt":3,"model":"gpt-4","score":0.45}` |
 | retry_fallback | `retry_fallback` | `{"sessionId":"...","fromModel":"gpt-4","toModel":"gpt-4o-mini"}` |
@@ -2636,44 +2634,44 @@ LLM Token Stream (Flux<ModelResponse>)
 
 ---
 
-## Summary of Changes
+## 变更摘要
 
-### New Files (Java)
+### 新增文件（Java）
 
-| File | Package | Description |
+| 文件 | 包 | 描述 |
 |---|---|---|
-| `BlockStreamingConfig.java` | `lyjew.com.lyclaw.config` | Block streaming configuration POJO |
-| `BlockStreamingChunk.java` | `lyjew.com.lyclaw.config` | Soft chunking config |
-| `BlockStreamingCoalesce.java` | `lyjew.com.lyclaw.config` | Coalescing config |
-| `HumanDelayConfig.java` | `lyjew.com.lyclaw.config` | Human typing delay config |
-| `BlockStreamingController.java` | `lyjew.com.lyclaw.react.stream` | Block-based streaming pipeline |
-| `TypingIndicatorController.java` | `lyjew.com.lyclaw.react.stream` | Typing indicator SSE emitter |
-| `AgentSandboxConfig.java` | `lyjew.com.lyclaw.config` | Container sandbox config |
-| `SandboxExecutionService.java` | `lyjew.com.lyclaw.security.sandbox` | Docker/Podman sandbox service |
-| `SandboxHandle.java` | `lyjew.com.lyclaw.security.sandbox` | Sandbox container handle |
-| `HeartbeatConfig.java` | `lyjew.com.lyclaw.config` | Heartbeat config POJO |
-| `HeartbeatScheduler.java` | `lyjew.com.lyclaw.react.heartbeat` | Cron-based heartbeat executor |
-| `HeartbeatEvent.java` | `lyjew.com.lyclaw.react.heartbeat` | Heartbeat event types |
-| `RunRetriesConfig.java` | `lyjew.com.lyclaw.config` | Retry budget config |
-| `RunRetryManager.java` | `lyjew.com.lyclaw.react.retry` | Retry manager with fallback chains |
+| `BlockStreamingConfig.java` | `lyjew.com.lyclaw.config` | 块流式配置 POJO |
+| `BlockStreamingChunk.java` | `lyjew.com.lyclaw.config` | 软分块配置 |
+| `BlockStreamingCoalesce.java` | `lyjew.com.lyclaw.config` | 合并配置 |
+| `HumanDelayConfig.java` | `lyjew.com.lyclaw.config` | 人类输入延迟配置 |
+| `BlockStreamingController.java` | `lyjew.com.lyclaw.react.stream` | 基于块的流式管道 |
+| `TypingIndicatorController.java` | `lyjew.com.lyclaw.react.stream` | 输入中指示器 SSE 发送器 |
+| `AgentSandboxConfig.java` | `lyjew.com.lyclaw.config` | 容器沙箱配置 |
+| `SandboxExecutionService.java` | `lyjew.com.lyclaw.security.sandbox` | Docker/Podman 沙箱服务 |
+| `SandboxHandle.java` | `lyjew.com.lyclaw.security.sandbox` | 沙箱容器句柄 |
+| `HeartbeatConfig.java` | `lyjew.com.lyclaw.config` | 心跳配置 POJO |
+| `HeartbeatScheduler.java` | `lyjew.com.lyclaw.react.heartbeat` | 基于 Cron 的心跳执行器 |
+| `HeartbeatEvent.java` | `lyjew.com.lyclaw.react.heartbeat` | 心跳事件类型 |
+| `RunRetriesConfig.java` | `lyjew.com.lyclaw.config` | 重试预算配置 |
+| `RunRetryManager.java` | `lyjew.com.lyclaw.react.retry` | 带回退链的重试管理器 |
 
-### Modified Files (Java)
+### 修改文件（Java）
 
-| File | Changes |
+| 文件 | 变更 |
 |---|---|
-| `AgentContext.java` | Add `SandboxHandle sandboxHandle`, `Map<String,Object> runMetadata`, `recordRetryState()` |
-| `SandboxHook.java` | Integrate `SandboxExecutionService` for `PROCESS` level when container backend configured |
-| `DefaultReActEngine.java` | Replace `splitIntoEvents()` with `BlockStreamingController.streamResponse()` |
-| `RespondStage.java` | Integrate `BlockStreamingController`, `TypingIndicatorController`, `HumanDelayConfig` |
-| `ReflexionLoop.java` | Replace hardcoded `maxRetries` with `RunRetryManager`, add model rotation |
+| `AgentContext.java` | 添加 `SandboxHandle sandboxHandle`、`Map<String,Object> runMetadata`、`recordRetryState()` |
+| `SandboxHook.java` | 当配置容器后端时集成 `SandboxExecutionService` 用于 `PROCESS` 级别 |
+| `DefaultReActEngine.java` | 用 `BlockStreamingController.streamResponse()` 替换 `splitIntoEvents()` |
+| `RespondStage.java` | 集成 `BlockStreamingController`、`TypingIndicatorController`、`HumanDelayConfig` |
+| `ReflexionLoop.java` | 用 `RunRetryManager` 替换硬编码的 `maxRetries`，添加模型轮换 |
 
-### Configuration Keys (application.yml)
+### 配置键（application.yml）
 
-| Prefix | Keys |
+| 前缀 | 键 |
 |---|---|
-| `lyclaw.streaming.block` | enabled, break-mode, chunk.*, coalesce.*, max-chunk-chars, repeat-suppression, delivery-mode, hidden-boundary |
-| `lyclaw.streaming.human-delay` | enabled, min-delay-ms, max-delay-ms, chars-per-second, adaptive-speed, long-reply-threshold |
-| `lyclaw.streaming.typing-indicator` | mode, interval-seconds |
-| `lyclaw.sandbox` | backend, image, root-dir, allowed-commands, denied-commands, network-enabled, file-system-write-enabled, memory-limit-mb, cpu-limit, timeout-seconds, fs-bridge.* |
-| `lyclaw.heartbeat` | enabled, every, active-hours.*, model, session-key, target, direct-policy, to, account-id, prompt, include-system-prompt-section, ack-max-chars, suppress-tool-error-warnings, timeout-seconds, light-context, isolated-session, skip-when-busy, include-reasoning |
-| `lyclaw.retry` | base, per-profile, min, max, quality-threshold, default-strategy, max-consecutive-failures-before-fallback, backoff.* |
+| `lyclaw.streaming.block` | enabled、break-mode、chunk.*、coalesce.*、max-chunk-chars、repeat-suppression、delivery-mode、hidden-boundary |
+| `lyclaw.streaming.human-delay` | enabled、min-delay-ms、max-delay-ms、chars-per-second、adaptive-speed、long-reply-threshold |
+| `lyclaw.streaming.typing-indicator` | mode、interval-seconds |
+| `lyclaw.sandbox` | backend、image、root-dir、allowed-commands、denied-commands、network-enabled、file-system-write-enabled、memory-limit-mb、cpu-limit、timeout-seconds、fs-bridge.* |
+| `lyclaw.heartbeat` | enabled、every、active-hours.*、model、session-key、target、direct-policy、to、account-id、prompt、include-system-prompt-section、ack-max-chars、suppress-tool-error-warnings、timeout-seconds、light-context、isolated-session、skip-when-busy、include-reasoning |
+| `lyclaw.retry` | base、per-profile、min、max、quality-threshold、default-strategy、max-consecutive-failures-before-fallback、backoff.* |

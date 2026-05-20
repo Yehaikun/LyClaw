@@ -1,245 +1,245 @@
-# LyClaw Agent Platform — Post-Renovation Architecture Blueprint
+# LyClaw 代理平台 — 改造后架构蓝图
 
-> **Status:** Target Architecture  
-> **Version:** 2.0.0  
-> **Date:** 2026-05-20  
-> **Scope:** Complete agent system redesign — transport, routing, runtime, shared services, plugin SDK, SSE streaming, and subagent delegation.
-
----
-
-## Table of Contents
-
-1. [Complete Agent System Architecture](#1-complete-agent-system-architecture-post-renovation)
-2. [Agent Lifecycle Flow](#2-agent-lifecycle-flow-post-renovation)
-3. [Config Resolution Hierarchy](#3-config-resolution-hierarchy)
-4. [Subagent Delegation Tree](#4-subagent-delegation-tree)
-5. [SSE Event Stream (Complete)](#5-sse-event-stream-complete)
-6. [Component Inventory & Responsibilities](#6-component-inventory--responsibilities)
-7. [Key Design Decisions](#7-key-design-decisions)
-8. [Migration Path from Current Architecture](#8-migration-path-from-current-architecture)
+> **状态：** 目标架构  
+> **版本：** 2.0.0  
+> **日期：** 2026-05-20  
+> **范围：** 代理系统全面重新设计 — 传输、路由、运行时、共享服务、插件SDK、SSE流式输出以及子代理委托。
 
 ---
 
-## 1. Complete Agent System Architecture (Post-Renovation)
+## 目录
 
-This diagram shows every major subsystem in the renovated LyClaw platform, organised into horizontal layers (Transport, Router, Config, Runtime, Shared Services, Plugin SDK) and vertical concerns (security, observability, persistence).
+1. [完整代理系统架构（改造后）](#1-完整代理系统架构改造后)
+2. [代理生命周期流程（改造后）](#2-代理生命周期流程改造后)
+3. [配置解析层级](#3-配置解析层级)
+4. [子代理委托树](#4-子代理委托树)
+5. [SSE事件流（完整）](#5-sse事件流完整)
+6. [组件清单与职责](#6-组件清单与职责)
+7. [关键设计决策](#7-关键设计决策)
+8. [从当前架构的迁移路径](#8-从当前架构的迁移路径)
+
+---
+
+## 1. 完整代理系统架构（改造后）
+
+此图展示了改造后 LyClaw 平台的每个主要子系统，按水平层（传输层、路由器、配置、运行时、共享服务、插件SDK）和垂直关注点（安全、可观测性、持久化）进行组织。
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                     LyClaw Agent Platform                                      │
+│                                     LyClaw 代理平台                                          │
 │                              ─────────────────────────────────────                             │
 │                                                                                                │
 │  ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                                      TRANSPORT LAYER                                       │ │
+│  │                                      传输层                                                │ │
 │  │                                                                                            │ │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────┐  │ │
-│  │  │    REST / SSE    │  │   WebSocket     │  │    WebChat      │  │   Channel Plugins    │  │ │
+│  │  │    REST / SSE    │  │   WebSocket     │  │    WebChat      │  │    频道插件           │  │ │
 │  │  │   (HTTP/1.1)     │  │    (WS/WSS)     │  │   (React UI)    │  │                      │  │ │
 │  │  │                  │  │                 │  │                 │  │  ┌────────────────┐   │  │ │
-│  │  │  POST /chat      │  │  ws://host/ws   │  │  Embedded       │  │  │ Telegram Bot   │   │  │ │
-│  │  │  GET  /sse/stream│  │                 │  │  WebChat UI     │  │  │  (Long Poll)   │   │  │ │
-│  │  │  POST /agent/:id │  │  Bidirectional  │  │                 │  │  └────────────────┘   │  │ │
-│  │  │                  │  │  persistent     │  │  Served via     │  │  ┌────────────────┐   │  │ │
-│  │  │  JSON request    │  │  connection     │  │  Spring Boot    │  │  │ Discord Bot    │   │  │ │
-│  │  │  → SSE response  │  │                 │  │  static assets  │  │  │  (Gateway)     │   │  │ │
+│  │  │  POST /chat      │  │  ws://host/ws   │  │  内嵌           │  │  │ Telegram机器人 │   │  │ │
+│  │  │  GET  /sse/stream│  │                 │  │  WebChat界面    │  │  │  (长轮询)      │   │  │ │
+│  │  │  POST /agent/:id │  │  双向           │  │                 │  │  └────────────────┘   │  │ │
+│  │  │                  │  │  持久连接       │  │  通过Spring Boot│  │  ┌────────────────┐   │  │ │
+│  │  │  JSON请求        │  │                 │  │  提供静态资源   │  │  │ Discord机器人  │   │  │ │
+│  │  │  → SSE响应       │  │                 │  │                 │  │  │  (Gateway)     │   │  │ │
 │  │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │  └────────────────┘   │  │ │
 │  │           │                    │                    │           │  ┌────────────────┐   │  │ │
-│  │           │                    │                    │           │  │ Slack Bot      │   │  │ │
+│  │           │                    │                    │           │  │ Slack机器人    │   │  │ │
 │  │           │                    │                    │           │  │  (Events API)  │   │  │ │
 │  │           │                    │                    │           │  └────────────────┘   │  │ │
 │  │           │                    │                    │           │  ┌────────────────┐   │  │ │
-│  │           │                    │                    │           │  │ WeChat Work    │   │  │ │
-│  │           │                    │                    │           │  │  (Callback)    │   │  │ │
+│  │           │                    │                    │           │  │ 企业微信       │   │  │ │
+│  │           │                    │                    │           │  │  (回调)        │   │  │ │
 │  │           │                    │                    │           │  └────────────────┘   │  │ │
 │  │           │                    │                    │           └──────────┬───────────┘  │ │
 │  └───────────┼────────────────────┼────────────────────┼──────────────────────┼──────────────┘ │
 │              │                    │                    │                      │                │
-│              │              Normalised Internal Message (AgentMessage)         │                │
+│              │              标准化内部消息 (AgentMessage)                       │                │
 │              │                    │                    │                      │                │
 │  ┌───────────┴────────────────────┴────────────────────┴──────────────────────┴──────────────┐ │
-│  │                                      AGENT ROUTER                                           │ │
+│  │                                      代理路由器                                             │ │
 │  │                                                                                            │ │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────────┐   │ │
-│  │  │                              RouteBinding Registry                                  │   │ │
+│  │  │                              路由绑定注册表                                           │   │ │
 │  │  │                                                                                     │   │ │
 │  │  │  ┌───────────────────────┐  ┌───────────────────────┐  ┌─────────────────────────┐  │   │ │
-│  │  │  │  ChannelMatch        │  │  AcpBinding            │  │  MentionMatch           │  │   │ │
+│  │  │  │  频道匹配              │  │  Acp绑定               │  │  提及匹配                 │  │   │ │
 │  │  │  │                       │  │                        │  │                          │  │   │ │
 │  │  │  │  #general  → agent1   │  │  acp:*     → codex    │  │  @bot chat → agent2      │  │   │ │
 │  │  │  │  #code     → agent2   │  │  acp:cli   → claude   │  │  @bot code → code-review │  │   │ │
 │  │  │  │  dm:*      → agent3   │  │  acp:gpt5  → gpt-5    │  │  @bot help → help-agent  │  │   │ │
 │  │  │  │                       │  │                        │  │                          │  │   │ │
-│  │  │  │  Match priority:      │  │  Routes to external    │  │  Regex / glob match      │  │   │ │
-│  │  │  │  1. exact channel     │  │  ACP provider backend  │  │  on message content      │  │   │ │
-│  │  │  │  2. glob pattern      │  │                        │  │                          │  │   │ │
-│  │  │  │  3. default route     │  │                        │  │                          │  │   │ │
+│  │  │  │  匹配优先级：          │  │  路由到外部              │  │  对消息内容进行          │  │   │ │
+│  │  │  │  1. 精确频道匹配       │  │  ACP提供商后端          │  │  正则/通配符匹配         │  │   │ │
+│  │  │  │  2. 通配符模式         │  │                        │  │                          │  │   │ │
+│  │  │  │  3. 默认路由           │  │                        │  │                          │  │   │ │
 │  │  │  └───────────────────────┘  └───────────────────────┘  └─────────────────────────┘  │   │ │
 │  │  └────────────────────────────────────────────────────────────────────────────────────┘   │ │
 │  │                                                                                            │ │
-│  │  Resolution pipeline:   TransportCtx → RouteBinding.match() → ResolvedRoute(agentId,ctx)   │ │
+│  │  解析管线：   TransportCtx → RouteBinding.match() → ResolvedRoute(agentId,ctx)             │ │
 │  └────────────────────────────────────────────────────────────────────────────────────────────┘ │
 │              │                                                                                  │
 │  ┌───────────┴──────────────────────────────────────────────────────────────────────────────┐ │
-│  │                                   AGENT CONFIG RESOLVER                                     │ │
+│  │                                   代理配置解析器                                            │ │
 │  │                                                                                            │ │
-│  │  system.defaults ────► agent.defaults ────► @Agent annotation ────► runtime overrides       │ │
-│  │  (application.yml)     (lyclaw.agent.*)     (ChatAgent.java)        (ChatRequest body)      │ │
+│  │  system.defaults ────► agent.defaults ────► @Agent注解 ────► 运行时覆盖                    │ │
+│  │  (application.yml)     (lyclaw.agent.*)     (ChatAgent.java)   (ChatRequest请求体)          │ │
 │  │        │                      │                     │                       │              │ │
 │  │        └──────────────────────┴─────────────────────┴───────────────────────┘              │ │
 │  │                                      │                                                     │ │
 │  │                                      ▼                                                     │ │
 │  │                           ResolvedAgentConfig                                               │ │
-│  │                    (immutable, thread-safe snapshot)                                        │ │
+│  │                    (不可变、线程安全的快照)                                                  │ │
 │  └────────────────────────────────────────────────────────────────────────────────────────────┘ │
 │              │                                                                                  │
 │  ┌───────────┴──────────────────────────────────────────────────────────────────────────────┐ │
-│  │                                AGENT RUNTIME (per agent)                                    │ │
+│  │                                代理运行时（每个代理）                                       │ │
 │  │                                                                                            │ │
 │  │  ┌─────────────────────────────────────────┐    ┌──────────────────────────────────────┐  │ │
-│  │  │          EMBEDDED RUNTIME               │    │           ACP RUNTIME                 │  │ │
+│  │  │          内嵌运行时                      │    │           ACP 运行时                  │  │ │
 │  │  │                                         │    │                                      │  │ │
 │  │  │  ┌─────────────────────────────────┐    │    │  ┌────────────────────────────────┐   │  │ │
-│  │  │  │        BootstrapLoader          │    │    │  │       AcpRuntime              │   │  │ │
+│  │  │  │        引导加载器               │    │    │  │       AcpRuntime              │   │  │ │
 │  │  │  │                                 │    │    │  │                                │   │  │ │
-│  │  │  │  AGENTS.md       (role/cap)     │    │    │  │  ensureSession(agentId)        │   │  │ │
-│  │  │  │  SOUL.md         (personality)  │    │    │  │  startTurn(messages, tools)    │   │  │ │
-│  │  │  │  BOOTSTRAP.md    (instructions) │    │    │  │  cancel() / close()            │   │  │ │
-│  │  │  │  IDENTITY.md     (who am I)     │    │    │  │  doctor() → health check       │   │  │ │
-│  │  │  │  USER.md         (about user)   │    │    │  │                                │   │  │ │
-│  │  │  │  HEARTBEAT.md    (background)   │    │    │  └────────────────────────────────┘   │  │ │
+│  │  │  │  AGENTS.md       (角色/能力)    │    │    │  │  ensureSession(agentId)        │   │  │ │
+│  │  │  │  SOUL.md         (个性)         │    │    │  │  startTurn(messages, tools)    │   │  │ │
+│  │  │  │  BOOTSTRAP.md    (指令)         │    │    │  │  cancel() / close()            │   │  │ │
+│  │  │  │  IDENTITY.md     (我是谁)       │    │    │  │  doctor() → 健康检查           │   │  │ │
+│  │  │  │  USER.md         (关于用户)     │    │    │  │                                │   │  │ │
+│  │  │  │  HEARTBEAT.md    (后台)         │    │    │  └────────────────────────────────┘   │  │ │
 │  │  │  │                                 │    │    │                                      │  │ │
-│  │  │  │  Load + validate + cache        │    │    │  External LLM Backends:               │  │ │
+│  │  │  │  加载 + 验证 + 缓存             │    │    │  外部LLM后端：                        │  │ │
 │  │  │  └───────────────┬─────────────────┘    │    │  ┌──────────┐ ┌──────────┐          │  │ │
 │  │  │                  │                      │    │  │  Codex   │ │  Claude  │          │  │ │
 │  │  │  ┌───────────────┴─────────────────┐    │    │  │  (CLI)   │ │  (API)   │          │  │ │
-│  │  │  │        Context Engine           │    │    │  └──────────┘ └──────────┘          │  │ │
+│  │  │  │         上下文引擎              │    │    │  └──────────┘ └──────────┘          │  │ │
 │  │  │  │                                 │    │    │  ┌──────────┐ ┌──────────┐          │  │ │
 │  │  │  │  assemble(messages, bootstrap)  │    │    │  │  GPT-5   │ │  Gemini  │          │  │ │
-│  │  │  │    → Build system prompt        │    │    │  │  (API)   │ │  (API)   │          │  │ │
-│  │  │  │    → Inject tool definitions    │    │    │  └──────────┘ └──────────┘          │  │ │
-│  │  │  │    → Apply context window limit │    │    │                                      │  │ │
+│  │  │  │    → 构建系统提示词             │    │    │  │  (API)   │ │  (API)   │          │  │ │
+│  │  │  │    → 注入工具定义               │    │    │  └──────────┘ └──────────┘          │  │ │
+│  │  │  │    → 应用上下文窗口限制         │    │    │                                      │  │ │
 │  │  │  │  compact(transcript)            │    │    └──────────────────────────────────────┘  │ │
-│  │  │  │    → Summarise old turns        │    │                                               │ │
-│  │  │  │    → Truncate to token budget   │    │    ┌──────────────────────────────────────┐  │ │
-│  │  │  │  prune(results, ttl)            │    │    │      HEARTBEAT SCHEDULER             │  │ │
-│  │  │  │    → Remove expired tool results│    │    │                                      │  │ │
+│  │  │  │    → 总结旧轮次                 │    │                                               │ │
+│  │  │  │    → 截断至token预算            │    │    ┌──────────────────────────────────────┐  │ │
+│  │  │  │  prune(results, ttl)            │    │    │       心跳调度器                      │  │ │
+│  │  │  │    → 移除过期的工具结果         │    │    │                                      │  │ │
 │  │  │  └───────────────┬─────────────────┘    │    │  ┌────────────────┐ ┌──────────────┐ │  │ │
-│  │  │                  │                      │    │  │  CronTrigger   │ │ IdleDetector │ │  │ │
+│  │  │                  │                      │    │  │  定时触发器    │ │ 空闲检测器   │ │  │ │
 │  │  │  ┌───────────────┴─────────────────┐    │    │  │                │ │              │ │  │ │
-│  │  │  │      36-Hook Lifecycle          │    │    │  │  "0 */2 * * *" │ │ no subagent  │ │  │ │
-│  │  │  │          Pipeline               │    │    │  │  every 2 hours │ │ + within     │ │  │ │
-│  │  │  │                                 │    │    │  │                │ │ activeHours  │ │  │ │
+│  │  │  │       36钩子生命周期            │    │    │  │  "0 */2 * * *" │ │ 无子代理     │ │  │ │
+│  │  │  │          管线                   │    │    │  │  每2小时       │ │ + 在活跃     │ │  │ │
+│  │  │  │                                 │    │    │  │                │ │   时间段内   │ │  │ │
 │  │  │  │  message_received              │    │    │  └────────────────┘ └──────────────┘ │  │ │
 │  │  │  │  before_agent_run              │    │    └──────────────────────────────────────┘  │ │
 │  │  │  │  before_prompt_build            │    │                                               │ │
 │  │  │  │  agent_turn_prepare             │    │    ┌──────────────────────────────────────┐  │ │
-│  │  │  │  before_model_resolve           │    │    │        SUBAGENT SPAWNER              │  │ │
+│  │  │  │  before_model_resolve           │    │    │        子代理生成器                   │  │ │
 │  │  │  │  model_call_started             │    │    │                                      │  │ │
 │  │  │  │  llm_input                      │    │    │  spawn(parentRun, childAgentId,      │  │ │
 │  │  │  │  llm_output                     │    │    │         task, config)                │  │ │
-│  │  │  │  before_tool_call               │    │    │    → Create child ReActEngine         │  │ │
-│  │  │  │  after_tool_call                │    │    │    → Full independent loop            │  │ │
-│  │  │  │  tool_result_persist            │    │    │    → Return result to parent          │  │ │
+│  │  │  │  before_tool_call               │    │    │    → 创建子ReActEngine                │  │ │
+│  │  │  │  after_tool_call                │    │    │    → 完整的独立循环                  │  │ │
+│  │  │  │  tool_result_persist            │    │    │    → 将结果返回给父代理              │  │ │
 │  │  │  │  subagent_spawning              │    │    │                                      │  │ │
-│  │  │  │  subagent_delivery_target       │    │    │  Limits:                            │  │ │
-│  │  │  │  subagent_spawned               │    │    │    maxSpawnDepth (default 1)         │  │ │
-│  │  │  │  subagent_ended                 │    │    │    maxConcurrent (default 2)         │  │ │
-│  │  │  │  before_compaction              │    │    │    maxChildrenPerAgent (default 5)   │  │ │
+│  │  │  │  subagent_delivery_target       │    │    │  限制：                              │  │ │
+│  │  │  │  subagent_spawned               │    │    │    maxSpawnDepth (默认 1)            │  │ │
+│  │  │  │  subagent_ended                 │    │    │    maxConcurrent (默认 2)            │  │ │
+│  │  │  │  before_compaction              │    │    │    maxChildrenPerAgent (默认 5)      │  │ │
 │  │  │  │  after_compaction               │    │    └──────────────────────────────────────┘  │ │
 │  │  │  │  model_call_ended               │    │                                               │ │
 │  │  │  │  before_agent_finalize          │    │    ┌──────────────────────────────────────┐  │ │
-│  │  │  │  before_agent_reply             │    │    │    SANDBOX (Docker / Podman)         │  │ │
+│  │  │  │  before_agent_reply             │    │    │    沙箱 (Docker / Podman)            │  │ │
 │  │  │  │  agent_end                      │    │    │                                      │  │ │
-│  │  │  │  message_sending               │    │    │  Container isolation per agent        │  │ │
-│  │  │  │  message_sent                   │    │    │  Filesystem bridge (bind mount)      │  │ │
-│  │  │  │  session_end                    │    │    │  Network: none / restricted          │  │ │
-│  │  │  │  heartbeat_prompt_contribution   │    │    │  Resource limits (CPU, mem)          │  │ │
-│  │  │  │                                 │    │    │  Lifecycle: create → exec → destroy  │  │ │
-│  │  │  │  (Plus 14 more hook points)     │    │    └──────────────────────────────────────┘  │ │
+│  │  │  │  message_sending               │    │    │  每个代理容器隔离                      │  │ │
+│  │  │  │  message_sent                   │    │    │  文件系统桥接 (bind mount)           │  │ │
+│  │  │  │  session_end                    │    │    │  网络：无 / 受限                     │  │ │
+│  │  │  │  heartbeat_prompt_contribution   │    │    │  资源限制 (CPU, 内存)                │  │ │
+│  │  │  │                                 │    │    │  生命周期：创建 → 执行 → 销毁       │  │ │
+│  │  │  │  (另有14个钩子点)               │    │    └──────────────────────────────────────┘  │ │
 │  │  │  └───────────────┬─────────────────┘    │                                               │ │
 │  │  │                  │                      │    ┌──────────────────────────────────────┐  │ │
-│  │  │  ┌───────────────┴─────────────────┐    │    │        BLOCK STREAMING               │  │ │
-│  │  │  │         ReAct Engine            │    │    │                                      │  │ │
-│  │  │  │                                 │    │    │  Coalesce text blocks (debounce)    │  │ │
-│  │  │  │  execute(messages, config)      │    │    │  Human-like delay simulation         │  │ │
-│  │  │  │    → Single-turn (no tools)     │    │    │  Typing indicators (SSE events)     │  │ │
-│  │  │  │  executeStream(messages,config) │    │    │  Stream to SSE / WebSocket           │  │ │
-│  │  │  │    → Streaming SSE response     │    │    └──────────────────────────────────────┘  │ │
+│  │  │  ┌───────────────┴─────────────────┐    │    │        块流式输出                     │  │ │
+│  │  │  │         ReAct 引擎              │    │    │                                      │  │ │
+│  │  │  │                                 │    │    │  合并文本块（防抖）                   │  │ │
+│  │  │  │  execute(messages, config)      │    │    │  模拟人类延迟                         │  │ │
+│  │  │  │    → 单轮（无工具）             │    │    │  输入中指示器（SSE事件）              │  │ │
+│  │  │  │  executeStream(messages,config) │    │    │  流式输出到 SSE / WebSocket           │  │ │
+│  │  │  │    → SSE流式响应                │    │    └──────────────────────────────────────┘  │ │
 │  │  │  │  multiRound(messages, config)   │    │                                               │ │
-│  │  │  │    → Full ReAct with tools      │    │    ┌──────────────────────────────────────┐  │ │
-│  │  │  │                                 │    │    │       SSE / WS STREAM TO            │  │ │
-│  │  │  │  Loop control:                  │    │    │          TRANSPORT                   │  │ │
+│  │  │  │    → 完整ReAct含工具调用        │    │    ┌──────────────────────────────────────┐  │ │
+│  │  │  │                                 │    │    │       SSE / WS 流式输出到             │  │ │
+│  │  │  │  循环控制：                      │    │    │          传输层                       │  │ │
 │  │  │  │    maxRetries / runRetries      │    │    │                                      │  │ │
-│  │  │  │    token budget tracking        │    │    │  SseEmitter / Flux<ServerSentEvent>  │  │ │
-│  │  │  │    tool call deduplication      │    │    │  WebSocket session broadcast         │  │ │
-│  │  │  │    idle timeout detection       │    │    └──────────────────────────────────────┘  │ │
+│  │  │  │    token预算追踪                │    │    │  SseEmitter / Flux<ServerSentEvent>  │  │ │
+│  │  │  │    工具调用去重                 │    │    │  WebSocket会话广播                    │  │ │
+│  │  │  │    空闲超时检测                 │    │    └──────────────────────────────────────┘  │ │
 │  │  │  └─────────────────────────────────┘    │                                               │ │
 │  │  └─────────────────────────────────────────┘                                               │ │
 │  └────────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                                │
 │  ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                                    SHARED SERVICES                                          │ │
+│  │                                    共享服务                                                 │ │
 │  │                                                                                            │ │
 │  │  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌─────────────┐  │ │
-│  │  │ Model Catalog │ │ Tool Registry │ │ Memory System │ │ Session Store │ │Skill Reg.   │  │ │
+│  │  │ 模型目录      │ │ 工具注册表    │ │ 记忆系统      │ │ 会话存储      │ │技能注册表   │  │ │
 │  │  │               │ │               │ │               │ │               │ │             │  │ │
-│  │  │ + Resolver    │ │ + Pipeline    │ │ Tier 1: Redis │ │ JSONL format  │ │ + DAG graph │  │ │
-│  │  │ + Fallback    │ │ + Validation  │ │ Tier 2: PG    │ │ Append-only   │ │ + Hot reload│  │ │
-│  │  │ + Auto-probe  │ │ + Rate limit  │ │ Tier 3: Disk  │ │ Per session   │ │ + Conflict  │  │ │
+│  │  │ + 解析器      │ │ + 管线        │ │ 一级: Redis   │ │ JSONL格式     │ │ + DAG图     │  │ │
+│  │  │ + 回退        │ │ + 验证        │ │ 二级: PG      │ │ 仅追加        │ │ + 热重载    │  │ │
+│  │  │ + 自动探测    │ │ + 速率限制    │ │ 三级: 磁盘    │ │ 每会话        │ │ + 冲突检测  │  │ │
 │  │  └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘ └─────────────┘  │ │
 │  │                                                                                            │ │
 │  │  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌─────────────┐  │ │
-│  │  │Security Mgr   │ │Approval Store │ │Identity Res.  │ │ TTS Engine    │ │Metrics Coll.│  │ │
+│  │  │安全管理器     │ │审批存储       │ │身份解析器     │ │ TTS引擎       │ │指标收集器   │  │ │
 │  │  │               │ │               │ │               │ │               │ │             │  │ │
-│  │  │ Tool allowlist│ │ Pending queue │ │ Trust levels  │ │ ElevenLabs    │ │ Micrometer  │  │ │
-│  │  │ Blocklist     │ │ Timeout mgmt  │ │ Profiles      │ │ Edge TTS      │ │ Prometheus  │  │ │
-│  │  │ Rate limiting │ │ Approval UI   │ │ OAuth2/OIDC   │ │ Azure Speech  │ │ Grafana     │  │ │
+│  │  │ 工具白名单    │ │ 待处理队列    │ │ 信任级别      │ │ ElevenLabs    │ │ Micrometer  │  │ │
+│  │  │ 黑名单        │ │ 超时管理      │ │ 配置文件      │ │ Edge TTS      │ │ Prometheus  │  │ │
+│  │  │ 速率限制      │ │ 审批界面      │ │ OAuth2/OIDC   │ │ Azure Speech  │ │ Grafana     │  │ │
 │  │  └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘ └─────────────┘  │ │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                                │
 │  ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                                      PLUGIN SDK                                             │ │
+│  │                                      插件 SDK                                              │ │
 │  │                                                                                            │ │
 │  │  ┌────────────────────────────────────────────────────────────────────────────────────┐   │ │
-│  │  │                            Plugin Manifest (plugin.yml)                             │   │ │
+│  │  │                            插件清单 (plugin.yml)                                    │   │ │
 │  │  │                                                                                     │   │ │
 │  │  │  name: "my-plugin"                                                                  │   │ │
 │  │  │  version: "1.0.0"                                                                   │   │ │
 │  │  │  provides:                                                                          │   │ │
-│  │  │    hooks:       [MyHook.class]           # lifecycle interception                     │   │ │
-│  │  │    tools:       [MyTool.class]           # @Tool annotated methods                   │   │ │
-│  │  │    skills:      [MySkill.class]          # agent capability bundles                  │   │ │
-│  │  │    channels:    [MyChannel.class]        # new transport adapters                    │   │ │
-│  │  │    providers:   [MyProvider.class]       # custom LLM backends                       │   │ │
-│  │  │    models:      [MyModel.class]          # model catalog entries                     │   │ │
-│  │  │    sandboxes:   [MySandbox.class]        # custom sandbox implementations            │   │ │
-│  │  │    approvals:   [MyApproval.class]       # custom approval handlers                  │   │ │
-│  │  │    memories:    [MyMemory.class]         # custom memory backends                    │   │ │
+│  │  │    hooks:       [MyHook.class]           # 生命周期拦截                                │   │ │
+│  │  │    tools:       [MyTool.class]           # @Tool注解方法                              │   │ │
+│  │  │    skills:      [MySkill.class]          # 代理能力包                                 │   │ │
+│  │  │    channels:    [MyChannel.class]        # 新的传输适配器                              │   │ │
+│  │  │    providers:   [MyProvider.class]       # 自定义LLM后端                              │   │ │
+│  │  │    models:      [MyModel.class]          # 模型目录条目                               │   │ │
+│  │  │    sandboxes:   [MySandbox.class]        # 自定义沙箱实现                              │   │ │
+│  │  │    approvals:   [MyApproval.class]       # 自定义审批处理器                            │   │ │
+│  │  │    memories:    [MyMemory.class]         # 自定义记忆后端                              │   │ │
 │  │  │                                                                                     │   │ │
 │  │  │  classpath: plugin.jar                                                              │   │ │
 │  │  │  dependencies:                                                                      │   │ │
 │  │  │    - other-plugin:^2.0                                                              │   │ │
 │  │  └────────────────────────────────────────────────────────────────────────────────────┘   │ │
 │  │                                                                                            │ │
-│  │  Plugin lifecycle:  LOAD → VALIDATE → RESOLVE DEPS → INITIALIZE → ENABLE → (DISABLE)      │ │
-│  │  Hot-reload:        Watch plugin dir → detect changes → reload without restart             │ │
-│  │  Isolation:         Separate ClassLoader per plugin                                       │ │
+│  │  插件生命周期：  加载 → 验证 → 解析依赖 → 初始化 → 启用 → (停用)                            │ │
+│  │  热重载：         监视插件目录 → 检测变更 → 无需重启即可重载                                  │ │
+│  │  隔离：           每个插件独立的ClassLoader                                                  │ │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                                │
 │  ┌──────────────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                              CROSS-CUTTING CONCERNS                                        │ │
+│  │                              横切关注点                                                    │ │
 │  │                                                                                            │ │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐   │ │
-│  │  │ Observability   │  │ Configuration   │  │ Persistence     │  │ Authentication      │   │ │
+│  │  │ 可观测性        │  │ 配置            │  │ 持久化          │  │ 认证                │   │ │
 │  │  │                 │  │                 │  │                 │  │                     │   │ │
 │  │  │ OpenTelemetry   │  │ Spring Boot     │  │ PostgreSQL      │  │ OAuth2 / OIDC       │   │ │
-│  │  │ Distributed     │  │ Config Tree     │  │   - sessions    │  │ JWT tokens          │   │ │
-│  │  │   tracing       │  │ Env overrides   │  │   - transcripts │  │ API keys            │   │ │
-│  │  │ Structured      │  │ Hot reload      │  │   - approvals   │  │ Role-based access   │   │ │
-│  │  │   logging       │  │ Validation      │  │   - identities  │  │ Multi-tenancy       │   │ │
-│  │  │ Metrics export  │  │ Secrets mgmt    │  │ Redis           │  │                     │   │ │
-│  │  │                 │  │                 │  │   - cache       │  │                     │   │ │
-│  │  │                 │  │                 │  │   - pub/sub     │  │                     │   │ │
+│  │  │ 分布式追踪      │  │ 配置树          │  │   - 会话        │  │ JWT令牌             │   │ │
+│  │  │ 结构化日志      │  │ 环境变量覆盖    │  │   - 转录记录    │  │ API密钥             │   │ │
+│  │  │ 指标导出        │  │ 热重载          │  │   - 审批        │  │ 基于角色的访问控制  │   │ │
+│  │  │                 │  │ 验证            │  │   - 身份        │  │ 多租户              │   │ │
+│  │  │                 │  │ 密钥管理        │  │ Redis           │  │                     │   │ │
+│  │  │                 │  │                 │  │   - 缓存        │  │                     │   │ │
+│  │  │                 │  │                 │  │   - 发布/订阅   │  │                     │   │ │
 │  │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └─────────────────────┘   │ │
 │  └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                                                                                │
@@ -248,479 +248,477 @@ This diagram shows every major subsystem in the renovated LyClaw platform, organ
 
 ---
 
-## 2. Agent Lifecycle Flow (Post-Renovation)
+## 2. 代理生命周期流程（改造后）
 
-The complete processing pipeline from inbound message to outbound response, showing all 36 hook points, branching paths (Embedded vs ACP), compaction, heartbeat, and subagent spawning.
+从入站消息到出站响应的完整处理管线，展示所有36个钩子点、分支路径（内嵌 vs ACP）、压缩、心跳和子代理生成。
 
 ```
-                                    REQUEST ENTRY
-                         (REST / WebSocket / Channel Plugin)
+                                    请求入口
+                         (REST / WebSocket / 频道插件)
                                       │
                                       │
                          ┌────────────▼────────────┐
-                         │ [HOOK: message_received] │
+                         │ [钩子: message_received] │
                          │                          │
-                         │  Filter / transform       │
-                         │  inbound message           │
-                         │  Block spam / abuse        │
-                         │  Normalise channel →       │
+                         │  过滤/转换                 │
+                         │  入站消息                   │
+                         │  拦截垃圾/滥用              │
+                         │  标准化频道 →              │
                          │    AgentMessage            │
                          └────────────┬────────────┘
                                       │
                                       │  AgentMessage {channel, text, userId, metadata}
                                       │
                          ┌────────────▼────────────┐
-                         │     AGENT ROUTER         │
+                         │     代理路由器           │
                          │                          │
-                         │  resolve from:            │
-                         │    channel name           │
-                         │    route binding pattern  │
-                         │    @mention target        │
-                         │    acp: prefix            │
+                         │  解析来源：                │
+                         │    频道名称                │
+                         │    路由绑定模式            │
+                         │    @提及目标               │
+                         │    acp: 前缀              │
                          │                          │
-                         │  Output: agentId          │
+                         │  输出：agentId            │
                          └────────────┬────────────┘
                                       │
                          ┌────────────▼────────────┐
-                         │  AGENT CONFIG RESOLVER   │
+                         │  代理配置解析器           │
                          │                          │
                          │  system.defaults          │
                          │    → agent.defaults       │
-                         │      → @Agent annotation  │
-                         │        → runtime override │
+                         │      → @Agent注解         │
+                         │        → 运行时覆盖       │
                          │                          │
-                         │  Output:                  │
+                         │  输出：                    │
                          │    ResolvedAgentConfig    │
                          └────────────┬────────────┘
                                       │
                          ┌────────────▼────────────┐
-                         │ [HOOK: before_agent_run] │
+                         │ [钩子: before_agent_run] │
                          │                          │
-                         │  Gate check:              │
-                         │    PASS → continue        │
-                         │    BLOCK → return reason  │
+                         │  门禁检查：                │
+                         │    通过 → 继续            │
+                         │    阻止 → 返回原因        │
                          └────────────┬────────────┘
                                       │
                          ┌────────────▼────────────┐
-                         │[HOOK: before_agent_start]│
-                         │   (DEPRECATED compat)     │
-                         │   Maps to before_agent_run│
+                         │[钩子: before_agent_start]│
+                         │   (已弃用 兼容)            │
+                         │   映射到 before_agent_run │
                          └────────────┬────────────┘
                                       │
                          ┌────────────▼────────────┐
-                         │    RUNTIME DISPATCH       │
+                         │    运行时调度             │
                          │                          │
                          │  agentConfig.runtime ==   │
                          │    "embedded" ?           │
                          │    "acp" ?                │
                          └──────┬──────────┬────────┘
                                 │          │
-               EMBEDDED PATH    │          │    ACP PATH
+               内嵌路径          │          │    ACP 路径
                                 │          │
                ┌────────────────▼──┐  ┌────▼──────────────────────────┐
-               │ BOOTSTRAP LOADER  │  │ AcpRuntime.ensureSession()     │
+               │ 引导加载器        │  │ AcpRuntime.ensureSession()     │
                │                   │  │                                │
-               │ Load from disk:   │  │ Connect to external provider   │
-               │  AGENTS.md        │  │ Authenticate session           │
-               │  SOUL.md          │  │ Negotiate capabilities         │
+               │ 从磁盘加载：       │  │ 连接到外部提供商                │
+               │  AGENTS.md        │  │ 认证会话                        │
+               │  SOUL.md          │  │ 协商能力                        │
                │  BOOTSTRAP.md     │  │                                │
                │  IDENTITY.md      │  │ AcpRuntime.startTurn()         │
                │  USER.md          │  │                                │
-               │  HEARTBEAT.md     │  │ Send messages + tools          │
-               │                   │  │ Receive streaming events       │
-               │ Validate required │  │ Map ACP events → SSE           │
-               │ Cache in memory   │  │                                │
+               │  HEARTBEAT.md     │  │ 发送消息 + 工具                 │
+               │                   │  │ 接收流式事件                    │
+               │ 验证必填项        │  │ 映射ACP事件 → SSE               │
+               │ 缓存到内存        │  │                                │
                └───────┬───────────┘  │ AcpRuntime.cancel()/close()    │
-                       │              │   on abort / timeout            │
+                       │              │   中止 / 超时时                 │
                ┌───────▼───────────┐  └────────────────────────────────┘
-               │  CONTEXT ENGINE   │
+               │  上下文引擎       │
                │                   │
                │  assemble():       │
-               │   Load session     │
-               │     history from   │
-               │     SessionStore   │
-               │   Inject bootstrap │
-               │     content        │
-               │   Apply context    │
-               │     window limits  │
-               │   Build system     │
-               │     prompt         │
-               │   Attach tool      │
-               │     definitions    │
+               │   从SessionStore   │
+               │     加载会话        │
+               │     历史记录        │
+               │   注入引导内容      │
+               │   应用上下文        │
+               │     窗口限制        │
+               │   构建系统          │
+               │     提示词          │
+               │   附加工具          │
+               │     定义            │
                └───────┬───────────┘
                        │
                ┌───────▼──────────────────────┐
-               │[HOOK: before_prompt_build]   │
+               │[钩子: before_prompt_build]   │
                │                              │
-               │  Modify system prompt         │
-               │  Inject additional context    │
-               │  Add custom instructions      │
+               │  修改系统提示词                │
+               │  注入额外上下文                │
+               │  添加自定义指令                │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │[HOOK: agent_turn_prepare]    │
+               │[钩子: agent_turn_prepare]    │
                │                              │
-               │  Final prompt modifications  │
-               │  Inject user preferences     │
-               │  Apply persona / tone        │
+               │  最终提示词修改               │
+               │  注入用户偏好                 │
+               │  应用角色/语气               │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │[HOOK: before_model_resolve]  │
+               │[钩子: before_model_resolve]  │
                │                              │
-               │  Intercept model selection    │
-               │  Override provider per-request│
-               │  Apply routing rules          │
+               │  拦截模型选择                 │
+               │  每次请求覆盖提供商            │
+               │  应用路由规则                 │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │     MODEL RESOLUTION          │
+               │     模型解析                  │
                │                              │
-               │  1. explicit model (request)  │
-               │  2. agent default model       │
-               │  3. system default model      │
-               │  4. fallback chain:           │
+               │  1. 显式指定模型 (请求)        │
+               │  2. 代理默认模型              │
+               │  3. 系统默认模型              │
+               │  4. 回退链：                  │
                │     gpt5 → claude → deepseek  │
-               │  5. auto-probe health check   │
-               │     → skip unhealthy models   │
+               │  5. 自动探测健康检查          │
+               │     → 跳过不健康的模型        │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │[HOOK: model_call_started]    │
+               │[钩子: model_call_started]    │
                │                              │
-               │  Log / audit LLM call start  │
-               │  Track token budget           │
-               │  Emit SSE: model_call_started │
+               │  记录/审计LLM调用开始         │
+               │  追踪token预算               │
+               │  发送SSE: model_call_started │
                └───────┬──────────────────────┘
                        │
                        │
                ╔═══════▼══════════════════════════════════════════════╗
-               ║                R E A C T   L O O P                   ║
+               ║                R E A C T   循  环                    ║
                ║                                                     ║
                ║  round = 0                                          ║
                ║  while (round < maxRetries) {                       ║
                ║                                                     ║
                ║    ┌───────────────────────────────────────────┐    ║
-               ║    │  [HOOK: llm_input]                       │    ║
+               ║    │  [钩子: llm_input]                       │    ║
                ║    │                                           │    ║
-               ║    │  Inspect prompt sent to LLM               │    ║
-               ║    │  Redact sensitive data (opt)              │    ║
-               ║    │  Log for debugging                       │    ║
+               ║    │  检查发送给LLM的提示词                     │    ║
+               ║    │  脱敏敏感数据（可选）                      │    ║
+               ║    │  记录用于调试                              │    ║
                ║    └───────────────────┬───────────────────────┘    ║
                ║                        │                            ║
                ║    ┌───────────────────▼───────────────────────┐    ║
-               ║    │           LLM CALL                        │    ║
+               ║    │           LLM 调用                        │    ║
                ║    │                                           │    ║
                ║    │  model.call(messages, tools, config)      │    ║
-               ║    │      OR                                   │    ║
+               ║    │      或                                   │    ║
                ║    │  model.stream(messages, tools, config)    │    ║
                ║    │                                           │    ║
-               ║    │  Emit SSE: thinking_start/delta/end       │    ║
+               ║    │  发送SSE: thinking_start/delta/end        │    ║
                ║    └───────────────────┬───────────────────────┘    ║
                ║                        │                            ║
                ║    ┌───────────────────▼───────────────────────┐    ║
-               ║    │  [HOOK: llm_output]                      │    ║
+               ║    │  [钩子: llm_output]                      │    ║
                ║    │                                           │    ║
-               ║    │  Inspect raw LLM response                 │    ║
-               ║    │  Content moderation filter                │    ║
-               ║    │  Parse tool calls from response           │    ║
-               ║    │  Log token usage                         │    ║
+               ║    │  检查原始LLM响应                          │    ║
+               ║    │  内容审核过滤                              │    ║
+               ║    │  从响应中解析工具调用                      │    ║
+               ║    │  记录token使用量                          │    ║
                ║    └───────────────────┬───────────────────────┘    ║
                ║                        │                            ║
                ║    ┌───────────────────▼───────────────────────┐    ║
-               ║    │         TOOL DETECTION                    │    ║
+               ║    │         工具检测                          │    ║
                ║    │                                           │    ║
-               ║    │  if (no tool calls) {                     │    ║
+               ║    │  if (无工具调用) {                        │    ║
                ║    │    textReply = response.getContent()      │    ║
-               ║    │    BREAK  // exit loop                    │    ║
+               ║    │    跳出  // 退出循环                       │    ║
                ║    │  }                                        │    ║
                ║    │                                           │    ║
-               ║    │  // Has tool calls                        │    ║
+               ║    │  // 有工具调用                             │    ║
                ║    │  for each toolCall in response {          │    ║
                ║    │                                           │    ║
                ║    │    ┌──────────────────────────────────┐   │    ║
-               ║    │    │ [HOOK: before_tool_call]        │   │    ║
+               ║    │    │ [钩子: before_tool_call]        │   │    ║
                ║    │    │                                  │   │    ║
-               ║    │    │  Gate: ALLOW / DENY_WITH_REASON │   │    ║
-               ║    │    │  Validate tool args             │   │    ║
-               ║    │    │  Check rate limits              │   │    ║
-               ║    │    │  Apply budget constraints       │   │    ║
+               ║    │    │  门禁：允许 / 拒绝并附原因       │   │    ║
+               ║    │    │  验证工具参数                    │   │    ║
+               ║    │    │  检查速率限制                    │   │    ║
+               ║    │    │  应用预算约束                    │   │    ║
                ║    │    └────────────┬─────────────────────┘   │    ║
                ║    │                 │                         │    ║
-               ║    │                 │  if ALLOW:              │    ║
+               ║    │                 │  if 允许:               │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼─────────────────────┐   │    ║
-               ║    │    │   TOOL APPROVAL FLOW (if needed) │   │    ║
+               ║    │    │   工具审批流程（如需要）           │   │    ║
                ║    │    │                                   │   │    ║
-               ║    │    │  Check tool.approvalRequired     │   │    ║
-               ║    │    │    → approval_request SSE event  │   │    ║
+               ║    │    │  检查 tool.approvalRequired     │   │    ║
+               ║    │    │    → approval_request SSE事件     │   │    ║
                ║    │    │      {toolCallId, name, args}    │   │    ║
-               ║    │    │    → Wait for frontend response  │   │    ║
+               ║    │    │    → 等待前端响应                 │   │    ║
                ║    │    │      {approved: true/false}      │   │    ║
-               ║    │    │    → Timeout → auto-deny         │   │    ║
+               ║    │    │    → 超时 → 自动拒绝              │   │    ║
                ║    │    └────────────┬─────────────────────┘   │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼─────────────────────┐   │    ║
-               ║    │    │   SANDBOX DISPATCH (if needed)   │   │    ║
+               ║    │    │   沙箱调度（如需要）               │   │    ║
                ║    │    │                                   │   │    ║
-               ║    │    │  Check tool.sandboxRequired      │   │    ║
-               ║    │    │    → Create/acquire container    │   │    ║
-               ║    │    │    → Bind-mount workspace        │   │    ║
-               ║    │    │    → Execute inside container    │   │    ║
-               ║    │    │    → Capture stdout/stderr       │   │    ║
-               ║    │    │    → Destroy/recycle container   │   │    ║
-               ║    │    │  Else: execute on host           │   │    ║
+               ║    │    │  检查 tool.sandboxRequired      │   │    ║
+               ║    │    │    → 创建/获取容器               │   │    ║
+               ║    │    │    → 绑定挂载工作区              │   │    ║
+               ║    │    │    → 在容器内执行                │   │    ║
+               ║    │    │    → 捕获stdout/stderr          │   │    ║
+               ║    │    │    → 销毁/回收容器               │   │    ║
+               ║    │    │  否则：在主机上执行               │   │    ║
                ║    │    └────────────┬─────────────────────┘   │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼─────────────────────┐   │    ║
-               ║    │    │        EXECUTE TOOL              │   │    ║
+               ║    │    │        执行工具                  │   │    ║
                ║    │    │                                   │   │    ║
                ║    │    │  ToolPipeline.execute(toolCall)  │   │    ║
-               ║    │    │    → Resolve tool instance       │   │    ║
-               ║    │    │    → Deserialise args            │   │    ║
-               ║    │    │    → Call tool.execute()         │   │    ║
-               ║    │    │    → Wrap errors gracefully      │   │    ║
-               ║    │    │    → Return ToolResult           │   │    ║
+               ║    │    │    → 解析工具实例                │   │    ║
+               ║    │    │    → 反序列化参数                │   │    ║
+               ║    │    │    → 调用 tool.execute()         │   │    ║
+               ║    │    │    → 优雅包装错误                │   │    ║
+               ║    │    │    → 返回 ToolResult             │   │    ║
                ║    │    └────────────┬─────────────────────┘   │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼─────────────────────┐   │    ║
-               ║    │    │ [HOOK: after_tool_call]         │   │    ║
+               ║    │    │ [钩子: after_tool_call]         │   │    ║
                ║    │    │                                   │   │    ║
-               ║    │    │  Log result / side effects       │   │    ║
-               ║    │    │  Track tool usage metrics        │   │    ║
-               ║    │    │  Enrich result with metadata     │   │    ║
+               ║    │    │  记录结果/副作用                  │   │    ║
+               ║    │    │  追踪工具使用指标                 │   │    ║
+               ║    │    │  用元数据丰富结果                 │   │    ║
                ║    │    └────────────┬─────────────────────┘   │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼─────────────────────┐   │    ║
-               ║    │    │ [HOOK: tool_result_persist]     │   │    ║
+               ║    │    │ [钩子: tool_result_persist]     │   │    ║
                ║    │    │                                   │   │    ║
-               ║    │    │  Persist to transcript           │   │    ║
-               ║    │    │  Trim if result too large        │   │    ║
-               ║    │    │  Set TTL for auto-pruning        │   │    ║
+               ║    │    │  持久化到转录记录                 │   │    ║
+               ║    │    │  如果结果太大则裁剪               │   │    ║
+               ║    │    │  设置TTL用于自动清理              │   │    ║
                ║    │    └────────────┬─────────────────────┘   │    ║
                ║    │                 │                         │    ║
-               ║    │    continue loop (append tool result      │    ║
-               ║    │                  to messages list)        │    ║
-               ║    │  } // end for each toolCall               │    ║
+               ║    │    继续循环 (将工具结果                  │    ║
+               ║    │               追加到消息列表)             │    ║
+               ║    │  } // 结束 for each toolCall              │    ║
                ║    │                                           │    ║
                ║    └───────────────────────────────────────────┘    ║
                ║                                                     ║
                ║    ┌───────────────────────────────────────────┐    ║
-               ║    │         SUBAGENT SPAWN CHECK              │    ║
+               ║    │         子代理生成检查                    │    ║
                ║    │                                           │    ║
                ║    │  if (toolCall.name == "delegate_to_agent")│   ║
                ║    │                                           │    ║
                ║    │    ┌─────────────────────────────────┐    │    ║
-               ║    │    │ [HOOK: subagent_spawning]      │    │    ║
+               ║    │    │ [钩子: subagent_spawning]      │    │    ║
                ║    │    │                                  │    │    ║
-               ║    │    │  Gate: allow / deny             │    │    ║
-               ║    │    │  Transform task / config        │    │    ║
+               ║    │    │  门禁：允许 / 拒绝               │    │    ║
+               ║    │    │  转换任务 / 配置                 │    │    ║
                ║    │    └────────────┬────────────────────┘    │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼────────────────────┐    │    ║
-               ║    │    │ [HOOK: subagent_delivery_target]│   │    ║
+               ║    │    │ [钩子: subagent_delivery_target]│    │    ║
                ║    │    │                                  │    │    ║
-               ║    │    │  Resolve delivery channel        │    │    ║
-               ║    │    │  (which transport to use)        │    │    ║
+               ║    │    │  解析投递频道                     │    │    ║
+               ║    │    │  (使用哪个传输方式)               │    │    ║
                ║    │    └────────────┬────────────────────┘    │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼────────────────────┐    │    ║
-               ║    │    │  CHECK DEPTH & CONCURRENCY      │    │    ║
+               ║    │    │  检查深度和并发数                 │    │    ║
                ║    │    │                                  │    │    ║
                ║    │    │  if (depth >= maxSpawnDepth)    │    │    ║
-               ║    │    │    → REJECT "max depth reached" │    │    ║
+               ║    │    │    → 拒绝 "已达最大深度"         │    │    ║
                ║    │    │  if (activeChildren >= maxConc) │    │    ║
-               ║    │    │    → QUEUE or REJECT            │    │    ║
+               ║    │    │    → 排队 或 拒绝                │    │    ║
                ║    │    └────────────┬────────────────────┘    │    ║
-               ║    │                 │  ALLOWED                │    ║
+               ║    │                 │  允许                    │    ║
                ║    │    ┌────────────▼────────────────────┐    │    ║
-               ║    │    │  SPAWN CHILD ReActEngine        │    │    ║
+               ║    │    │  生成子 ReActEngine              │    │    ║
                ║    │    │                                  │    │    ║
-               ║    │    │  Create isolated session         │    │    ║
-               ║    │    │  Load child bootstrap files     │    │    ║
-               ║    │    │  Run full recursive pipeline    │    │    ║
-               ║    │    │  (enter lifecycle recursively)  │    │    ║
-               ║    │    │  Await result (or stream)       │    │    ║
+               ║    │    │  创建隔离的会话                   │    │    ║
+               ║    │    │  加载子代理引导文件               │    │    ║
+               ║    │    │  运行完整递归管线                 │    │    ║
+               ║    │    │  (递归进入生命周期)               │    │    ║
+               ║    │    │  等待结果（或流式输出）           │    │    ║
                ║    │    └────────────┬────────────────────┘    │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼────────────────────┐    │    ║
-               ║    │    │ [HOOK: subagent_spawned]       │    │    ║
+               ║    │    │ [钩子: subagent_spawned]       │    │    ║
                ║    │    │                                  │    │    ║
-               ║    │    │  Notify parent agent            │    │    ║
-               ║    │    │  Emit SSE: subagent_spawned     │    │    ║
+               ║    │    │  通知父代理                      │    │    ║
+               ║    │    │  发送SSE: subagent_spawned     │    │    ║
                ║    │    └────────────┬────────────────────┘    │    ║
                ║    │                 │                         │    ║
                ║    │    ┌────────────▼────────────────────┐    │    ║
-               ║    │    │ [HOOK: subagent_ended]         │    │    ║
+               ║    │    │ [钩子: subagent_ended]         │    │    ║
                ║    │    │                                  │    │    ║
-               ║    │    │  Cleanup resources              │    │    ║
-               ║    │    │  Emit SSE: subagent_ended       │    │    ║
+               ║    │    │  清理资源                        │    │    ║
+               ║    │    │  发送SSE: subagent_ended       │    │    ║
                ║    │    └────────────┬────────────────────┘    │    ║
                ║    │                 │                         │    ║
-               ║    │    Return ToolResult to parent LLM        │    ║
-               ║    │    as tool call response                  │    ║
+               ║    │    将 ToolResult 返回给父LLM              │    ║
+               ║    │    作为工具调用响应                       │    ║
                ║    │                                           │    ║
                ║    └───────────────────────────────────────────┘    ║
                ║                                                     ║
                ║    round++                                         ║
-               ║    check runRetries budget                         ║
-               ║  } // end while                                   ║
+               ║    检查 runRetries 预算                             ║
+               ║  } // 结束 while                                  ║
                ╚═════════════════════════════════════════════════════╝
                        │
-                       │  (after loop exits: text reply or max retries)
+                       │  (循环退出后：文本回复或达到最大重试次数)
                        │
                ┌───────▼──────────────────────┐
-               │[HOOK: model_call_ended]      │
+               │[钩子: model_call_ended]      │
                │                              │
-               │  Log / audit LLM call end    │
-               │  Record token usage          │
-               │  Emit SSE: model_call_ended  │
+               │  记录/审计LLM调用结束         │
+               │  记录token使用量             │
+               │  发送SSE: model_call_ended  │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │[HOOK: before_agent_finalize] │
+               │[钩子: before_agent_finalize] │
                │                              │
-               │  Revise gate:                 │
-               │    CONTINUE → more turns     │
-               │    REVISE   → edit reply     │
-               │    FINALIZE → proceed        │
+               │  修正门禁：                    │
+               │    CONTINUE → 更多轮次       │
+               │    REVISE   → 编辑回复       │
+               │    FINALIZE → 继续           │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │[HOOK: before_agent_reply]    │
+               │[钩子: before_agent_reply]    │
                │                              │
-               │  Filter / transform reply    │
-               │  Apply content policies      │
-               │  Format for channel          │
+               │  过滤/转换回复               │
+               │  应用内容策略                 │
+               │  按频道格式化                 │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │     BLOCK STREAMING           │
+               │     块流式输出                │
                │                              │
-               │  Coalesce text blocks         │
-               │   (debounce 50ms)             │
-               │  Apply human-like delay       │
-               │   (5-20ms per char config)    │
-               │  Send typing indicators       │
+               │  合并文本块                   │
+               │   (防抖 50ms)                 │
+               │  应用模拟人类延迟              │
+               │   (可配置 5-20ms/字符)         │
+               │  发送输入中指示器              │
                │   SSE: typing_start/stop      │
-               │  Stream to transport:         │
+               │  流式传输到传输层：            │
                │    SseEmitter.send(event)     │
                │    WebSocketSession.send()    │
                │    Channel.sendMessage()      │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │     COMPACTION CHECK          │
+               │     压缩检查                  │
                │                              │
                │  if (transcriptSize > limit) {│
                │                              │
                │    ┌──────────────────────┐   │
-               │    │[HOOK: before_compact]│   │
-               │    │  Pre-compaction hook │   │
+               │    │[钩子: before_compact]│   │
+               │    │  压缩前钩子          │   │
                │    └──────────┬───────────┘   │
                │               │               │
                │    ┌──────────▼───────────┐   │
-               │    │  Summarise old turns │   │
-               │    │  Truncate to budget  │   │
-               │    │  Inject post-compact │   │
-               │    │    sections           │   │
+               │    │  总结旧轮次          │   │
+               │    │  截断至预算大小       │   │
+               │    │  注入压缩后段落       │   │
                │    └──────────┬───────────┘   │
                │               │               │
                │    ┌──────────▼───────────┐   │
-               │    │[HOOK: after_compact] │   │
-               │    │  Post-compaction hook│   │
+               │    │[钩子: after_compact] │   │
+               │    │  压缩后钩子          │   │
                │    └──────────────────────┘   │
                │  }                            │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │     CONTEXT PRUNING           │
+               │     上下文清理                │
                │                              │
-               │  For each tool result:        │
+               │  对每个工具结果：              │
                │    if (now - timestamp > TTL) │
-               │      → remove from context   │
-               │  Trim old user messages       │
-               │   beyond keepWindow           │
+               │      → 从上下文中移除         │
+               │  裁剪超出keepWindow的          │
+               │    旧用户消息                  │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │  [HOOK: agent_end]           │
+               │  [钩子: agent_end]           │
                │                              │
-               │  Final cleanup               │
-               │  Notification dispatch        │
-               │  Release resources            │
-               │  Emit SSE: agent_end         │
+               │  最终清理                     │
+               │  通知分发                     │
+               │  释放资源                     │
+               │  发送SSE: agent_end         │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │  [HOOK: message_sending]     │
+               │  [钩子: message_sending]     │
                │                              │
-               │  Final outbound filter        │
-               │  Channel-specific formatting  │
-               │  Attachment handling          │
+               │  最终出站过滤器               │
+               │  频道特定格式化               │
+               │  附件处理                     │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │     SESSION PERSIST           │
+               │     会话持久化                │
                │                              │
-               │  Write JSONL transcript       │
+               │  写入JSONL转录记录            │
                │   {turn, role, content, ts}   │
-               │  Update SessionStore          │
-               │  Emit SSE: done              │
+               │  更新SessionStore             │
+               │  发送SSE: done              │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │  [HOOK: session_end]          │
+               │  [钩子: session_end]          │
                │                              │
-               │  If session ending:           │
-               │    Archive transcript         │
-               │    Update analytics           │
-               │    Notify webhooks            │
+               │  如果会话结束：                │
+               │    归档转录记录                │
+               │    更新分析数据                │
+               │    通知webhooks                │
                └───────┬──────────────────────┘
                        │
                ┌───────▼──────────────────────┐
-               │  [HOOK: message_sent]         │
+               │  [钩子: message_sent]         │
                │                              │
-               │  Post-delivery notification   │
-               │  Webhook callbacks            │
-               │  Analytics event              │
+               │  投递后通知                   │
+               │  Webhook回调                  │
+               │  分析事件                     │
                └──────────────────────────────┘
 
 
                           ╔═══════════════════════════════╗
-                          ║   HEARTBEAT (background)      ║
+                          ║   心跳（后台）                 ║
                           ║   ─────────────────────────   ║
                           ║                               ║
-                          ║  CronTrigger fires            ║
+                          ║  定时触发器触发                ║
                           ║    │                          ║
-                          ║  Check activeHours window     ║
-                          ║    │ (e.g., 08:00-22:00)      ║
-                          ║  Check skipWhenBusy           ║
-                          ║    │ (no active subagents)    ║
-                          ║  Check cooldown period        ║
-                          ║    │ (min interval between)   ║
+                          ║  检查活跃时间段窗口            ║
+                          ║    │ (例如 08:00-22:00)       ║
+                          ║  检查 skipWhenBusy           ║
+                          ║    │ (无活跃子代理时)         ║
+                          ║  检查冷却期                   ║
+                          ║    │ (最小间隔)               ║
                           ║    │                          ║
-                          ║  Create isolated session      ║
-                          ║  Load light context           ║
-                          ║    │ (HEARTBEAT.md only)      ║
+                          ║  创建隔离会话                  ║
+                          ║  加载轻量上下文                ║
+                          ║    │ (仅HEARTBEAT.md)         ║
                           ║    │                          ║
-                          ║  Single-turn ReAct            ║
-                          ║    │ (no user message)        ║
+                          ║  单轮ReAct                    ║
+                          ║    │ (无用户消息)             ║
                           ║    │                          ║
-                          ║  [HOOK: heartbeat_prompt_     ║
+                          ║  [钩子: heartbeat_prompt_     ║
                           ║          contribution]        ║
                           ║    │                          ║
-                          ║  Deliver result to target     ║
-                          ║    │ (channel/user/webhook)   ║
+                          ║  将结果投递到目标              ║
+                          ║    │ (频道/用户/webhook)      ║
                           ║                               ║
                           ╚═══════════════════════════════╝
 ```
 
 ---
 
-## 3. Config Resolution Hierarchy
+## 3. 配置解析层级
 
-The complete configuration merge chain, showing how settings flow from system-wide defaults down to a single runtime-invoked agent instance.
+完整的配置合并链，展示设置如何从系统级默认值流向单个运行时调用的代理实例。
 
 ```
                             lyclaw.agent.defaults
@@ -730,37 +728,37 @@ The complete configuration merge chain, showing how settings flow from system-wi
            │                          │                          │
            ▼                          ▼                          ▼
    ┌───────────────┐         ┌───────────────┐         ┌───────────────┐
-   │  model:       │         │  skills:      │         │  heartbeat:   │
-   │   primary:    │         │   - shell     │         │   enabled:    │
+   │  模型：       │         │  技能：       │         │  心跳：       │
+   │   主模型：     │         │   - shell     │         │   启用：      │
    │     deepseek  │         │   - file      │         │     true      │
-   │   fallback:   │         │   - web_search│         │   cron:       │
+   │   回退：       │         │   - web_search│         │   定时：      │
    │     [claude]  │         │               │         │     "0 */4    │
-   │   thinking:   │         │  contextLimits│         │      * * *"   │
-   │     low       │         │   maxTokens:  │         │   activeHours:│
+   │   思考：       │         │  上下文限制    │         │      * * *"   │
+   │     low       │         │   maxTokens:  │         │   活跃时间段： │
    │               │         │     200000    │         │     08:00-    │
-   │  sandbox:     │         │   maxMessages │         │     22:00     │
-   │   enabled:    │         │     : 200     │         │   skipWhen-   │
-   │     false     │         │   compactAt:  │         │     Busy: true│
-   │   engine:     │         │     0.8       │         │               │
-   │     docker    │         │               │         │  subagents:   │
-   │               │         │  approval:    │         │   maxDepth:   │
-   │  thinking:    │         │   mode:       │         │     1         │
-   │   budget:     │         │     manual    │         │   maxConcur:  │
-   │     16000     │         │   timeout:    │         │     2         │
-   │               │         │     120s      │         │   maxChildren │
+   │  沙箱：        │         │   maxMessages │         │     22:00     │
+   │   启用：       │         │     : 200     │         │   忙碌时跳过： │
+   │     false     │         │   compactAt:  │         │     true      │
+   │   引擎：       │         │     0.8       │         │               │
+   │     docker    │         │               │         │  子代理：      │
+   │               │         │  审批：       │         │   maxDepth:   │
+   │  思考预算：    │         │   模式：      │         │     1         │
+   │     16000     │         │     手动      │         │   maxConcur:  │
+   │               │         │   超时：      │         │     2         │
+   │               │         │     120秒     │         │   maxChildren │
    │               │         │               │         │     : 5       │
    └───────┬───────┘         └───────┬───────┘         └───────┬───────┘
            │                         │                         │
            └─────────────────────────┼─────────────────────────┘
                                      │
                                      │  deepMerge()
-                                     │  (nested map merge, lists concatenate,
-                                     │   scalars overwrite)
+                                     │  (嵌套映射合并，列表拼接，
+                                     │   标量值覆盖)
                                      │
                                      ▼
                      ┌─────────────────────────────────┐
-                     │  @Agent annotation              │
-                     │  on ChatAgent interface         │
+                     │  @Agent 注解                    │
+                     │  在 ChatAgent 接口上             │
                      │                                 │
                      │  @Agent(                        │
                      │    id = "chat",                 │
@@ -779,12 +777,12 @@ The complete configuration merge chain, showing how settings flow from system-wi
                      └───────────────┬─────────────────┘
                                      │
                                      │  deepMerge()
-                                     │  (annotation values overwrite defaults)
+                                     │  (注解值覆盖默认值)
                                      │
                                      ▼
                      ┌─────────────────────────────────┐
-                     │  ChatRequest runtime overrides   │
-                     │  (from HTTP request body)        │
+                     │  ChatRequest 运行时覆盖          │
+                     │  (来自HTTP请求体)                 │
                      │                                 │
                      │  {                               │
                      │    "message": "...",             │
@@ -797,51 +795,51 @@ The complete configuration merge chain, showing how settings flow from system-wi
                      └───────────────┬─────────────────┘
                                      │
                                      │  deepMerge()
-                                     │  (runtime overrides win, except
-                                     │   security-sensitive fields)
+                                     │  (运行时覆盖优先级最高，但
+                                     │   安全敏感字段除外)
                                      │
                                      ▼
                      ┌─────────────────────────────────────────────────────────┐
                      │                  ResolvedAgentConfig                     │
-                     │                  (immutable snapshot)                    │
+                     │                  (不可变快照)                             │
                      │                                                         │
                      │  ┌─────────────────────────────────────────────────┐    │
-                     │  │ id:           "chat"          (from annotation)  │    │
-                     │  │ name:         "Chat Assistant"(from annotation)  │    │
-                     │  │ model:        "claude-opus-4.5"(runtime override)│    │
-                     │  │ thinking:     "ultra"         (runtime override)  │    │
-                     │  │ thinkingBudget: 16000         (from defaults)     │    │
-                     │  │ skills:    ["shell","file",   (merged: defaults   │    │
-                     │  │             "web_search",      + annotation)      │    │
+                     │  │ id:           "chat"          (来源: 注解)     │    │
+                     │  │ name:         "Chat Assistant"(来源: 注解)     │    │
+                     │  │ model:        "claude-opus-4.5"(来源: 运行时)  │    │
+                     │  │ thinking:     "ultra"         (来源: 运行时)    │    │
+                     │  │ thinkingBudget: 16000         (来源: 默认值)    │    │
+                     │  │ skills:    ["shell","file",   (合并: 默认值     │    │
+                     │  │             "web_search",      + 注解)          │    │
                      │  │             "code-review"]                        │    │
-                     │  │ sandbox:      true            (from annotation)   │    │
-                     │  │ sandboxEngine:"docker"        (from defaults)     │    │
-                     │  │ approval:     MANUAL          (from annotation)   │    │
-                     │  │ approvalTimeout: 120s         (from defaults)     │    │
-                     │  │ contextMaxTokens: 200000      (from defaults)     │    │
-                     │  │ contextMaxMessages: 200       (from defaults)     │    │
-                     │  │ contextCompactAt: 0.8          (from defaults)     │    │
-                     │  │ heartbeatEnabled: true        (from defaults)     │    │
-                     │  │ heartbeatCron: "0 */4 * * *"  (from defaults)     │    │
-                     │  │ heartbeatActiveHours:"08-22"  (from defaults)     │    │
-                     │  │ subagentMaxDepth: 1           (from defaults)     │    │
-                     │  │ subagentMaxConcurrent: 2      (from defaults)     │    │
-                     │  │ subagentMaxChildren: 5        (from defaults)     │    │
-                     │  │ bootstrap: ["AGENTS.md",      (from annotation)   │    │
+                     │  │ sandbox:      true            (来源: 注解)      │    │
+                     │  │ sandboxEngine:"docker"        (来源: 默认值)    │    │
+                     │  │ approval:     MANUAL          (来源: 注解)      │    │
+                     │  │ approvalTimeout: 120秒         (来源: 默认值)    │    │
+                     │  │ contextMaxTokens: 200000      (来源: 默认值)    │    │
+                     │  │ contextMaxMessages: 200       (来源: 默认值)    │    │
+                     │  │ contextCompactAt: 0.8          (来源: 默认值)    │    │
+                     │  │ heartbeatEnabled: true        (来源: 默认值)    │    │
+                     │  │ heartbeatCron: "0 */4 * * *"  (来源: 默认值)    │    │
+                     │  │ heartbeatActiveHours:"08-22"  (来源: 默认值)    │    │
+                     │  │ subagentMaxDepth: 1           (来源: 默认值)    │    │
+                     │  │ subagentMaxConcurrent: 2      (来源: 默认值)    │    │
+                     │  │ subagentMaxChildren: 5        (来源: 默认值)    │    │
+                     │  │ bootstrap: ["AGENTS.md",      (来源: 注解)      │    │
                      │  │             "SOUL.md"]                            │    │
-                     │  │ planningMode:  true           (from runtime)      │    │
+                     │  │ planningMode:  true           (来源: 运行时)    │    │
                      │  └─────────────────────────────────────────────────┘    │
                      │                                                         │
                      └────────────────────────┬────────────────────────────────┘
                                               │
-                                              │  Consumed by:
+                                              │  被以下组件消费：
                                               │
               ┌───────────────┬───────────────┼───────────────┬───────────────┐
               │               │               │               │               │
               ▼               ▼               ▼               ▼               ▼
      ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-     │ AgentInvoc.  │ │ ReActEngine  │ │ Bootstrap    │ │ Compaction   │ │ Subagent     │
-     │ Handler      │ │              │ │ Loader       │ │ Engine       │ │ Spawner      │
+     │ AgentInvoc.  │ │ ReActEngine  │ │ 引导加载器   │ │ 压缩引擎     │ │ 子代理生成器 │
+     │ Handler      │ │              │ │              │ │              │ │              │
      │              │ │ execute()    │ │ load()       │ │ compact()    │ │ spawn()      │
      │ invoke()     │ │ executeStream│ │              │ │              │ │              │
      └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
@@ -852,117 +850,117 @@ The complete configuration merge chain, showing how settings flow from system-wi
                               │               │               │
                               ▼               ▼               ▼
                      ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-                     │ Heartbeat    │ │ All Hooks    │ │ SSE Streaming│
-                     │ Scheduler    │ │ (36 points)  │ │              │
-                     │              │ │              │ │ emit events  │
-                     │ schedule()   │ │ intercept()  │ │ with config  │
+                     │ 心跳调度器   │ │ 所有钩子     │ │ SSE流式输出  │
+                     │              │ │ (36个点)     │ │              │
+                     │ schedule()   │ │ intercept()  │ │ 使用配置     │
+                     │              │ │              │ │ 发送事件     │
                      └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-### Merge Rules
+### 合并规则
 
-| Precedence (low→high) | Source | Override Behaviour |
+| 优先级(低→高) | 来源 | 覆盖行为 |
 |------------------------|--------|-------------------|
-| 1 (lowest) | `lyclaw.agent.defaults` in `application.yml` | Base values for all agents |
-| 2 | Agent-type defaults (`lyclaw.agent.chat.*`) | Override system defaults for a specific agent type |
-| 3 | `@Agent` annotation on interface | Override defaults for this agent definition |
-| 4 (highest) | `ChatRequest` body fields | Per-request overrides (user-controlled) |
+| 1 (最低) | `application.yml` 中的 `lyclaw.agent.defaults` | 所有代理的基础值 |
+| 2 | 代理类型默认值 (`lyclaw.agent.chat.*`) | 覆盖特定代理类型的系统默认值 |
+| 3 | 接口上的 `@Agent` 注解 | 覆盖此代理定义的默认值 |
+| 4 (最高) | `ChatRequest` 请求体字段 | 每次请求覆盖（用户控制） |
 
-**Security-sensitive fields** (e.g., `sandbox.enabled`, `approval.mode`) can be locked at a given level via `final: true` to prevent lower-precedence layers or user overrides from weakening security policy.
+**安全敏感字段**（如 `sandbox.enabled`、`approval.mode`）可以通过 `final: true` 在指定层级锁定，防止低优先级层或用户覆盖削弱安全策略。
 
 ---
 
-## 4. Subagent Delegation Tree
+## 4. 子代理委托树
 
-Illustrates the recursive subagent spawning model: parent agents delegate work to child agents, which can in turn spawn grandchildren, subject to configurable depth and concurrency limits.
+展示递归子代理生成模型：父代理将工作委托给子代理，子代理又可以生成孙子代理，受可配置的深度和并发限制约束。
 
 ```
-Session: main-abc123
+会话：main-abc123
 ═══════════════════════════════════════════════════════════════════════════════
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Agent "chat"  (depth = 0, parent = null)                                    │
+│  代理 "chat"  (深度 = 0, 父代理 = null)                                     │
 │  ─────────────────────────────────────────                                   │
-│  Session: main-abc123                                                        │
-│  Config:  ResolvedAgentConfig(chat)                                          │
-│  Tools:   [web_search, file_read, file_write, shell, delegate_to_agent]     │
+│  会话：main-abc123                                                            │
+│  配置：  ResolvedAgentConfig(chat)                                           │
+│  工具：   [web_search, file_read, file_write, shell, delegate_to_agent]     │
 │                                                                              │
-│  ┌─ User: "Please do a full code review of the PR, run the test suite,      │
-│  │          and check for security issues."                                  │
+│  ┌─ 用户："请对PR进行完整的代码审查，运行测试套件，                           │
+│  │         并检查安全问题。"                                                  │
 │  │                                                                           │
-│  ├─ LLM (thinking): "This is a complex multi-step task. I should delegate    │
-│  │   the code review to the code-reviewer agent, tests to the tester agent,  │
-│  │   and security to the security-scanner agent."                            │
+│  ├─ LLM (思考)： "这是一个复杂的多步骤任务。我应该将                           │
+│  │   代码审查委托给code-reviewer代理，测试委托给tester代理，                    │
+│  │   安全检查委托给security-scanner代理。"                                   │
 │  │                                                                           │
-│  ├─ Tool call #1: delegate_to_agent("code-reviewer", {                        │
-│  │       task: "Review PR #342 for bugs and style issues",                   │
+│  ├─ 工具调用 #1：delegate_to_agent("code-reviewer", {                        │
+│  │       task: "审查 PR #342 中的bug和代码风格问题",                          │
 │  │       files: ["src/main/**/*.java"],                                      │
-│  │       context: "Focus on null safety and concurrency"                     │
+│  │       context: "重点关注空安全和并发问题"                                  │
 │  │   })                                                                      │
 │  │   │                                                                       │
-│  │   ├─ [Spawning subagent at depth 1]                                       │
+│  │   ├─ [生成深度为1的子代理]                                                 │
 │  │   │                                                                       │
 │  │   ▼                                                                       │
 │  │  ┌───────────────────────────────────────────────────────────────────┐   │
-│  │  │  Subagent "code-reviewer"  (depth = 1, parent = "chat")           │   │
+│  │  │  子代理 "code-reviewer"  (深度 = 1, 父代理 = "chat")             │   │
 │  │  │  ──────────────────────────────────────────────────────────────    │   │
-│  │  │  Session: main-abc123/subagent/code-reviewer/uuid-a1b2c3d4        │   │
-│  │  │  Config:  ResolvedAgentConfig(code-reviewer)                       │   │
-│  │  │  Tools:   [file_read, file_search, grep, delegate_to_agent]       │   │
-│  │  │  Own bootstrap: AGENTS.md (code-reviewer role), SOUL.md           │   │
+│  │  │  会话：main-abc123/subagent/code-reviewer/uuid-a1b2c3d4          │   │
+│  │  │  配置：  ResolvedAgentConfig(code-reviewer)                       │   │
+│  │  │  工具：   [file_read, file_search, grep, delegate_to_agent]       │   │
+│  │  │  自有引导文件：AGENTS.md (code-reviewer角色), SOUL.md             │   │
 │  │  │                                                                    │   │
-│  │  │  ┌─ System prompt (assembled from code-reviewer bootstrap)         │   │
-│  │  │  ├─ LLM: "Let me read the changed files first..."                  │   │
-│  │  │  ├─ Tool: file_read("src/main/java/...")                          │   │
-│  │  │  ├─ Tool: file_read("src/main/java/...")                          │   │
-│  │  │  ├─ LLM: "I found several issues. Let me also run the linter."    │   │
+│  │  │  ┌─ 系统提示词 (由code-reviewer引导文件组装)                       │   │
+│  │  │  ├─ LLM："让我先读修改过的文件..."                                 │   │
+│  │  │  ├─ 工具：file_read("src/main/java/...")                          │   │
+│  │  │  ├─ 工具：file_read("src/main/java/...")                          │   │
+│  │  │  ├─ LLM："我发现了几个问题。让我也运行一下代码检查工具。"           │   │
 │  │  │  │                                                                 │   │
-│  │  │  ├─ Tool call: delegate_to_agent("tester", {                       │   │
-│  │  │  │     task: "Run unit tests for the changed files",               │   │
+│  │  │  ├─ 工具调用：delegate_to_agent("tester", {                        │   │
+│  │  │  │     task: "为修改过的文件运行单元测试",                          │   │
 │  │  │  │     testCommand: "mvn test -pl affected-module"                 │   │
 │  │  │  │ })                                                              │   │
 │  │  │  │   │                                                             │   │
-│  │  │  │   ├─ [Spawning subagent at depth 2]                             │   │
+│  │  │  │   ├─ [生成深度为2的子代理]                                       │   │
 │  │  │  │   │                                                             │   │
 │  │  │  │   ▼                                                             │   │
 │  │  │  │  ┌─────────────────────────────────────────────────────────┐   │   │
-│  │  │  │  │  Subagent "tester"  (depth = 2, parent = "code-reviewer")│   │   │
+│  │  │  │  │  子代理 "tester"  (深度 = 2, 父代理 = "code-reviewer")  │   │   │
 │  │  │  │  │  ───────────────────────────────────────────────────     │   │   │
-│  │  │  │  │  Session: main-abc123/subagent/code-reviewer/uuid-a1b2/  │   │   │
+│  │  │  │  │  会话：main-abc123/subagent/code-reviewer/uuid-a1b2/    │   │   │
 │  │  │  │  │           subagent/tester/uuid-e5f6g7h8                  │   │   │
-│  │  │  │  │  Config:  ResolvedAgentConfig(tester)                     │   │   │
-│  │  │  │  │  Tools:   [shell, file_read]                              │   │   │
+│  │  │  │  │  配置：  ResolvedAgentConfig(tester)                     │   │   │
+│  │  │  │  │  工具：   [shell, file_read]                              │   │   │
 │  │  │  │  │                                                           │   │   │
-│  │  │  │  │  Check: depth(2) < maxSpawnDepth(1) ?                    │   │   │
-│  │  │  │  │    → if maxSpawnDepth=2: ALLOWED                          │   │   │
-│  │  │  │  │    → if maxSpawnDepth=1 (default): REJECTED               │   │   │
-│  │  │  │  │      Error: "Cannot spawn subagent: max spawn depth       │   │   │
-│  │  │  │  │              reached (depth=2 > max=1)"                   │   │   │
+│  │  │  │  │  检查：depth(2) < maxSpawnDepth(1) ?                    │   │   │
+│  │  │  │  │    → 如果 maxSpawnDepth=2：允许                           │   │   │
+│  │  │  │  │    → 如果 maxSpawnDepth=1 (默认)：拒绝                    │   │   │
+│  │  │  │  │      错误："无法生成子代理：已达最大生成深度               │   │   │
+│  │  │  │  │              (深度=2 > 最大值=1)"                        │   │   │
 │  │  │  │  │                                                           │   │   │
-│  │  │  │  │  [Assuming maxSpawnDepth=2 for this example:]             │   │   │
+│  │  │  │  │  [本示例假设 maxSpawnDepth=2：]                           │   │   │
 │  │  │  │  │                                                           │   │   │
-│  │  │  │  │  ├─ LLM: "Running tests..."                               │   │   │
-│  │  │  │  │  ├─ Tool: shell("mvn test -pl affected-module")           │   │   │
-│  │  │  │  │  ├─ ToolResult: "Tests run: 47, Failures: 2, Errors: 0"  │   │   │
-│  │  │  │  │  ├─ LLM: "2 tests failed. Let me check the logs."         │   │   │
-│  │  │  │  │  ├─ Tool: file_read("target/surefire-reports/...")        │   │   │
-│  │  │  │  │  └─ LLM: "The failures are in UserServiceTest, caused by  │   │   │
-│  │  │  │  │      a null pointer in the new validation logic."          │   │   │
+│  │  │  │  │  ├─ LLM："运行测试中..."                                  │   │   │
+│  │  │  │  │  ├─ 工具：shell("mvn test -pl affected-module")           │   │   │
+│  │  │  │  │  ├─ ToolResult："测试数：47, 失败：2, 错误：0"            │   │   │
+│  │  │  │  │  ├─ LLM："2个测试失败。让我检查日志。"                     │   │   │
+│  │  │  │  │  ├─ 工具：file_read("target/surefire-reports/...")        │   │   │
+│  │  │  │  │  └─ LLM："失败在UserServiceTest中，由新验证逻辑中的        │   │   │
+│  │  │  │  │      空指针引起。"                                         │   │   │
 │  │  │  │  │                                                           │   │
-│  │  │  │  │  Return: {                                                 │   │   │
+│  │  │  │  │  返回：{                                                   │   │   │
 │  │  │  │  │    testsRun: 47,                                           │   │   │
 │  │  │  │  │    failures: 2,                                            │   │   │
-│  │  │  │  │    failureDetails: "UserServiceTest: NPE in validate()",   │   │   │
+│  │  │  │  │    failureDetails: "UserServiceTest: validate()中的NPE",   │   │   │
 │  │  │  │  │    elapsedMs: 45200                                        │   │   │
 │  │  │  │  │  }                                                         │   │   │
 │  │  │  │  └─────────────────────────────────────────────────────────┘   │   │
 │  │  │  │                                                                 │   │
-│  │  │  └─ Receives tester result → incorporates into review              │   │
+│  │  │  └─ 收到tester结果 → 合并到审查中                                  │   │
 │  │  │                                                                     │   │
-│  │  │  └─ LLM: "Code review complete. Found 2 bugs (1 null safety,       │   │
-│  │  │      1 concurrency). Tests confirm 2 failures. Recommend fixes."   │   │
+│  │  │  └─ LLM："代码审查完成。发现2个bug (1个空安全，                      │   │
+│  │  │      1个并发)。测试确认有2个失败。建议修复。"                        │   │
 │  │  │                                                                     │   │
-│  │  │  Return: {                                                          │   │
+│  │  │  返回：{                                                            │   │
 │  │  │    bugsFound: 2,                                                    │   │
 │  │  │    testFailures: 2,                                                 │   │
 │  │  │    reviewSummary: "...",                                            │   │
@@ -970,59 +968,59 @@ Session: main-abc123
 │  │  │  }                                                                  │   │
 │  │  └───────────────────────────────────────────────────────────────────┘   │
 │  │                                                                           │
-│  ├─ Tool call #2: delegate_to_agent("security-scanner", {                    │
-│  │       task: "Scan changed files for security vulnerabilities",            │
+│  ├─ 工具调用 #2：delegate_to_agent("security-scanner", {                    │
+│  │       task: "扫描修改过的文件中的安全漏洞",                                │
 │  │       files: ["src/main/**/*.java"]                                       │
 │  │   })                                                                      │
 │  │   │                                                                       │
-│  │   ├─ [Spawning subagent at depth 1 — if maxConcurrent=2, this runs       │
-│  │   │  in parallel with code-reviewer if it were still running]             │
+│  │   ├─ [生成深度为1的子代理 — 如果 maxConcurrent=2，且code-reviewer         │
+│  │   │  仍在运行，则此子代理与其并行运行]                                    │
 │  │   │                                                                       │
 │  │   ▼                                                                       │
 │  │  ┌───────────────────────────────────────────────────────────────────┐   │
-│  │  │  Subagent "security-scanner"  (depth = 1, parent = "chat")        │   │
+│  │  │  子代理 "security-scanner"  (深度 = 1, 父代理 = "chat")          │   │
 │  │  │  ──────────────────────────────────────────────────────────────    │   │
-│  │  │  Session: main-abc123/subagent/security-scanner/uuid-i9j0k1l2      │   │
-│  │  │  ... (runs full ReAct loop, similar to above)                       │   │
+│  │  │  会话：main-abc123/subagent/security-scanner/uuid-i9j0k1l2        │   │
+│  │  │  ... (运行完整ReAct循环，与上面类似)                                │   │
 │  │  │                                                                     │   │
-│  │  │  Return: {                                                          │   │
+│  │  │  返回：{                                                            │   │
 │  │  │    vulnerabilitiesFound: 1,                                         │   │
 │  │  │    severity: "medium",                                              │   │
-│  │  │    details: "SQL injection risk in UserQueryBuilder",               │   │
+│  │  │    details: "UserQueryBuilder中存在SQL注入风险",                   │   │
 │  │  │    elapsedMs: 35000                                                 │   │
 │  │  │  }                                                                  │   │
 │  │  └───────────────────────────────────────────────────────────────────┘   │
 │  │                                                                           │
-│  └─ LLM: "I have the results from both subagents. Here is a consolidated     │
-│      report: 2 bugs found by code-reviewer (with 2 matching test failures), │
-│      and 1 medium-severity security issue found by the scanner."             │
+│  └─ LLM："我已获得两个子代理的结果。以下是整合报告：                           │
+│      code-reviewer发现2个bug（对应2个测试失败），and                           │
+│      security-scanner发现1个中等严重度的安全问题。"                          │
 │                                                                              │
-│  Final reply to user (streamed via SSE)                                      │
+│  最终回复给用户（通过SSE流式输出）                                            │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 
-                          Concurrency & Depth Limits
+                          并发和深度限制
                           ═══════════════════════════
 
      ┌──────────────────────────────────────────────────────────────┐
-     │  maxSpawnDepth = 1  (default)                                 │
-     │    chat(depth=0) → code-reviewer(depth=1) → tester(depth=2)  │
-     │                                                    ✗ REJECT  │
+     │  maxSpawnDepth = 1  (默认)                                    │
+     │    chat(深度=0) → code-reviewer(深度=1) → tester(深度=2)     │
+     │                                                    ✗ 拒绝    │
      │                                                               │
-     │  maxSpawnDepth = 2  (relaxed)                                  │
-     │    chat(depth=0) → code-reviewer(depth=1) → tester(depth=2)  │
-     │                                                    ✓ ALLOW   │
+     │  maxSpawnDepth = 2  (放宽)                                    │
+     │    chat(深度=0) → code-reviewer(深度=1) → tester(深度=2)     │
+     │                                                    ✓ 允许    │
      │                                                               │
      │  maxConcurrent = 2                                             │
-     │    chat can spawn up to 2 subagents running simultaneously    │
-     │    If a 3rd is requested while 2 are active: QUEUED or DENIED │
+     │    chat最多可同时运行2个子代理                                  │
+     │    如果第3个被请求而此时有2个活跃中：排队或拒绝                 │
      │                                                               │
      │  maxChildrenPerAgent = 5                                       │
-     │    chat can spawn at most 5 total subagents in its lifetime   │
+     │    chat在其生命周期内最多生成5个子代理                          │
      └──────────────────────────────────────────────────────────────┘
 
 
-                          Session Key Hierarchy
+                          会话键层级
                           ══════════════════════
 
      main-abc123
@@ -1031,35 +1029,35 @@ Session: main-abc123
        │           subagent/tester/uuid-e5f6g7h8
        └── main-abc123/subagent/security-scanner/uuid-i9j0k1l2
 
-     Each subagent has its own:
-       - Session key (hierarchical, derived from parent)
-       - Transcript file (JSONL, isolated)
-       - ResolvedAgentConfig (merged independently)
-       - Bootstrap files (loaded from agent's own directory)
-       - ReActEngine instance (full pipeline, recursively)
+     每个子代理拥有独立的：
+       - 会话键（层级结构，派生自父代理）
+       - 转录记录文件（JSONL，隔离）
+       - ResolvedAgentConfig（独立合并）
+       - 引导文件（从代理自有目录加载）
+       - ReActEngine 实例（完整管线，递归执行）
 ```
 
 ---
 
-## 5. SSE Event Stream (Complete)
+## 5. SSE事件流（完整）
 
-The full Server-Sent Events sequence for a typical request involving thinking, tool calls with approval, subagent spawning, text streaming, and compaction.
+一次典型请求的完整服务端事件序列，涉及思考、带审批的工具调用、子代理生成、文本流式输出和压缩。
 
 ```
-                              SSE Event Stream
+                              SSE 事件流
                               ════════════════
 
-  Client connects:  GET /api/sse/stream?sessionKey=main-abc123
-  Server responds:  Content-Type: text/event-stream
-                    Connection: keep-alive
-                    Cache-Control: no-cache
+  客户端连接：  GET /api/sse/stream?sessionKey=main-abc123
+  服务端响应：  Content-Type: text/event-stream
+                Connection: keep-alive
+                Cache-Control: no-cache
 
   ╔══════════════════════════════════════════════════════════════════════════╗
-  ║                         SSE EVENT SEQUENCE                              ║
+  ║                         SSE 事件序列                                    ║
   ╚══════════════════════════════════════════════════════════════════════════╝
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ PHASE 1: INITIALISATION                                                 │
+  │ 阶段 1：初始化                                                          │
   ├────────────────────────────────────────────────────────────────────────┤
 
   event: run_start
@@ -1114,7 +1112,7 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
   }
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ PHASE 2: FIRST THINKING + TOOL CALL                                     │
+  │ 阶段 2：首次思考 + 工具调用                                              │
   ├────────────────────────────────────────────────────────────────────────┤
 
   event: thinking_start
@@ -1181,7 +1179,7 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
   }
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ PHASE 3: SECOND TOOL CALL WITH APPROVAL (shell command)                 │
+  │ 阶段 3：第二次工具调用（带审批的shell命令）                               │
   ├────────────────────────────────────────────────────────────────────────┤
 
   event: tool_call
@@ -1207,13 +1205,13 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
       "workingDir": "/home/user/project"
     },
     "risk": "low",
-    "reason": "Read-only git command",
+    "reason": "只读git命令",
     "timeoutSeconds": 120,
     "timestamp": "2026-05-20T14:30:05.101Z"
   }
 
-  ── Frontend shows approval dialog ──
-  ── User clicks "Approve" ──
+  ── 前端显示审批对话框 ──
+  ── 用户点击"批准" ──
 
   event: tool_approval_response
   data: {
@@ -1241,7 +1239,7 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
   }
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ PHASE 4: SUBAGENT SPAWN (code-reviewer)                                 │
+  │ 阶段 4：子代理生成（code-reviewer）                                       │
   ├────────────────────────────────────────────────────────────────────────┤
 
   event: tool_call
@@ -1251,9 +1249,9 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
     "name": "delegate_to_agent",
     "args": {
       "agentId": "code-reviewer",
-      "task": "Review UserService.java for bugs, null safety, and concurrency issues",
+      "task": "审查 UserService.java 中的bug、空安全和并发问题",
       "files": ["src/main/java/com/example/user/UserService.java"],
-      "context": "Recent commits show validation changes"
+      "context": "最近的提交显示有验证逻辑变更"
     },
     "round": 3,
     "timestamp": "2026-05-20T14:30:12.000Z"
@@ -1268,7 +1266,7 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
     "depth": 1,
     "maxDepth": 2,
     "depthRemaining": 1,
-    "task": "Review UserService.java for bugs, null safety, and concurrency issues",
+    "task": "审查 UserService.java 中的bug、空安全和并发问题",
     "sessionKey": "main-abc123/subagent/code-reviewer/uuid-x1y2z3w4",
     "timestamp": "2026-05-20T14:30:12.050Z"
   }
@@ -1283,8 +1281,8 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
     "timestamp": "2026-05-20T14:30:12.100Z"
   }
 
-  ── Subagent runs internally (its own events are emitted on a separate   ──
-  ── SSE channel, or nested within the parent stream if configured)        ──
+  ── 子代理在内部运行（其自身事件在单独的SSE通道上发出，                     ──
+  ── 或者如果配置了，嵌套在父级流中）                                         ──
 
   event: subagent_ended
   data: {
@@ -1299,7 +1297,7 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
         "high": 1,
         "medium": 2
       },
-      "summary": "Found null safety issue in validate() method and race condition in updateUser()"
+      "summary": "在validate()方法中发现空安全问题，在updateUser()中发现竞态条件"
     },
     "elapsedMs": 45000,
     "tokensUsed": {
@@ -1319,14 +1317,14 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
     "result": {
       "bugsFound": 3,
       "severity": {"critical": 0, "high": 1, "medium": 2},
-      "summary": "Found null safety issue in validate() method and race condition in updateUser()"
+      "summary": "在validate()方法中发现空安全问题，在updateUser()中发现竞态条件"
     },
     "durationMs": 45150,
     "timestamp": "2026-05-20T14:30:57.200Z"
   }
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ PHASE 5: FINAL THINKING + TEXT RESPONSE                                 │
+  │ 阶段 5：最终思考 + 文本响应                                               │
   ├────────────────────────────────────────────────────────────────────────┤
 
   event: thinking_start
@@ -1489,7 +1487,7 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
   }
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ PHASE 6: COMPACTION (if triggered)                                      │
+  │ 阶段 6：压缩（如果触发）                                                 │
   ├────────────────────────────────────────────────────────────────────────┤
 
   event: compaction_start
@@ -1524,7 +1522,7 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
   }
 
   ┌────────────────────────────────────────────────────────────────────────┐
-  │ PHASE 7: RUN COMPLETION                                                 │
+  │ 阶段 7：运行完成                                                         │
   ├────────────────────────────────────────────────────────────────────────┤
 
   event: agent_end
@@ -1554,134 +1552,134 @@ The full Server-Sent Events sequence for a typical request involving thinking, t
   }
 
   ╔══════════════════════════════════════════════════════════════════════════╗
-  ║                       SSE EVENT TYPE CATALOG                             ║
+  ║                       SSE 事件类型目录                                   ║
   ╚══════════════════════════════════════════════════════════════════════════╝
 
   ┌──────────────────────────┬──────────────────────────────────────────────┐
-  │ EVENT NAME               │ DESCRIPTION                                   │
+  │ 事件名称                  │ 描述                                         │
   ├──────────────────────────┼──────────────────────────────────────────────┤
-  │ run_start                │ New agent run initiated                       │
-  │ bootstrap_loaded         │ Bootstrap files loaded from disk              │
-  │ context_built            │ Context assembled (messages, tools, prompt)    │
-  │ model_resolved           │ LLM model selected after resolution chain     │
-  │ model_call_started       │ LLM API call started                          │
-  │ thinking_start           │ LLM thinking/CoT block started                │
-  │ thinking_delta           │ Incremental thinking text                     │
-  │ thinking_end             │ LLM thinking/CoT block ended                  │
-  │ tool_call                │ Tool invocation requested by LLM              │
-  │ tool_approval_request    │ Tool requires user approval (sent to UI)      │
-  │ tool_approval_response   │ User's approval decision received             │
-  │ tool_result              │ Tool execution result                         │
-  │ subagent_spawning        │ Subagent about to be spawned                  │
-  │ subagent_spawned         │ Subagent successfully created and running     │
-  │ subagent_ended           │ Subagent completed (ok/error/timeout)         │
-  │ model_call_ended         │ LLM API call completed with usage stats       │
-  │ before_finalize          │ Finalization gate (finalize/revise/continue)  │
-  │ message_start            │ Text response streaming started               │
-  │ message_delta            │ Incremental text response                     │
-  │ message_end              │ Text response streaming ended                 │
-  │ compaction_start         │ Context compaction triggered                  │
-  │ compaction_progress      │ Compaction progress update                    │
-  │ compaction_complete      │ Context compaction finished                   │
-  │ agent_end                │ Agent run completed with summary              │
-  │ done                     │ SSE stream ended (connection stays open)      │
-  │ error                    │ Error occurred (recoverable or fatal)         │
-  │ heartbeat                │ Heartbeat keepalive (every 30s idle)          │
+  │ run_start                │ 新的代理运行已启动                              │
+  │ bootstrap_loaded         │ 引导文件已从磁盘加载                            │
+  │ context_built            │ 上下文已组装（消息、工具、提示词）               │
+  │ model_resolved           │ 经过解析链后选定的LLM模型                       │
+  │ model_call_started       │ LLM API调用已启动                              │
+  │ thinking_start           │ LLM思考/思维链块已开始                          │
+  │ thinking_delta           │ 增量思考文本                                   │
+  │ thinking_end             │ LLM思考/思维链块已结束                          │
+  │ tool_call                │ LLM请求的工具调用                              │
+  │ tool_approval_request    │ 工具需要用户审批（发送到界面）                   │
+  │ tool_approval_response   │ 收到用户的审批决定                              │
+  │ tool_result              │ 工具执行结果                                   │
+  │ subagent_spawning        │ 即将生成子代理                                 │
+  │ subagent_spawned         │ 子代理已成功创建并运行中                         │
+  │ subagent_ended           │ 子代理已完成（ok/error/timeout）               │
+  │ model_call_ended         │ LLM API调用已完成（附用量统计）                  │
+  │ before_finalize          │ 最终化门禁（finalize/revise/continue）          │
+  │ message_start            │ 文本响应流式输出已开始                           │
+  │ message_delta            │ 增量文本响应                                   │
+  │ message_end              │ 文本响应流式输出已结束                           │
+  │ compaction_start         │ 上下文压缩已触发                                │
+  │ compaction_progress      │ 压缩进度更新                                   │
+  │ compaction_complete      │ 上下文压缩已完成                                │
+  │ agent_end                │ 代理运行已完成（附摘要）                         │
+  │ done                     │ SSE流已结束（连接保持打开）                      │
+  │ error                    │ 发生错误（可恢复或致命）                         │
+  │ heartbeat                │ 心跳保活（每30秒空闲时）                         │
   └──────────────────────────┴──────────────────────────────────────────────┘
 ```
 
 ---
 
-## 6. Component Inventory & Responsibilities
+## 6. 组件清单与职责
 
-| # | Component | Layer | Responsibility |
+| # | 组件 | 层 | 职责 |
 |---|-----------|-------|----------------|
-| 1 | **REST/SSE Controller** | Transport | Accept HTTP POST chat requests, return SSE streams. Handles CORS, auth, rate limiting. |
-| 2 | **WebSocket Handler** | Transport | Maintain persistent bidirectional connections. Support session resumption. |
-| 3 | **WebChat UI** | Transport | React-based chat interface served as static assets. Connects via SSE/WS. |
-| 4 | **Channel Plugins** | Transport | Adapt external messaging platforms (Telegram, Discord, Slack, WeChat) to internal AgentMessage format. |
-| 5 | **Agent Router** | Routing | Match inbound messages to agent instances via channel name, route bindings, @mentions, or ACP prefixes. |
-| 6 | **Agent Config Resolver** | Configuration | Deep-merge system defaults, agent defaults, `@Agent` annotations, and runtime overrides into `ResolvedAgentConfig`. |
-| 7 | **AgentInvocationHandler** | Runtime | JDK dynamic proxy that intercepts `ChatAgent` interface calls and dispatches to the correct runtime (Embedded or ACP). |
-| 8 | **BootstrapLoader** | Runtime (Embedded) | Load, validate, and cache bootstrap Markdown files (AGENTS.md, SOUL.md, BOOTSTRAP.md, IDENTITY.md, USER.md, HEARTBEAT.md). |
-| 9 | **Context Engine** | Runtime (Embedded) | Assemble full LLM context from session history, bootstrap content, tool definitions, and system prompt. Compact and prune as needed. |
-| 10 | **ReAct Engine** | Runtime (Embedded) | Execute the Reasoning-Action loop: call LLM, detect tool calls, execute tools, feed results back, loop until text reply or budget exhausted. |
-| 11 | **Block Streaming** | Runtime (Embedded) | Coalesce text deltas, apply human-like delays, send typing indicators, and stream to SSE/WebSocket. |
-| 12 | **AcpRuntime** | Runtime (ACP) | Manage external ACP provider sessions. Forward messages, translate ACP events to internal SSE events. |
-| 13 | **Heartbeat Scheduler** | Runtime | Cron-driven background agent activation. Checks active hours, idle status, and cooldown before triggering a single-turn ReAct. |
-| 14 | **Subagent Spawner** | Runtime | Create child `ReActEngine` instances with isolated sessions. Enforce depth, concurrency, and child count limits. |
-| 15 | **Sandbox** | Runtime | Execute tool calls inside Docker/Podman containers with filesystem bridges and resource limits. |
-| 16 | **Model Catalog** | Shared Service | Registry of available LLM models with capabilities, pricing, and health status. |
-| 17 | **Model Resolver** | Shared Service | Resolve the best model for a request using primary, fallback chain, and auto-probe health checks. |
-| 18 | **Tool Registry** | Shared Service | Register and discover `@Tool`-annotated methods from core and plugins. |
-| 19 | **Tool Pipeline** | Shared Service | Execute tool calls through validation, approval, sandboxing, and result enrichment middleware. |
-| 20 | **Memory System** | Shared Service | Three-tier memory: Redis (hot), PostgreSQL (warm), disk (cold). Stores session history and agent knowledge. |
-| 21 | **Session Store** | Shared Service | Persist conversation transcripts in append-only JSONL format. Support hierarchical subagent session keys. |
-| 22 | **Skill Registry** | Shared Service | Register agent capability bundles as DAG graphs. Support hot-reload and conflict detection. |
-| 23 | **Security Manager** | Shared Service | Enforce tool allowlists/blocklists, rate limiting, and content safety policies. |
-| 24 | **Approval Store** | Shared Service | Manage pending tool approval requests with timeout, auto-deny, and UI integration. |
-| 25 | **Identity Resolver** | Shared Service | Resolve user identity from OAuth2/OIDC/JWT tokens. Map to trust levels and permission profiles. |
-| 26 | **TTS Engine** | Shared Service | Text-to-speech synthesis via ElevenLabs, Edge TTS, or Azure Speech for voice channel output. |
-| 27 | **Metrics Collector** | Shared Service | Export Micrometer metrics to Prometheus. Dashboards via Grafana. |
-| 28 | **Plugin SDK** | Extensibility | Define and enforce the plugin contract (manifest, classloader isolation, lifecycle, hot-reload). |
-| 29 | **Hook Pipeline** | Cross-cutting | 36-point lifecycle interception. Plugins register hook handlers with priority ordering. |
+| 1 | **REST/SSE控制器** | 传输 | 接受HTTP POST聊天请求，返回SSE流。处理CORS、认证、速率限制。 |
+| 2 | **WebSocket处理器** | 传输 | 维护持久的双向连接。支持会话恢复。 |
+| 3 | **WebChat界面** | 传输 | 基于React的聊天界面，作为静态资源提供。通过SSE/WS连接。 |
+| 4 | **频道插件** | 传输 | 将外部消息平台（Telegram、Discord、Slack、WeChat）适配到内部AgentMessage格式。 |
+| 5 | **代理路由器** | 路由 | 通过频道名称、路由绑定、@提及或ACP前缀将入站消息匹配到代理实例。 |
+| 6 | **代理配置解析器** | 配置 | 将系统默认值、代理默认值、`@Agent`注解和运行时覆盖深度合并为`ResolvedAgentConfig`。 |
+| 7 | **AgentInvocationHandler** | 运行时 | JDK动态代理，拦截`ChatAgent`接口调用并分发到正确的运行时（内嵌或ACP）。 |
+| 8 | **引导加载器** | 运行时（内嵌） | 加载、验证和缓存引导Markdown文件（AGENTS.md、SOUL.md、BOOTSTRAP.md、IDENTITY.md、USER.md、HEARTBEAT.md）。 |
+| 9 | **上下文引擎** | 运行时（内嵌） | 从会话历史、引导内容、工具定义和系统提示词组装完整的LLM上下文。按需压缩和清理。 |
+| 10 | **ReAct引擎** | 运行时（内嵌） | 执行推理-行动循环：调用LLM，检测工具调用，执行工具，将结果反馈回去，循环直到文本回复或预算耗尽。 |
+| 11 | **块流式输出** | 运行时（内嵌） | 合并文本增量，应用模拟人类延迟，发送输入中指示器，并流式传输到SSE/WebSocket。 |
+| 12 | **AcpRuntime** | 运行时（ACP） | 管理外部ACP提供商会话。转发消息，将ACP事件转换为内部SSE事件。 |
+| 13 | **心跳调度器** | 运行时 | 基于定时表达式的后台代理激活。在触发单轮ReAct之前检查活跃时间段、空闲状态和冷却期。 |
+| 14 | **子代理生成器** | 运行时 | 创建具有隔离会话的子`ReActEngine`实例。执行深度、并发和子代理数量限制。 |
+| 15 | **沙箱** | 运行时 | 在Docker/Podman容器内执行工具调用，具有文件系统桥接和资源限制。 |
+| 16 | **模型目录** | 共享服务 | 可用LLM模型的注册表，包含能力、定价和健康状态。 |
+| 17 | **模型解析器** | 共享服务 | 使用主模型、回退链和自动探测健康检查为请求解析最佳模型。 |
+| 18 | **工具注册表** | 共享服务 | 注册和发现来自核心和插件的`@Tool`注解方法。 |
+| 19 | **工具管线** | 共享服务 | 通过验证、审批、沙箱和结果丰富中间件执行工具调用。 |
+| 20 | **记忆系统** | 共享服务 | 三级记忆：Redis（热）、PostgreSQL（温）、磁盘（冷）。存储会话历史和代理知识。 |
+| 21 | **会话存储** | 共享服务 | 以仅追加的JSONL格式持久化对话转录记录。支持层级式子代理会话键。 |
+| 22 | **技能注册表** | 共享服务 | 将代理能力包注册为DAG图。支持热重载和冲突检测。 |
+| 23 | **安全管理器** | 共享服务 | 执行工具白名单/黑名单、速率限制和内容安全策略。 |
+| 24 | **审批存储** | 共享服务 | 管理待处理的工具审批请求，包含超时、自动拒绝和界面集成。 |
+| 25 | **身份解析器** | 共享服务 | 从OAuth2/OIDC/JWT令牌解析用户身份。映射到信任级别和权限配置。 |
+| 26 | **TTS引擎** | 共享服务 | 通过ElevenLabs、Edge TTS或Azure Speech进行文本转语音合成，用于语音频道输出。 |
+| 27 | **指标收集器** | 共享服务 | 导出Micrometer指标到Prometheus。通过Grafana进行仪表板展示。 |
+| 28 | **插件SDK** | 可扩展性 | 定义和执行插件契约（清单、类加载器隔离、生命周期、热重载）。 |
+| 29 | **钩子管线** | 横切 | 36点生命周期拦截。插件按优先级排序注册钩子处理器。 |
 
 ---
 
-## 7. Key Design Decisions
+## 7. 关键设计决策
 
-| Decision | Rationale |
+| 决策 | 理由 |
 |----------|-----------|
-| **Embedded + ACP dual runtime** | Existing ACP provider integration must be preserved. New agents use the embedded runtime. Both share the same transport, routing, and hook pipeline. |
-| **36-point hook pipeline** | Superset of current hooks plus those needed for subagents, compaction, heartbeat, and streaming. Each hook has a defined interface, priority, and async/sync contract. |
-| **Deep-merge config resolution** | Four-layer merge (system → agent defaults → annotation → runtime) with `final: true` locking for security-sensitive fields. Immutable `ResolvedAgentConfig` snapshots prevent runtime mutation. |
-| **Recursive subagent model** | Agents can delegate to other agents via `delegate_to_agent` tool. Each subagent runs a complete independent ReAct loop with its own session, config, and bootstrap. Depth/concurrency/child limits prevent runaway spawning. |
-| **Hierarchical session keys** | Subagent session keys are derived from the parent (e.g., `main-abc123/subagent/code-reviewer/uuid-1`), enabling traceability, independent compaction, and cleanup. |
-| **SSE as primary streaming protocol** | Chosen over WebSocket alone because SSE is simpler (HTTP-native, auto-reconnect, unidirectional server→client), and bidirectional needs are already handled by the REST request path. WebSocket is offered as an alternative for channels that need it. |
-| **Block streaming with human delay** | Text responses are coalesced into natural-feeling blocks with configurable delay, preventing the "wall of text" effect in chat UIs. |
-| **Container-based sandbox** | Tool execution isolation via Docker/Podman containers with filesystem bridges, network restrictions, and resource limits. Per-agent or shared container pools. |
-| **Plugin SDK with ClassLoader isolation** | Third-party plugins run in their own ClassLoader, preventing dependency conflicts. Manifest declares provided extensions (hooks, tools, skills, channels, providers). |
-| **Heartbeat as cron-driven background agent** | Heartbeat is not a separate system but a cron-triggered agent run. It uses the same ReAct pipeline but with an isolated session and light context (HEARTBEAT.md only). |
+| **内嵌 + ACP双运行时** | 必须保留现有的ACP提供商集成。新代理使用内嵌运行时。两者共享相同的传输、路由和钩子管线。 |
+| **36点钩子管线** | 当前钩子的超集，加上子代理、压缩、心跳和流式输出所需的钩子。每个钩子有定义的接口、优先级和异步/同步契约。 |
+| **深度合并配置解析** | 四层合并（系统 → 代理默认值 → 注解 → 运行时），对安全敏感字段使用`final: true`锁定。不可变的`ResolvedAgentConfig`快照防止运行时修改。 |
+| **递归子代理模型** | 代理可以通过`delegate_to_agent`工具委托给其他代理。每个子代理运行一个完整的独立ReAct循环，拥有自己的会话、配置和引导文件。深度/并发/子代理数量限制防止失控生成。 |
+| **层级会话键** | 子代理会话键派生自父代理（如`main-abc123/subagent/code-reviewer/uuid-1`），实现可追溯性、独立压缩和清理。 |
+| **SSE作为主要流式协议** | 优于仅使用WebSocket，因为SSE更简单（HTTP原生、自动重连、单向服务器→客户端），而双向需求已由REST请求路径处理。WebSocket作为需要它的频道的替代方案。 |
+| **带人类延迟的块流式输出** | 文本响应被合并成具有可配置延迟的自然感块，防止聊天界面中出现"文字墙"效果。 |
+| **基于容器的沙箱** | 通过Docker/Podman容器进行工具执行隔离，具有文件系统桥接、网络限制和资源限制。按代理或共享容器池。 |
+| **带类加载器隔离的插件SDK** | 第三方插件在其自己的ClassLoader中运行，防止依赖冲突。清单声明提供的扩展（钩子、工具、技能、频道、提供商）。 |
+| **心跳作为定时驱动后台代理** | 心跳不是独立的系统，而是一个定时触发的代理运行。它使用相同的ReAct管线，但具有隔离的会话和轻量上下文（仅HEARTBEAT.md）。 |
 
 ---
 
-## 8. Migration Path from Current Architecture
+## 8. 从当前架构的迁移路径
 
 ```
-Current State                          Intermediate State                    Target State
+当前状态                               中间状态                             目标状态
 ─────────────                          ──────────────────                    ────────────
 
 ┌──────────────────┐                   ┌──────────────────┐                 ┌──────────────────┐
-│ Mono Spring Boot │                   │ Modularised      │                 │ Full Platform    │
-│ App              │                   │ Spring Boot App  │                 │ Architecture     │
+│ 单体 Spring Boot │                   │ 模块化           │                 │ 完整平台         │
+│ 应用             │                   │ Spring Boot 应用 │                 │ 架构             │
 │                  │                   │                  │                 │                  │
-│ ChatAgent.java   │  ──Phase 1──►     │ Agent Runtime    │  ──Phase 3──►   │ Agent Runtime    │
-│ (interface)      │   Extract         │ (Embedded + ACP) │   Plugin SDK    │ + Plugin SDK     │
-│                  │   runtime from    │                  │                 │ + Full hooks     │
-│ LLM call inline  │   ChatAgent       │ Hook Pipeline    │                 │ + Subagents      │
-│                  │                   │ (18 hooks)       │                 │ + Heartbeat      │
-│ No hooks         │  ──Phase 2──►     │                  │                 │ + Sandbox        │
-│ No subagents     │   Add hooks,      │ Config Resolver  │                 │ + Compaction     │
-│ No heartbeat     │   config merge,   │ (3-layer)        │                 │                  │
-│ No sandbox       │   compaction      │                  │                 │                  │
+│ ChatAgent.java   │  ──阶段1──►       │ 代理运行时       │  ──阶段3──►     │ 代理运行时       │
+│ (接口)           │   提取            │ (内嵌 + ACP)     │   插件SDK       │ + 插件SDK        │
+│                  │   ChatAgent       │                  │                 │ + 完整钩子       │
+│ LLM调用内联      │   中的运行时      │ 钩子管线         │                 │ + 子代理         │
+│                  │                   │ (18个钩子)       │                 │ + 心跳           │
+│ 无钩子           │  ──阶段2──►       │                  │                 │ + 沙箱           │
+│ 无子代理         │   添加钩子、      │ 配置解析器       │                 │ + 压缩           │
+│ 无心跳           │   配置合并、      │ (3层)            │                 │                  │
+│ 无沙箱           │   压缩            │                  │                 │                  │
 └──────────────────┘                   └──────────────────┘                 └──────────────────┘
 
-Phase 1 (MVP):    Extract ReActEngine, BootstrapLoader, ContextEngine from ChatAgent.
-                  Keep ACP path intact. Introduce AgentInvocationHandler proxy.
+阶段1 (MVP)：     从ChatAgent中提取ReActEngine、BootstrapLoader、ContextEngine。
+                 保持ACP路径不变。引入AgentInvocationHandler代理。
 
-Phase 2 (Core):   Add first 18 hooks. Implement deep-merge Config Resolver. Add
-                  compaction and pruning. Introduce SSE block streaming.
+阶段2 (核心)：     添加前18个钩子。实现深度合并的配置解析器。添加
+                 压缩和清理功能。引入SSE块流式输出。
 
-Phase 3 (Full):   Complete all 36 hooks. Add Subagent Spawner, Heartbeat Scheduler,
-                  Sandbox, Plugin SDK. Achieve full architecture blueprint.
+阶段3 (完整)：     完成全部36个钩子。添加子代理生成器、心跳调度器、
+                 沙箱、插件SDK。实现完整架构蓝图。
 ```
 
 ---
 
-> **Document Maintainer:** Architecture Team  
-> **Review Cadence:** Updated on each major design decision or architectural change.  
-> **Related Documents:**
-> - `07-hook-lifecycle-full.md` — Complete 36-hook specification
-> - `08-subagent-delegation-design.md` — Subagent spawning and management
-> - `10-sse-streaming-protocol.md` — SSE event format specification
-> - `11-plugin-sdk-contract.md` — Plugin SDK interface definitions
+> **文档维护者：** 架构团队  
+> **审查周期：** 每次重大设计决策或架构变更时更新。  
+> **相关文档：**
+> - `07-hook-lifecycle-full.md` — 完整36钩子规范
+> - `08-subagent-delegation-design.md` — 子代理生成和管理
+> - `10-sse-streaming-protocol.md` — SSE事件格式规范
+> - `11-plugin-sdk-contract.md` — 插件SDK接口定义
