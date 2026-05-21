@@ -10,6 +10,43 @@ spring:
 server:
   port: 8082
 
+# ============================================================
+#   Knife4j / Swagger API 文档配置
+# ============================================================
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  group-configs:
+    - group: default
+      paths-to-match: /api/**
+      packages-to-scan: lyjew.com.lyclaw.web.controller
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+    enable-swagger-models: true
+    enable-document-manage: true
+    swagger-model-name: 实体类列表
+    enable-version: true
+    enable-reload-cache-parameter: false
+    enable-after-script: true
+    enable-filter-multipart-api-method-type: POST
+    enable-filter-multipart-apis: false
+    enable-request-cache: true
+    enable-host: false
+    enable-host-text: localhost:8082
+    enable-home-custom: true
+    home-custom-path: classpath:/markdown/home.md
+    enable-search: true
+    enable-footer: false
+    enable-footer-custom: true
+    footer-custom-content: LyClaw API | 多智能体框架
+
 lyclaw:
   # ╔══════════════════════════════════════════════════════════╗
   # ║  lyclaw.chat  —  聊天模型配置  (ChatProperties)          ║

@@ -2,6 +2,8 @@ package lyjew.com.lyclaw.web.controller;
 
 import java.util.Map;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lyjew.com.lyclaw.react.ApprovalStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,9 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
-/**
- * 工具审批控制器，接收前端用户在确认对话框中的选择。
- */
+@Tag(name = "Approval", description = "工具审批接口，前端弹窗确认/拒绝工具调用")
 @RestController
 public class ApprovalController {
 
@@ -24,6 +24,7 @@ public class ApprovalController {
         this.approvalStore = approvalStore;
     }
 
+    @Operation(summary = "审批响应", description = "前端确认或拒绝某个工具调用，body需包含toolCallId和approved字段")
     @PostMapping("/api/approval/respond")
     public Mono<Map<String, Object>> respond(@RequestBody Map<String, Object> body) {
         String toolCallId = (String) body.get("toolCallId");
