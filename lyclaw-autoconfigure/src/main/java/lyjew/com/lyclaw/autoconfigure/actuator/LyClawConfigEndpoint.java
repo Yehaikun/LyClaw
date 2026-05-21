@@ -5,7 +5,6 @@ import lyjew.com.lyclaw.config.AgentProperties;
 import lyjew.com.lyclaw.config.PipelineProperties;
 import lyjew.com.lyclaw.config.PlanProperties;
 import lyjew.com.lyclaw.config.ToolProperties;
-import lyjew.com.lyclaw.storage.StorageProperties;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
@@ -23,9 +22,6 @@ public class LyClawConfigEndpoint {
 
     @Autowired(required = false)
     private ChatProperties chatProperties;
-
-    @Autowired(required = false)
-    private StorageProperties storageProperties;
 
     @Autowired(required = false)
     private ToolProperties toolProperties;
@@ -61,14 +57,6 @@ public class LyClawConfigEndpoint {
                 chat.put("models", models);
             }
             result.put("chat", chat);
-        }
-
-        if (storageProperties != null) {
-            Map<String, Object> storage = new LinkedHashMap<>();
-            storage.put("basePath", storageProperties.getBasePath());
-            storage.put("defaultBackend", storageProperties.getDefaultBackend());
-            storage.put("stores", storageProperties.getStores());
-            result.put("storage", storage);
         }
 
         if (toolProperties != null) {

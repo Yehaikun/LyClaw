@@ -1,9 +1,12 @@
 package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
-import lyjew.com.lyclaw.autoconfigure.processor.*;
-import lyjew.com.lyclaw.chat.*;
+import lyjew.com.lyclaw.autoconfigure.processor.ChatModelPostProcessor;
+import lyjew.com.lyclaw.autoconfigure.processor.InteractionModeProcessor;
+import lyjew.com.lyclaw.autoconfigure.processor.ModelRouterPostProcessor;
+import lyjew.com.lyclaw.autoconfigure.processor.OpenAiProtocolAutoConfigurator;
+import lyjew.com.lyclaw.chat.ChatModelRegistry;
+import lyjew.com.lyclaw.chat.ChatProperties;
 import lyjew.com.lyclaw.react.ReActEngine;
-import lyjew.com.lyclaw.storage.*;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -19,62 +22,6 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 public class ProcessorAutoConfiguration {
-
-    /**
-     * 注册存储后端发现处理器 Bean，自动扫描 @StorageBackend 注解的存储后端实现。
-     *
-     * <p>该处理器在 Bean 初始化阶段执行，自动发现所有标注了 @StorageBackend 注解的
-     * Spring Bean，解析注解中的层归属（SessionStore、EntityStore、MemoryStore）和
-     * 能力声明（VectorStore、GraphStore、FullTextStore），校验接口实现后注册到
-     * StorageBackendRegistry 中。依赖 StorageBackendRegistry 先就绪后才加载。</p>
-     *
-     * @param registry 存储后端注册表，由 StorageAutoConfiguration 提前创建
-     * @return StorageBackendPostProcessor 实例，执行顺序为 LOWEST_PRECEDENCE - 100
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean(StorageBackendRegistry.class)
-    public StorageBackendPostProcessor storageBackendPostProcessor(StorageBackendRegistry registry) {
-        return new StorageBackendPostProcessor(registry);
-    }
-
-    /**
-     * 注册写策略发现处理器 Bean，自动扫描 @WritePolicy 注解的持久化策略实现。
-     *
-     * <p>该处理器在 Bean 初始化阶段执行，自动发现标注了 @WritePolicy 注解的 Bean，
-     * 校验是否实现了 MemoryPersistence 接口，然后将策略按名称注册到
-     * DefaultMemoryWriteManager 中。如果注解声明为默认策略（defaultPolicy=true），
-     * 还会自动设置对应 MemoryLayer 的默认策略。依赖 DefaultMemoryWriteManager 就绪后才加载。</p>
-     *
-     * @param writeManager 记忆写管理器，由 StorageAutoConfiguration 提前创建
-     * @return WritePolicyPostProcessor 实例，执行顺序为 LOWEST_PRECEDENCE - 90
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean(DefaultMemoryWriteManager.class)
-    public WritePolicyPostProcessor writePolicyPostProcessor(DefaultMemoryWriteManager writeManager) {
-        return new WritePolicyPostProcessor(writeManager);
-    }
-
-    /**
-     * 注册记忆系统自动配置器 Bean，将所有分散注册的存储组件编织成完整的记忆系统。
-     *
-     * <p>该配置器在所有 Bean 初始化完成后（通过 InitializingBean 接口的
-     * afterPropertiesSet() 回调）执行，自动完成以下任务：确定 MemoryStore 层的默认后端、
-     * 检测向量搜索和全文搜索能力、配置检索路径架构、初始化 L1（内存缓存）+ L2（持久化）
-     * 双层存储架构。依赖 StorageBackendRegistry 和 StorageProperties 都已就绪后才加载。</p>
-     *
-     * @param registry 存储后端注册表，提供所有已注册后端的查询能力
-     * @param properties 存储配置属性，提供层到后端的映射配置
-     * @return MemorySystemAutoConfigurator 实例，执行顺序为 LOWEST_PRECEDENCE - 50
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    @ConditionalOnBean({StorageBackendRegistry.class, StorageProperties.class})
-    public MemorySystemAutoConfigurator memorySystemAutoConfigurator(
-            StorageBackendRegistry registry, StorageProperties properties) {
-        return new MemorySystemAutoConfigurator(registry, properties);
-    }
 
     /**
      * 注册 ChatModel 发现处理器 Bean，自动扫描 @ChatModel 注解的聊天模型实现。

@@ -28,8 +28,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-@lyjew.com.lyclaw.annotation.storage.VectorStore(dimension = 0,
-        supportsMetadataFilter = true, supportsHybridSearch = true)
+// @VectorStore annotation removed — old storage system deleted
 public class InMemoryVectorStore implements lyjew.com.lyclaw.retrieval.VectorStore {
 
     /** 向量存储映射 */

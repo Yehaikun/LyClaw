@@ -1,7 +1,6 @@
 package lyjew.com.lyclaw.memory.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import lyjew.com.lyclaw.annotation.storage.MemoryStore;
 import lyjew.com.lyclaw.memory.*;
 import lyjew.com.lyclaw.memory.retriever.MemoryRetriever;
 import org.springframework.stereotype.Service;
@@ -49,7 +48,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-@MemoryStore(layerDefault = true)
+
 public class TieredMemorySystem implements MemorySystem {
 
     /** 感知层存储 */
