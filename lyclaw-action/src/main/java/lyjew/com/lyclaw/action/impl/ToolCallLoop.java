@@ -5,7 +5,9 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.ChatResult;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
+import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.ToolCall;
+import lyjew.com.lyclaw.react.ReActMessageHook;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
 import lyjew.com.lyclaw.tool.ToolErrorAction;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
@@ -20,74 +22,42 @@ import java.util.List;
 /**
  * 工具调用循环处理器，实现 LLM Agent 的 ReAct（推理-行动）循环。
  *
- * <p>该类负责驱动多轮工具调用对话流程：
- * <ol>
- *   <li>调用 LLM 获取初始响应（可能包含工具调用指令）</li>
- *   <li>如果响应中包含工具调用，依次执行各工具，并将结果反馈给 LLM</li>
- *   <li>LLM 根据工具执行结果继续推理，可能产生新的工具调用或最终文本回复</li>
- *   <li>循环持续直到 LLM 不再请求工具调用、达到最大轮数、或出现致命错误</li>
- * </ol>
- * </p>
- *
- * <p>循环受 {@link ToolCallPolicy} 控制，可配置最大轮数、错误处理策略（重试/跳过/中止）。
- * 提供了 {@link #beforeLoop} 和 {@link #afterLoop} 钩子供子类扩展。</p>
- *
- * @see ToolCallPolicy
- * @see ChatFacade
+ * <p>每轮循环产生新消息时通过{@link ReActMessageHook}回调通知，
+ * 使用方（如SessionManager）可将消息持久化、采集指标、触发审计等。
+ * ToolCallLoop本身不感知持久化实现。</p>
  */
 @Slf4j
 @Component
 public class ToolCallLoop {
 
-    /** 聊天门面，统一入口用于调用 LLM */
     private final ChatFacade chatFacade;
-    /** 工具注册表，用于执行工具调用 */
     private final ToolRegistry toolRegistry;
-    /** 工具调用控制策略 */
     private final ToolCallPolicy toolCallPolicy;
+    private final List<ReActMessageHook> messageHooks;
 
-    /**
-     * 构造函数，通过依赖注入初始化各组件。
-     */
     public ToolCallLoop(ChatFacade chatFacade,
                         ToolRegistry toolRegistry,
-                        ToolCallPolicy toolCallPolicy) {
+                        ToolCallPolicy toolCallPolicy,
+                        List<ReActMessageHook> messageHooks) {
         this.chatFacade = chatFacade;
         this.toolRegistry = toolRegistry;
         this.toolCallPolicy = toolCallPolicy;
+        this.messageHooks = messageHooks != null ? messageHooks : List.of();
     }
 
-    /**
-     * 执行完整的工具调用循环。
-     *
-     * <p>循环逻辑：
-     * <ol>
-     *   <li>调用 {@link #beforeLoop} 钩子</li>
-     *   <li>获取已配置的 LLM 适配器，如不可用则返回错误</li>
-     *   <li>进入循环：调用 LLM -> 检查是否有工具调用 -> 无则退出</li>
-     *   <li>有工具调用：将 assistant 消息（含 tool_calls）追加到上下文</li>
-     *   <li>依次执行每个工具调用，将 tool 消息（含执行结果）追加到上下文</li>
-     *   <li>根据 {@link ToolErrorAction} 决定是否中止</li>
-     *   <li>轮数递增，检查策略是否允许继续</li>
-     *   <li>提取最后一条 assistant 消息作为最终响应</li>
-     *   <li>调用 {@link #afterLoop} 钩子</li>
-     * </ol>
-     * </p>
-     *
-     * @param context 对话上下文
-     * @return 最终聊天结果
-     */
     public ChatResult execute(ChatContext context) {
         beforeLoop(context);
 
-        // 获取当前消息列表的引用，后续操作直接修改此列表
         List<Message> messages = context.getRequest().getMessages();
+        Session session = context.getSession();
+
+        // 钩子点1: 用户消息（进入循环前已在messages中）
+        notifyHooks(session, findLastUserMessage(messages));
 
         int round = 0;
         int maxRounds = toolCallPolicy.getMaxRounds();
 
         while (round < maxRounds) {
-            // 1. 调用 LLM（通过 ChatFacade，内部自动路由和选择模型）
             ModelResponse response;
             try {
                 response = chatFacade.chat(context.getRequest());
@@ -96,53 +66,54 @@ public class ToolCallLoop {
                 return new ChatResult("Tool execution unavailable - LLM call failed", "stop", null, null, 0L);
             }
 
-            // 2. 检查响应中是否包含工具调用请求
             if (!handleModelResponse(response)) {
-                // 无工具调用：追加 assistant 消息，结束循环
-                messages.add(Message.builder()
+                Message assistantMsg = Message.builder()
                         .role("assistant")
                         .content(response.getContent() != null ? response.getContent() : "")
-                        .build());
+                        .build();
+                messages.add(assistantMsg);
+                notifyHooks(session, assistantMsg);  // 钩子点2: 最终assistant消息
                 break;
             }
 
-            // 3. 将 assistant 消息（含 tool_calls）追加到上下文
             List<ToolCall> calls = convertToolCalls(response);
-            messages.add(Message.builder()
+            Message assistantMsg = Message.builder()
                     .role("assistant")
                     .content(response.getContent() != null ? response.getContent() : "")
                     .toolCalls(calls)
-                    .build());
+                    .build();
+            messages.add(assistantMsg);
+            notifyHooks(session, assistantMsg);  // 钩子点3: 含tool_calls的assistant消息
 
-            // 4. 执行每个工具调用
             boolean shouldAbort = false;
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
                 try {
                     ToolExecutionResult result = toolRegistry.execute(buildToolCall(req), context);
 
-                    // 追加工具执行结果消息
-                    messages.add(Message.builder()
+                    Message toolMsg = Message.builder()
                             .role("tool")
                             .toolCallId(req.getId())
                             .content(result.isSuccess() ? result.getResult() : result.getError())
-                            .build());
+                            .build();
+                    messages.add(toolMsg);
+                    notifyHooks(session, toolMsg);  // 钩子点4: 工具执行结果
 
                     log.debug("工具执行完成: tool={}, success={}", req.getName(), result.isSuccess());
                 } catch (Exception e) {
                     ToolCall toolCall = buildToolCall(req);
-                    // 根据策略决定错误处理方式
                     ToolErrorAction action = toolCallPolicy.handleToolError(toolCall, e, context);
 
                     log.warn("工具执行异常: tool={}, error={}, action={}",
                             req.getName(), e.getMessage(), action);
 
-                    messages.add(Message.builder()
+                    Message errorMsg = Message.builder()
                             .role("tool")
                             .toolCallId(req.getId())
                             .content("Error: " + e.getMessage())
-                            .build());
+                            .build();
+                    messages.add(errorMsg);
+                    notifyHooks(session, errorMsg);  // 钩子点4b: 工具异常结果
 
-                    // ABORT 策略：记录错误并中断循环
                     if (action == ToolErrorAction.ABORT) {
                         context.setAttribute("error", e.getMessage());
                         shouldAbort = true;
@@ -154,14 +125,12 @@ public class ToolCallLoop {
             if (shouldAbort) break;
             round++;
 
-            // 检查策略是否允许继续下一轮
             if (!toolCallPolicy.shouldContinue(context, round)) {
                 log.info("达到策略上限，终止循环: round={}, maxRounds={}", round, maxRounds);
                 break;
             }
         }
 
-        // 提取最终响应文本
         String responseText = extractLastAssistantMessage(context);
         ChatResult result = new ChatResult(
                 responseText,
@@ -176,41 +145,36 @@ public class ToolCallLoop {
     }
 
     /**
-     * 循环开始前的钩子方法，子类可覆写以进行预处理。
-     *
-     * @param context 对话上下文
+     * 通知所有已注册的消息钩子。
+     * 每个钩子必须快速返回（O(1)内存操作），耗时操作在钩子内部异步化。
      */
+    private void notifyHooks(Session session, Message message) {
+        if (session == null || message == null || messageHooks.isEmpty()) return;
+        for (ReActMessageHook hook : messageHooks) {
+            hook.onMessage(session, message);
+        }
+    }
+
+    /** 在消息列表中找到最后一条用户消息 */
+    private Message findLastUserMessage(List<Message> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if ("user".equals(messages.get(i).getRole())) {
+                return messages.get(i);
+            }
+        }
+        return null;
+    }
+
     protected void beforeLoop(ChatContext context) {
     }
 
-    /**
-     * 循环结束后的钩子方法，子类可覆写以进行后处理。
-     *
-     * @param context 对话上下文
-     * @param result  最终聊天结果
-     */
     protected void afterLoop(ChatContext context, ChatResult result) {
     }
 
-    /**
-     * 判断模型响应是否需要执行工具调用。
-     *
-     * <p>默认实现检查响应中是否包含 toolCalls。
-     * 子类可覆写以添加额外判断逻辑。</p>
-     *
-     * @param response 模型响应
-     * @return true 表示需要执行工具调用，false 表示循环结束
-     */
     protected boolean handleModelResponse(ModelResponse response) {
         return response.hasToolCalls();
     }
 
-    /**
-     * 将 ModelResponse 中的工具调用请求转换为 ToolCall 列表。
-     *
-     * @param response 模型响应
-     * @return ToolCall 列表（无工具调用时返回空列表）
-     */
     private List<ToolCall> convertToolCalls(ModelResponse response) {
         if (!response.hasToolCalls()) {
             return Collections.emptyList();
@@ -222,12 +186,6 @@ public class ToolCallLoop {
         return result;
     }
 
-    /**
-     * 将单个 ToolCallRequest 转换为 ToolCall 对象。
-     *
-     * @param req 工具调用请求
-     * @return ToolCall 对象
-     */
     private ToolCall buildToolCall(ModelResponse.ToolCallRequest req) {
         return ToolCall.builder()
                 .toolCallId(req.getId())
@@ -236,14 +194,6 @@ public class ToolCallLoop {
                 .build();
     }
 
-    /**
-     * 从上下文消息列表中提取最后一条 assistant 消息的内容。
-     *
-     * <p>从消息列表末尾向前搜索，找到第一条 role=assistant 的消息。</p>
-     *
-     * @param context 对话上下文
-     * @return assistant 消息的文本内容，未找到时返回空字符串
-     */
     private String extractLastAssistantMessage(ChatContext context) {
         List<Message> messages = context.getRequest().getMessages();
         for (int i = messages.size() - 1; i >= 0; i--) {
