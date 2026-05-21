@@ -267,70 +267,44 @@ lyclaw:
   # ╔══════════════════════════════════════════════════════════╗
   # ║  lyclaw.storage  —  存储层配置  (StorageProperties)       ║
   # ║  AutoConfiguration: StorageAutoConfiguration             ║
+  # ║  固定使用 SQLite + JSONL，不再支持后端切换                   ║
   # ╚══════════════════════════════════════════════════════════╝
   storage:
-    # 文件存储根目录（仅 file 后端使用）
+    # 存储根目录（SQLite数据库 + JSONL文件均在此目录下）
+    # 目录结构: {base-path}/index/lyclaw.db
+    #          {base-path}/agents/{agentId}/sessions/{sessionId}.jsonl
     # 默认: ${user.dir}/data/storage
     base-path: /home/lyjew/Documents/Unicom/LyClaw/LyClaw
 
-    # 全局默认后端
-    # 默认: file
-    default-backend: file
+    # ── 会话存储配置 ─────────────────────────────────
+    session:
+      # 分页/懒加载时每页消息条数
+      # 默认: 50
+      page-size: 50
 
-    # ── 各层后端绑定 ─────────────────────────────────
-    # key: session / entity / memory
-    # value: 后端名称（见 backends 配置）
-    # 默认: session=file, entity=file, memory=inmemory
-    stores:
-      session: file
-      entity: file
-      memory: inmemory
+      # 生成的 sessionId 长度（UUID前N位）
+      # 默认: 8
+      id-length: 8
 
-    # ── 各后端详细配置 — 当前使用 file + inmemory，无需额外 backends ─
-    # 如需切换数据库/缓存后端，在此添加并修改 stores 绑定即可
-    backends: {}
-    #
-    # 配置示例（取消注释并修改即可启用）:
-    #
-    # backends:
-    #   sqlite:
-    #     type: sqlite
-    #     url: jdbc:sqlite:/data/lyclaw.db
-    #     enabled: true
-    #     pool:
-    #       max-size: 10
-    #       min-idle: 2
-    #       idle-timeout-ms: 300000
-    #       connection-timeout-ms: 10000
-    #     ttl: 3600
-    #
-    #   postgresql:
-    #     type: postgresql
-    #     url: jdbc:postgresql://localhost:5432/lyclaw
-    #     username: lyclaw
-    #     password: ${PG_PASSWORD:}
-    #     enabled: true
-    #     pool:
-    #       max-size: 10
-    #       min-idle: 2
-    #       idle-timeout-ms: 300000
-    #       connection-timeout-ms: 10000
-    #     vector:
-    #       enabled: true
-    #       dimension: 1536
-    #       index-type: hnsw
-    #     ttl: 3600
-    #
-    #   redis:
-    #     type: redis
-    #     url: redis://localhost:6379
-    #     enabled: false
-    #     pool:
-    #       max-size: 10
-    #       min-idle: 2
-    #       idle-timeout-ms: 300000
-    #       connection-timeout-ms: 10000
-    #     ttl: 3600
+      # 首条用户消息预览最大字符数
+      # 默认: 100
+      preview-max-length: 100
+
+      # 异步写入队列容量（有界队列，防止OOM）
+      # 默认: 10000
+      write-queue-capacity: 10000
+
+      # JSONL写入失败最大重试次数
+      # 默认: 3
+      write-max-retries: 3
+
+      # 活跃会话缓存最大数量（LRU淘汰）
+      # 默认: 1000
+      cache-max-size: 1000
+
+      # 活跃会话缓存TTL（分钟），超时未访问自动淘汰
+      # 默认: 30
+      cache-ttl-minutes: 30
 
   # ╔══════════════════════════════════════════════════════════╗
   # ║  lyclaw.extension  —  扩展注册配置  (ExtensionProperties) ║
