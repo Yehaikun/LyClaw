@@ -18,6 +18,10 @@ import lyjew.com.lyclaw.react.ReActMessageHook;
 import lyjew.com.lyclaw.web.session.AgentCleanupService;
 import lyjew.com.lyclaw.web.session.SessionManager;
 import org.springframework.beans.factory.annotation.Value;
+import java.io.File;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.boot.ApplicationRunner;
@@ -134,6 +138,55 @@ public class StorageAutoConfiguration {
                 log.error("存储层启动失败: SQLite不可访问", e);
                 throw new RuntimeException("存储层不可用", e);
             }
+        };
+    }
+
+    /**
+     * 幂等初始化默认chat Agent——首次启动时INSERT，后续启动跳过。
+     * 确保前端AgentSelector默认选中的"chat"始终存在于SQLite中。
+     */
+    @Bean
+    public ApplicationRunner defaultAgentInitializer(AgentRepository agentRepo,
+                                                      StorageProperties storageProperties) {
+        Logger log = LoggerFactory.getLogger(StorageAutoConfiguration.class);
+        return args -> {
+            if (agentRepo.findById("chat") != null) {
+                log.debug("默认chat Agent已存在，跳过初始化");
+                return;
+            }
+            log.info("首次启动——创建默认chat Agent...");
+            long now = System.currentTimeMillis();
+            String dirPath = storageProperties.getBasePath() + "/agents/chat";
+            new File(dirPath).mkdirs();
+
+            Map<String, Object> dbRow = new LinkedHashMap<>();
+            dbRow.put("agent_id", "chat");
+            dbRow.put("agent_name", "chat");
+            dbRow.put("description", "通用聊天助手，具备工具调用能力");
+            dbRow.put("lifecycle", "permanent");
+            dbRow.put("created_by", "system");
+            dbRow.put("parent_agent_id", null);
+            dbRow.put("parent_session_id", null);
+            dbRow.put("model", "deepseek-v4-pro");
+            dbRow.put("provider", "deepseek");
+            dbRow.put("thinking_level", "medium");
+            dbRow.put("verbose_level", "low");
+            dbRow.put("reasoning_level", "medium");
+            dbRow.put("fast_mode", 0);
+            dbRow.put("sandbox_level", "PROCESS");
+            dbRow.put("skills", "[]");
+            dbRow.put("allow_agents", "[\"*\"]");
+            dbRow.put("max_spawn_depth", 1);
+            dbRow.put("max_children", 5);
+            dbRow.put("system_prompt", "");
+            dbRow.put("soul_prompt", "");
+            dbRow.put("identity_display_name", "Chat");
+            dbRow.put("avatar_url", "");
+            dbRow.put("avatar_file_path", "");
+            dbRow.put("created_at", now);
+            dbRow.put("directory_path", dirPath);
+            agentRepo.insert(dbRow);
+            log.info("默认chat Agent创建完成: dir={}", dirPath);
         };
     }
 }
