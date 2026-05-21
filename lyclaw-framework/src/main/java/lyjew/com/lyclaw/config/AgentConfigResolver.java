@@ -5,6 +5,7 @@ import lyjew.com.lyclaw.annotation.Extension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Agent 配置解析器 —— 3层深度合并。
@@ -16,8 +17,50 @@ public class AgentConfigResolver {
 
     private final AgentDefaultsConfig defaults;
 
+    /** Registry of @Agent annotations keyed by agent id and agent name. */
+    private final ConcurrentHashMap<String, Agent> agentAnnotationRegistry = new ConcurrentHashMap<>();
+
     public AgentConfigResolver(AgentDefaultsConfig defaults) {
         this.defaults = defaults;
+    }
+
+    /**
+     * Register an @Agent annotation so it can be looked up by agent ID or name later.
+     * Called by AgentProxyFactory when creating a proxy for an @Agent interface.
+     */
+    public void registerAgent(Agent ann) {
+        if (ann == null) return;
+        if (!ann.id().isEmpty()) {
+            agentAnnotationRegistry.put(ann.id(), ann);
+        }
+        if (!ann.name().isEmpty()) {
+            agentAnnotationRegistry.putIfAbsent(ann.name(), ann);
+        }
+    }
+
+    /**
+     * Resolve config for an agent by its ID or name string.
+     * Looks up the registered @Agent annotation and delegates to {@link #resolve(Agent)}.
+     * Returns a sensible default if the agent is not found in the registry.
+     *
+     * @param agentId the agent ID or name to look up
+     * @return resolved config, never null
+     */
+    public ResolvedAgentConfig resolveByAgentId(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return ResolvedAgentConfig.builder().build();
+        }
+        Agent ann = agentAnnotationRegistry.get(agentId.trim());
+        if (ann != null) {
+            return resolve(ann);
+        }
+        // Agent not found: build a minimal config with the agentId as name
+        log.debug("Agent '{}' not found in registry, using default config", agentId);
+        return ResolvedAgentConfig.builder()
+                .agentId(agentId.trim())
+                .agentName(agentId.trim())
+                .description("You are a specialized subagent: " + agentId.trim())
+                .build();
     }
 
     /**

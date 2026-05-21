@@ -87,6 +87,10 @@ public class AgentProxyFactory {
         }
 
         Agent ann = agentInterface.getAnnotation(Agent.class);
+        // Register the @Agent annotation for later lookup by SubagentSpawner
+        if (configResolver != null && ann != null) {
+            configResolver.registerAgent(ann);
+        }
         ResolvedAgentConfig resolvedConfig = (configResolver != null && ann != null)
                 ? configResolver.resolve(ann)
                 : ResolvedAgentConfig.builder().build();

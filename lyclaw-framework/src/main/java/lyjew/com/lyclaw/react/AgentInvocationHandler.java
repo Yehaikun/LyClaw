@@ -119,6 +119,81 @@ public class AgentInvocationHandler implements InvocationHandler {
         return List.copyOf(sorted);
     }
 
+    /**
+     * Execute the full agent pipeline in blocking mode for a pre-built AgentContext.
+     *
+     * <p>This is the entry point for subagent execution. Unlike {@link #invoke(Object, Method, Object[])},
+     * it accepts a fully prepared AgentContext (with ChatRequest, tools, etc. already set)
+     * and runs it through the complete pipeline: level resolution, hook dispatch,
+     * pipeline stages with reflection retry, and final hook dispatch.</p>
+     *
+     * @param ctx a fully prepared AgentContext (ChatRequest, tools, sessionId already set)
+     * @return the final response text from the agent pipeline
+     */
+    public String executeBlocking(AgentContext ctx) {
+        ChatRequest request = ctx.getChatRequest();
+        if (request == null) {
+            log.warn("AgentContext has no ChatRequest, cannot execute");
+            return "Error: no ChatRequest in AgentContext";
+        }
+
+        log.info("══════════ 子代理管线执行开始 ══════════");
+        log.info("🔑 会话ID={} | 模型={}", ctx.getSessionId(),
+                request.getModel() != null ? request.getModel() : "自动");
+
+        // Resolve thinking/reasoning/verbose levels from resolvedConfig
+        resolveLevels(ctx, request);
+
+        // Set resolved model/provider on RunMetadata
+        applyResolvedModelProvider(ctx);
+
+        // Dispatch beforeAgentRun
+        hookRegistry.dispatchBeforeAgentRun(ctx);
+
+        // Dispatch beforeRequest hooks (ascending order)
+        List<AgentHook> sorted = new ArrayList<>(hooks);
+        sorted.sort(Comparator.comparingInt(AgentHook::getOrder));
+        for (AgentHook hook : sorted) {
+            hook.beforeRequest(ctx);
+        }
+
+        // Dispatch model lifecycle hooks
+        hookRegistry.dispatchBeforeModelResolve(ctx);
+        hookRegistry.dispatchModelCallStarted(ctx);
+
+        // Run pipeline stages with reflection retry
+        String result;
+        if (!stages.isEmpty()) {
+            result = executeStagesBlocking(ctx);
+            hookRegistry.dispatchModelCallEnded(ctx);
+        } else {
+            // Fallback: direct ReAct engine (backward compatible)
+            log.info("⚠️ 无管线阶段，回退到直接ReActEngine路径");
+            ToolExecutor toolExecutor = buildToolExecutor(ctx);
+            for (AgentHook hook : sorted) {
+                toolExecutor = hook.wrapToolExecutor(toolExecutor, ctx);
+            }
+            try {
+                result = reActEngine.execute(chatFacade, ctx.getChatRequest(), toolExecutor);
+            } catch (Exception e) {
+                log.error("ReAct engine execution failed", e);
+                result = "Error: " + e.getMessage();
+            }
+            hookRegistry.dispatchModelCallEnded(ctx);
+        }
+
+        // Dispatch afterResult hooks (descending order)
+        for (int i = sorted.size() - 1; i >= 0; i--) {
+            result = sorted.get(i).afterResult(result, ctx);
+        }
+
+        // Dispatch agentEnd
+        hookRegistry.dispatchAgentEnd(ctx);
+        log.info("══════════ 子代理管线执行结束 ══════════");
+
+        return result;
+    }
+
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         if (method.getDeclaringClass() == Object.class) {
@@ -150,46 +225,11 @@ public class AgentInvocationHandler implements InvocationHandler {
         ctx.setRuntimeType(AgentRuntimeType.EMBEDDED);
         log.info("🏗️ AgentContext已创建 | 运行时类型=EMBEDDED | 管线阶段数={}", stages.size());
 
-        // Phase 2: resolve thinking/reasoning/verbose levels from ChatRequest
-        // Priority: ChatRequest field > ResolvedAgentConfig default
-        String resolvedThinking = resolveLevel(request.getThinkingLevel(), resolvedConfig.getThinkingDefault());
-        if (resolvedThinking != null) {
-            ctx.setThinkingLevel(resolvedThinking);
-            ctx.setRunMetadata("thinkingLevel", resolvedThinking);
-            ctx.getRunMetadata().setThinkingLevel(resolvedThinking);
-            // Propagate back to ChatRequest so DefaultReActEngine.applyThinkingLevel() can read it
-            request.setThinkingLevel(resolvedThinking);
-            log.info("🧠 思考级别: {}", resolvedThinking);
-        }
-
-        String resolvedReasoning = resolveLevel(request.getReasoningLevel(), resolvedConfig.getReasoningDefault());
-        if (resolvedReasoning != null) {
-            ctx.setReasoningLevel(resolvedReasoning);
-            ctx.setRunMetadata("reasoningLevel", resolvedReasoning);
-            ctx.getRunMetadata().setReasoningLevel(resolvedReasoning);
-            log.info("🔍 推理级别: {}", resolvedReasoning);
-        }
-
-        String resolvedVerbose = resolveLevel(request.getVerboseLevel(), resolvedConfig.getVerboseDefault());
-        if (resolvedVerbose != null) {
-            ctx.setVerboseLevel(resolvedVerbose);
-            ctx.setRunMetadata("verboseLevel", resolvedVerbose);
-            ctx.getRunMetadata().setVerboseLevel(resolvedVerbose);
-            log.info("📝 详细度级别: {}", resolvedVerbose);
-        }
+        // Phase 2: resolve thinking/reasoning/verbose levels
+        resolveLevels(ctx, request);
 
         // Phase 2: set resolved model/provider on runMetadata
-        // Used by ModelResolutionService.resolvedEffectiveModel() as first priority
-        if (resolvedConfig.getModel() != null && !resolvedConfig.getModel().isEmpty()) {
-            ctx.setRunMetadata("resolvedModel", resolvedConfig.getModel());
-            ctx.getRunMetadata().setResolvedModel(resolvedConfig.getModel());
-            log.info("🤖 解析到的模型: {}", resolvedConfig.getModel());
-        }
-        if (resolvedConfig.getProvider() != null && !resolvedConfig.getProvider().isEmpty()) {
-            ctx.setRunMetadata("resolvedProvider", resolvedConfig.getProvider());
-            ctx.getRunMetadata().setResolvedProvider(resolvedConfig.getProvider());
-            log.info("📡 解析到的供应商: {}", resolvedConfig.getProvider());
-        }
+        applyResolvedModelProvider(ctx);
 
         // TODO: Phase 2 - wire delegate_to_agent tool via DelegateToAgentToolProvider
         // into toolRegistry so that tool definitions include delegate_to_agent.
@@ -623,6 +663,53 @@ public class AgentInvocationHandler implements InvocationHandler {
             return configDefault;
         }
         return null;
+    }
+
+    /**
+     * Resolve thinking/reasoning/verbose levels from ChatRequest and ResolvedAgentConfig
+     * and apply them to the AgentContext and its RunMetadata.
+     */
+    private void resolveLevels(AgentContext ctx, ChatRequest request) {
+        String resolvedThinking = resolveLevel(request.getThinkingLevel(), resolvedConfig.getThinkingDefault());
+        if (resolvedThinking != null) {
+            ctx.setThinkingLevel(resolvedThinking);
+            ctx.setRunMetadata("thinkingLevel", resolvedThinking);
+            ctx.getRunMetadata().setThinkingLevel(resolvedThinking);
+            request.setThinkingLevel(resolvedThinking);
+            log.info("🧠 思考级别: {}", resolvedThinking);
+        }
+
+        String resolvedReasoning = resolveLevel(request.getReasoningLevel(), resolvedConfig.getReasoningDefault());
+        if (resolvedReasoning != null) {
+            ctx.setReasoningLevel(resolvedReasoning);
+            ctx.setRunMetadata("reasoningLevel", resolvedReasoning);
+            ctx.getRunMetadata().setReasoningLevel(resolvedReasoning);
+            log.info("🔍 推理级别: {}", resolvedReasoning);
+        }
+
+        String resolvedVerbose = resolveLevel(request.getVerboseLevel(), resolvedConfig.getVerboseDefault());
+        if (resolvedVerbose != null) {
+            ctx.setVerboseLevel(resolvedVerbose);
+            ctx.setRunMetadata("verboseLevel", resolvedVerbose);
+            ctx.getRunMetadata().setVerboseLevel(resolvedVerbose);
+            log.info("📝 详细度级别: {}", resolvedVerbose);
+        }
+    }
+
+    /**
+     * Apply resolved model/provider from ResolvedAgentConfig to AgentContext RunMetadata.
+     */
+    private void applyResolvedModelProvider(AgentContext ctx) {
+        if (resolvedConfig.getModel() != null && !resolvedConfig.getModel().isEmpty()) {
+            ctx.setRunMetadata("resolvedModel", resolvedConfig.getModel());
+            ctx.getRunMetadata().setResolvedModel(resolvedConfig.getModel());
+            log.info("🤖 解析到的模型: {}", resolvedConfig.getModel());
+        }
+        if (resolvedConfig.getProvider() != null && !resolvedConfig.getProvider().isEmpty()) {
+            ctx.setRunMetadata("resolvedProvider", resolvedConfig.getProvider());
+            ctx.getRunMetadata().setResolvedProvider(resolvedConfig.getProvider());
+            log.info("📡 解析到的供应商: {}", resolvedConfig.getProvider());
+        }
     }
 
     private ChatRequest buildChatRequest(Method method, String userMessage, String systemPrompt) {
