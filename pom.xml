@@ -47,6 +47,7 @@
         <retrofit.version>2.9.0</retrofit.version>
         <hutool.version>5.8.44</hutool.version>
         <reactor.version>3.6.8</reactor.version>
+        <sqlite-jdbc.version>3.49.1.0</sqlite-jdbc.version>
         <lombok.version>1.18.36</lombok.version>
 
     </properties>
