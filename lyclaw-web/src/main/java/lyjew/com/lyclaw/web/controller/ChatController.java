@@ -1,6 +1,5 @@
 package lyjew.com.lyclaw.web.controller;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -8,7 +7,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lyjew.com.lyclaw.model.ChatRequest;
-import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.web.agent.ChatAgent;
 import org.springframework.http.MediaType;
@@ -33,9 +31,6 @@ public class ChatController {
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request,
                                                      @Parameter(description = "可选的Agent ID") @RequestParam(required = false) String agentId) {
-        String resolvedAgentId = agentId != null && !agentId.isEmpty() ? agentId
-                : request.getAgentId() != null && !request.getAgentId().isEmpty() ? request.getAgentId()
-                : null;
         String userMessage = request.getLastUserMessage();
         return chatAgent.chatStream(userMessage);
     }
@@ -44,9 +39,6 @@ public class ChatController {
     @PostMapping("/chat")
     public Mono<Map<String, Object>> chat(@RequestBody ChatRequest request,
                                           @Parameter(description = "可选的Agent ID") @RequestParam(required = false) String agentId) {
-        String resolvedAgentId = agentId != null && !agentId.isEmpty() ? agentId
-                : request.getAgentId() != null && !request.getAgentId().isEmpty() ? request.getAgentId()
-                : null;
         String userMessage = request.getLastUserMessage();
         String sessionId = request.getSessionId() != null ? request.getSessionId() : "";
         return Mono.fromCallable(() -> chatAgent.chat(userMessage))
