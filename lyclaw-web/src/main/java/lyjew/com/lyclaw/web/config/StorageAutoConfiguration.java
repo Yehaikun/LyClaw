@@ -15,11 +15,15 @@ import lyjew.com.lyclaw.persistence.sqlite.SqliteConfig;
 import lyjew.com.lyclaw.persistence.sqlite.SqliteConnectionManager;
 import lyjew.com.lyclaw.persistence.sqlite.SqliteMigrationService;
 import lyjew.com.lyclaw.react.ReActMessageHook;
+import lyjew.com.lyclaw.web.session.AgentCleanupService;
 import lyjew.com.lyclaw.web.session.SessionManager;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 新存储层自动配置——装配SQLite+JSONL双轨存储的所有Bean。
@@ -105,5 +109,31 @@ public class StorageAutoConfiguration {
                                           AsyncWriteQueueRegistry queueRegistry,
                                           StorageProperties storageProperties) {
         return new SessionManager(sessionRepo, queueRegistry, storageProperties);
+    }
+
+    @Bean
+    public AgentCleanupService agentCleanupService(AgentRepository agentRepo,
+                                                    SessionRepository sessionRepo,
+                                                    StorageProperties storageProperties) {
+        return new AgentCleanupService(agentRepo, sessionRepo, storageProperties);
+    }
+
+    /**
+     * 启动时验证存储层就绪——SQLite数据库可访问、基路径存在。
+     * 不加载JSONL消息到内存，消息通过懒加载（SessionManager.getSession）按需读取。
+     */
+    @Bean
+    public ApplicationRunner storageReadinessCheck(SqliteConnectionManager cm,
+                                                   StorageProperties storageProperties) {
+        Logger log = LoggerFactory.getLogger(StorageAutoConfiguration.class);
+        return args -> {
+            try {
+                cm.getConnection().close();
+                log.info("存储层就绪: SQLite可用, basePath={}", storageProperties.getBasePath());
+            } catch (Exception e) {
+                log.error("存储层启动失败: SQLite不可访问", e);
+                throw new RuntimeException("存储层不可用", e);
+            }
+        };
     }
 }

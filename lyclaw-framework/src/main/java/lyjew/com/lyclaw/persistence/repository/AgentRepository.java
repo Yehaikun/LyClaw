@@ -150,6 +150,36 @@ public class AgentRepository {
     }
 
     /** 将ResultSet当前行转换为Map，key为列名，value为列值 */
+
+    /**
+     * 递归查询指定Agent的所有子孙临时Agent（lifecycle='temporary'）。
+     * 使用SQLite WITH RECURSIVE CTE，按深度优先排序确保叶子节点在前。
+     *
+     * @param agentId 根Agent ID
+     * @return 子孙临时Agent的ID列表（叶子在前，根本身在最后或不包含）
+     */
+    public List<String> findAllTemporaryDescendants(String agentId) {
+        String sql = """
+            WITH RECURSIVE descendants AS (
+                SELECT agent_id, lifecycle, 1 AS depth FROM agents WHERE parent_agent_id = ?
+                UNION ALL
+                SELECT a.agent_id, a.lifecycle, d.depth + 1
+                FROM agents a JOIN descendants d ON a.parent_agent_id = d.agent_id
+            )
+            SELECT agent_id FROM descendants WHERE lifecycle = 'temporary'
+            ORDER BY depth DESC
+            """;
+        List<String> result = new ArrayList<>();
+        try (Connection c = cm.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(rs.getString("agent_id"));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("查询子孙临时Agent失败: " + agentId, e);
+        }
+        return result;
+    }
     private Map<String, Object> rowToMap(ResultSet rs) throws SQLException {
         Map<String, Object> map = new LinkedHashMap<>();
         var meta = rs.getMetaData();

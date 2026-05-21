@@ -66,13 +66,6 @@ public class ChatController {
         return sessionManager.getSession(sessionId);
     }
 
-    @Operation(summary = "删除会话", description = "删除Agent的指定会话及其所有消息记录")
-    @DeleteMapping("/agents/{agentId}/sessions/{sessionId}")
-    public Map<String, Object> deleteSession(@PathVariable String agentId,
-                                              @PathVariable String sessionId) {
-        sessionManager.deleteSession(sessionId);
-        return Map.of("sessionId", sessionId, "deleted", true);
-    }
 
     /**
      * 解析会话：如果请求包含sessionId则续接已有会话，
