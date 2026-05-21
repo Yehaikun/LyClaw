@@ -11,7 +11,7 @@ server:
   port: 8082
 
 # ============================================================
-#   Knife4j / Swagger API 文档配置
+#   Swagger / OpenAPI 文档配置 (springdoc)
 # ============================================================
 springdoc:
   swagger-ui:
@@ -24,9 +24,6 @@ springdoc:
     - group: default
       paths-to-match: /api/**
       packages-to-scan: lyjew.com.lyclaw.web.controller
-
-knife4j:
-  enable: true
 
 lyclaw:
   # ╔══════════════════════════════════════════════════════════╗
