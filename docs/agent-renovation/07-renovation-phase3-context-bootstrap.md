@@ -220,9 +220,9 @@ public class CompactionConfig {
 
     /**
      * 如果为 true，则发送 SSE 事件通知用户压缩已发生。
-     * 默认值：false（静默）。
+     * 默认值：true（默认推送SSE事件）。
      */
-    boolean notifyUser = false;
+    boolean notifyUser = true;
 
     // ── getters / setters（供 Spring Boot 配置绑定） ──────────
     public CompactionMode getMode() { return mode; }
@@ -927,7 +927,7 @@ public class CompactionStage extends PipelineStageBase {
 
             log.info("会话 {} 触发压缩", session.getSessionId());
 
-            // 分派压缩前钩子（AgentHook 已有 beforeCompaction 方法）
+            // 分派压缩前钩子（beforeCompaction 定义于 AgentHook，Phase 2 实现）
             hooks.forEach(h -> h.beforeCompaction(ctx));
 
             return compactionEngine.compact(session, ctx)
@@ -941,7 +941,7 @@ public class CompactionStage extends PipelineStageBase {
 
                                     injectPostCompactionSections(ctx, session);
 
-                                    // 分派压缩后钩子（AgentHook 已有 afterCompaction 方法）
+                                    // 分派压缩后钩子（afterCompaction 定义于 AgentHook，Phase 2 实现）
                                     hooks.forEach(h -> h.afterCompaction(ctx));
 
                                     if (config.isNotifyUser()) {
@@ -978,9 +978,9 @@ public class CompactionStage extends PipelineStageBase {
 
 #### 钩子集成
 
-`AgentHook` 在 Phase 2 已包含 `beforeCompaction(AgentContext ctx)` 和
-`afterCompaction(AgentContext ctx)` 两个压缩生命周期方法，
-`CompactionStage` 直接调用即可，无需额外扩展。压缩结果通过
+`beforeCompaction(AgentContext ctx)` 和 `afterCompaction(AgentContext ctx)`
+两个压缩生命周期方法将在 Phase 2 中添加到 `AgentHook` 接口。
+Phase 3 的 `CompactionStage` 直接调用即可，无需额外扩展。压缩结果通过
 `AgentContext.attributes` 传递（key: `"compactionResult"`），
 避免修改接口签名。
 ```
@@ -1108,7 +1108,7 @@ lyclaw:
     max-active-transcript-bytes: 10485760  # 10MB
 
     # 压缩运行时通过 SSE 通知用户
-    notify-user: false
+    notify-user: true
 
     # ── 质量把关 ───────────────────────────────────
     quality-guard:
@@ -2021,6 +2021,18 @@ import java.util.List;
  *
  * <p>绑定通常从 YAML 配置加载
  * （参见 {@code lyclaw.routing.bindings}）或从注解加载。</p>
+ *
+ * <h3>Agent 存在性校验</h3>
+ * <p>YAML 静态绑定定义了路由规则（匹配条件 → agentId），
+ * 而 SQLite {@code agents} 表则维护所有已注册 Agent 的元数据。
+ * 路由解析时，AgentRouter 会查询 SQLite 验证目标 agentId 是否已注册。
+ * 两者互补：
+ * <ul>
+ *   <li><b>YAML 绑定</b> — 静态路由规则，定义"谁处理什么"</li>
+ *   <li><b>SQLite agents 表</b> — 动态 Agent 注册表，验证"这个 Agent 是否存在"</li>
+ * </ul>
+ * 若目标 Agent 仅存在于 YAML 绑定但未在 SQLite 中注册（如临时 Agent 已过期），
+ * 路由将回退到默认 Agent 并记录警告。</p>
  */
 public class AgentRouter {
 
@@ -2645,7 +2657,7 @@ lyclaw:
     timeout-seconds: 900
     truncate-after-compaction: false
     max-active-transcript-bytes: 10485760
-    notify-user: false
+    notify-user: true
 
     quality-guard:
       enabled: true
@@ -2752,11 +2764,11 @@ lyclaw:
 - [ ] 实现 `AgentContextLimits` 带截断辅助方法
 - [ ] 创建 `CompactionStage`（`@PipelineStage(name = "Compaction", after = ReflectionStage.class, group = "POST_PROCESSING")`，extends PipelineStageBase）
 - [ ] **修改 `MetricsStage` 的 `@PipelineStage` 注解**：`after` 从 `ReflectionStage.class` 改为 `CompactionStage.class`，以维持拓扑顺序
-- [ ] `AgentHook` 的 `beforeCompaction`/`afterCompaction` 已在 Phase 2 定义，无需新增
+- [ ] `AgentHook` 的 `beforeCompaction`/`afterCompaction` 由 Phase 2 定义，Phase 3 直接使用
 - [ ] 实现 `ContextPruningScheduler` 带 `@Scheduled`
 - [ ] 创建 `CompactionProperties`（`@ConfigurationProperties("lyclaw.compaction")`）用于 YAML 绑定
 - [ ] 在 `CompactionAutoConfiguration` 中连线
-- [ ] `SubagentSessionManager.getActiveSessions()` 供修剪调度器使用（已在 Phase 2 中存在）
+- [ ] `SessionManager.getActiveSessions()` 供修剪调度器使用（由 Phase 2 实现 SessionManager）
 
 ### 3.2 工作区引导
 

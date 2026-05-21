@@ -873,19 +873,28 @@ private RunRetriesConfig retriesConfig;  // 注入，默认值匹配旧行为
 ### 第 11-12 周：上下文管理
 
 #### 任务 4.1 — 创建 `CompactionConfig` + `CompactionEngine`
-**包：** `lyjew.com.lyclaw.context.compaction`  
+**包：** `lyjew.com.lyclaw.compaction`  
 **文件：** `CompactionConfig.java`、`CompactionEngine.java`
 
 ```java
-public record CompactionConfig(
-    boolean enabled,             // 通过配置选择加入
-    int triggerTokenThreshold,   // 当上下文超过此值时触发压缩（例如 100000）
-    int targetTokenCount,        // 压缩到此值（例如 30000）
-    boolean preserveSystemPrompt, // 始终保留系统提示词
-    boolean preserveRecentMessages, // 保留最后 N 条消息
-    int recentMessagesCount,     // N
-    String compactionModel       // 用于摘要的模型（可使用更便宜的模型）
-) {}
+/**
+ * 压缩配置 — 完整设计见 07-renovation-phase3-context-bootstrap.md §2.1。
+ *
+ * 核心字段（20+）：
+ *   mode, reserveTokens, keepRecentTokens, reserveTokensFloor,
+ *   maxHistoryShare, customInstructions, recentTurnsPreserve,
+ *   identifierPolicy, identifierInstructions,
+ *   qualityGuard (QualityGuard), midTurnPrecheck (MidTurnPrecheck),
+ *   postIndexSync, memoryFlush (MemoryFlush),
+ *   postCompactionSections, model, timeoutSeconds,
+ *   truncateAfterCompaction, maxActiveTranscriptBytes, notifyUser
+ *
+ * 配置前缀：lyclaw.compaction
+ */
+@ConfigurationProperties(prefix = "lyclaw.compaction")
+public class CompactionConfig {
+    // 详见 07 文档的完整字段定义
+}
 ```
 
 **`CompactionEngine`：**
@@ -942,21 +951,28 @@ public class CompactionEngine {
 
 压缩后，注入来自 `AGENTS.md`（在引导时加载）的章节，提醒智能体其身份和约束。这可以防止压缩删除早期身份设定消息后出现"上下文漂移"。
 
-#### 任务 4.6 — 创建 `ContextPruningConfig` + `ContextPruningEngine`
-**包：** `lyjew.com.lyclaw.context.pruning`  
-**文件：** `ContextPruningConfig.java`、`ContextPruningEngine.java`
+#### 任务 4.6 — 创建 `ContextPruningConfig` + `ContextPruner`
+**包：** `lyjew.com.lyclaw.compaction`  
+**文件：** `ContextPruningConfig.java`、`ContextPruner.java`
 
 ```java
-public record ContextPruningConfig(
-    boolean enabled,
-    int maxToolResults,      // 保留的最大工具结果数（最旧的优先裁剪）
-    int maxMessages,         // 最大消息总数
-    boolean pruneToolErrorsFirst, // 优先裁剪错误消息
-    List<String> preserveTools  // 始终保留结果的工具名称列表
-) {}
+/**
+ * 上下文修剪配置 — 完整设计见 07-renovation-phase3-context-bootstrap.md §2.2。
+ *
+ * 核心字段（12+）：
+ *   mode (OFF / CACHE_TTL), ttl, keepLastAssistants,
+ *   softTrimRatio, hardClearRatio, minPrunableToolChars,
+ *   toolAllow, toolDeny, softTrim (SoftTrim), hardClear (HardClear)
+ *
+ * 配置前缀：lyclaw.compaction.pruning
+ */
+@ConfigurationProperties(prefix = "lyclaw.compaction.pruning")
+public class ContextPruningConfig {
+    // 详见 07 文档的完整字段定义
+}
 ```
 
-**`ContextPruningEngine`：**
+**`ContextPruner`（07 文档中命名）：**
 精确定点移除单条消息：
 - 移除超过 `maxToolResults` 的最旧工具结果。
 - 移除超过 `maxMessages` 的最旧消息。
@@ -997,7 +1013,7 @@ public class ContextEngine {
 #### 任务 4.9 — 创建测试
 **文件：**
 - `CompactionEngineTest.java`
-- `ContextPruningEngineTest.java`
+- `ContextPrunerTest.java`
 - `CompactionStageTest.java`
 
 测试用例：
@@ -1057,7 +1073,7 @@ public record BootstrapContent(
 **文件：** `BootstrapConfig.java`
 
 ```java
-@ConfigurationProperties(prefix = "lyclaw.agent.bootstrap")
+@ConfigurationProperties(prefix = "lyclaw.bootstrap")
 public record BootstrapConfig(
     boolean enabled,
     int maxChars,              // 每个文件最大字符数（默认 50000）
@@ -1296,9 +1312,8 @@ public class IdentityResolver {
 
 ### 第 15-16 周：流式增强
 
-#### 任务 5.1 — 创建 `BlockStreamingConfig` + `BlockStreamingEngine`
-**包：** `lyjew.com.lyclaw.stream`  
-**文件：** `BlockStreamingConfig.java`、`BlockStreamingEngine.java`
+#### 任务 5.1 — 创建 `BlockStreamingConfig` + `BlockStreamingController`
+**文件：** `BlockStreamingConfig.java`（包：`lyjew.com.lyclaw.config`）、`BlockStreamingController.java`（包：`lyjew.com.lyclaw.react.stream`）
 
 ```java
 public record BlockStreamingConfig(
@@ -1311,9 +1326,9 @@ public record BlockStreamingConfig(
 ) {}
 ```
 
-**`BlockStreamingEngine`：**
+**`BlockStreamingController`：**
 ```java
-public class BlockStreamingEngine {
+public class BlockStreamingController {
     Flux<String> coalesce(Flux<String> tokenStream, BlockStreamingConfig config);
     Flux<ServerSentEvent<String>> coalesceToSSE(Flux<String> tokenStream, BlockStreamingConfig config);
 }
@@ -1327,7 +1342,7 @@ public class BlockStreamingEngine {
 5. 将每个刷新的块作为单个 SSE `message` 事件发出。
 
 #### 任务 5.2 — 实现 `HumanDelayConfig` + `HumanDelayController`
-**文件：** `HumanDelayConfig.java`、`HumanDelayController.java`
+**文件：** `HumanDelayConfig.java`（包：`lyjew.com.lyclaw.config`）、`HumanDelayController.java`（包：`lyjew.com.lyclaw.react.stream`）
 
 ```java
 public record HumanDelayConfig(
@@ -1351,6 +1366,7 @@ public class HumanDelayController {
 延迟计算：`minDelay + random() * (maxDelay - minDelay) * variability`，如果块以 `\n\n` 结尾则加上 `newlineExtraMs`。
 
 #### 任务 5.3 — 实现 `TypingIndicatorController`
+**包：** `lyjew.com.lyclaw.react.stream`  
 **文件：** `TypingIndicatorController.java`
 
 ```java
@@ -1382,7 +1398,7 @@ public class TypingIndicatorController {
 为 SSE 流创建处理管道：
 ```
 来自 ReActEngine 的原始 SSE 流
-  → BlockStreamingEngine.coalesceToSSE()     [文本块合并]
+  → BlockStreamingController.coalesceToSSE()     [文本块合并]
   → HumanDelayController.delay()            [类人延迟]
   → TypingIndicatorController.wrap()        [输入指示器]
   → 发送到客户端的最终 SSE 流
@@ -1412,11 +1428,11 @@ public class TypingIndicatorController {
 ### 第 16-17 周：沙箱执行
 
 #### 任务 5.6 — 创建 `AgentSandboxConfig`
-**包：** `lyjew.com.lyclaw.sandbox`  
+**包：** `lyjew.com.lyclaw.config`  
 **文件：** `AgentSandboxConfig.java`
 
 ```java
-@ConfigurationProperties(prefix = "lyclaw.agent.sandbox")
+@ConfigurationProperties(prefix = "lyclaw.sandbox")
 public record AgentSandboxConfig(
     boolean enabled,              // 总开关
     String runtime,               // "docker" 或 "podman"
@@ -1435,6 +1451,7 @@ public record AgentSandboxConfig(
 ```
 
 #### 任务 5.7 — 创建 `SandboxExecutionService`
+**包：** `lyjew.com.lyclaw.security.sandbox`  
 **文件：** `SandboxExecutionService.java`
 
 使用 `docker-java` SDK（或命令行回退）：
@@ -1525,11 +1542,11 @@ if (tool.requiresContainer()) {
 ### 第 17-18 周：心跳系统
 
 #### 任务 5.12 — 创建 `HeartbeatConfig`
-**包：** `lyjew.com.lyclaw.heartbeat`  
+**包：** `lyjew.com.lyclaw.config`  
 **文件：** `HeartbeatConfig.java`
 
 ```java
-@ConfigurationProperties(prefix = "lyclaw.agent.heartbeat")
+@ConfigurationProperties(prefix = "lyclaw.heartbeat")
 public record HeartbeatConfig(
     boolean enabled,
     String cron,                    // Spring cron 表达式
@@ -1550,7 +1567,7 @@ public record HeartbeatConfig(
 ```java
 @Component
 public class HeartbeatScheduler {
-    @Scheduled(cron = "${lyclaw.agent.heartbeat.cron:0 */30 * * * *}")
+    @Scheduled(cron = "${lyclaw.heartbeat.cron:0 */30 * * * *}")
     public void heartbeat() {
         // 守卫检查，然后执行
     }
@@ -1729,10 +1746,10 @@ public class HeartbeatScheduler {
 
 **破坏性变更：无**
 
-- 压缩是选择加入的，通过 `lyclaw.agent.compaction.enabled=true` 启用。默认为 `false`（禁用）。
+- 压缩是选择加入的，通过 `lyclaw.compaction.enabled=true` 启用。默认为 `false`（禁用）。
 - 引导加载是选择加入的：文件必须存在于 agentDir/workspaceDir。无文件 → 无效果。
-- 路由是选择加入的：`lyclaw.agent.routing.enabled=true`。默认是直接调用。
-- 上下文裁剪是选择加入的：`lyclaw.agent.pruning.enabled=true`。默认 `false`。
+- 路由是选择加入的：`lyclaw.routing.enabled=true`。默认是直接调用。
+- 上下文裁剪是选择加入的：`lyclaw.compaction.pruning.enabled=true`。默认 `false`。
 - `ContextBuildStage` 优雅处理缺失的 `BootstrapLoader` Bean。
 
 **现有用户的迁移步骤：**
@@ -1745,11 +1762,11 @@ public class HeartbeatScheduler {
 
 **破坏性变更：无**
 
-- 文本块流式是选择加入的：`lyclaw.agent.streaming.block.enabled=true`。默认 `false` → 原始 token 直通（当前行为）。
-- 类人延迟是选择加入的：`lyclaw.agent.streaming.humanDelay.enabled=true`。默认 `false`。
-- 输入指示器是选择加入的：`lyclaw.agent.streaming.typingMode=MESSAGE`。默认 `NEVER`。
+- 文本块流式是选择加入的：`lyclaw.streaming.block.enabled=true`。默认 `false` → 原始 token 直通（当前行为）。
+- 类人延迟是选择加入的：`lyclaw.streaming.human-delay.enabled=true`。默认 `false`。
+- 输入指示器是选择加入的：`lyclaw.streaming.typing-indicator.mode=MESSAGE`。默认 `NEVER`。
 - 沙箱需要 Docker/podman 守护进程；如果不可用，回退到现有的进程内 `ToolSandbox`。
-- 心跳是选择加入的：`lyclaw.agent.heartbeat.enabled=true`。默认 `false`。
+- 心跳是选择加入的：`lyclaw.heartbeat.enabled=true`。默认 `false`。
 
 **现有用户的迁移步骤：**
 1. 无需更改；所有当前 SSE 行为默认保留。
@@ -1771,7 +1788,7 @@ public class HeartbeatScheduler {
 | 子智能体委托深度 | 不适用 | 可配置（默认 3） | 集成测试 |
 | 模型回退链 | 不适用（手动） | 带探测的自动回退 | AutoFallbackProbeTest |
 | 压缩 Token 缩减 | 不适用 | >80% 缩减 | CompactionEngineTest |
-| 上下文裁剪 | 不适用 | 精确的单条消息裁剪 | ContextPruningEngineTest |
+| 上下文裁剪 | 不适用 | 精确的单条消息裁剪 | ContextPrunerTest |
 | 引导文件支持 | 不适用 | 6 种文件类型加载 | BootstrapLoaderTest |
 | 多智能体路由 | 不适用 | 基于模式的路由 | AgentRouterTest |
 | 文本块流式 | 原始 token 直通 | 带延迟的合并输出 | BlockStreamingTest |
@@ -1835,7 +1852,7 @@ lyjew.com.lyclaw
 │   │   └── CompactionResult.java
 │   ├── pruning
 │   │   ├── ContextPruningConfig.java
-│   │   ├── ContextPruningEngine.java
+│   │   ├── ContextPruner.java
 │   │   └── PruningResult.java
 │   └── ContextEngine.java
 ├── heartbeat
@@ -1881,7 +1898,7 @@ lyjew.com.lyclaw
 │   └── SandboxExecutionService.java
 └── stream
     ├── BlockStreamingConfig.java
-    ├── BlockStreamingEngine.java
+    ├── BlockStreamingController.java
     ├── HumanDelayConfig.java
     ├── HumanDelayController.java
     └── TypingIndicatorController.java

@@ -352,3 +352,424 @@ lyclaw:
     #   true  — 立即中断整个注册流程（生产环境推荐）
     # 默认: false
     fail-fast: false
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.compaction  —  上下文压缩配置  (CompactionConfig) ║
+  # ║  AutoConfiguration: CompactionAutoConfiguration          ║
+  # ║  详细设计见 07-renovation-phase3 §2.1                    ║
+  # ╚══════════════════════════════════════════════════════════╝
+  compaction:
+    # 压缩策略模式: DEFAULT（仅历史压缩）| FULL（历史+工具结果）
+    # 默认: DEFAULT
+    mode: DEFAULT
+
+    # 为系统提示/引导/工具定义保留的 token 数
+    # 默认: 8000
+    reserve-tokens: 8000
+
+    # 保留最近 N 个 token 对话历史不被压缩
+    # 默认: 4000
+    keep-recent-tokens: 4000
+
+    # 硬性下限：即使计算建议更深裁剪，也不会压缩到低于此值
+    # 默认: 2000
+    reserve-tokens-floor: 2000
+
+    # 历史消息可占 token 预算的最大份额（0.0~1.0），超出触发压缩
+    # 默认: 0.5
+    max-history-share: 0.5
+
+    # 保留原样不压缩的最近对话轮次数
+    # 默认: 3
+    recent-turns-preserve: 3
+
+    # 标识符保留策略: STRICT | OFF | CUSTOM
+    # 默认: STRICT
+    identifier-policy: STRICT
+
+    # 压缩 LLM 调用超时（秒），默认使用更便宜/更快的模型
+    # 默认: 900
+    timeout-seconds: 900
+
+    # 触发压缩的最大活跃转录字节数（~10MB）
+    # 默认: 10485760
+    max-active-transcript-bytes: 10485760
+
+    # 压缩后是否截断尾部内容（而非保留摘要+尾部）
+    # 默认: false
+    truncate-after-compaction: false
+
+    # 是否发送 SSE 事件通知用户压缩已发生
+    # 默认: false
+    notify-user: true
+
+    # ── 质量把关（QualityGuard） ──────────
+    quality-guard:
+      # 压缩后询问 LLM 是否信息充足，NO 则更保守目标重试
+      enabled: true
+      # 最多重试验证次数
+      max-retries: 2
+
+    # ── 中途预检查（MidTurnPrecheck） ────
+    mid-turn-precheck:
+      # 每轮工具调用后检查上下文压力，提前触发压缩
+      enabled: true
+      # 上下文使用率超过此阈值时触发中途压缩（0.0~1.0）
+      threshold: 0.9
+
+    # ── 记忆刷新（MemoryFlush） ──────────
+    memory-flush:
+      # 压缩前是否将累积记忆刷新到 MemoryStore
+      enabled: false
+
+    # 压缩后注入的系统提示章节（重新锚定 Agent 行为）
+    post-compaction-sections:
+      - "Session Startup"
+      - "Red Lines"
+
+    # ── 上下文修剪（ContextPruningConfig） ─
+    # 配置前缀: lyclaw.compaction.pruning
+    pruning:
+      # 修剪模式: OFF | CACHE_TTL
+      mode: OFF
+      # 工具结果内容 TTL
+      ttl: 30m
+      # 保留最近 N 条助手消息不被修剪
+      keep-last-assistants: 5
+      # 软修剪触发阈值（上下文比例）
+      soft-trim-ratio: 0.3
+      # 硬清除触发阈值（上下文比例）
+      hard-clear-ratio: 0.6
+      # 可修剪的工具结果最小字符数
+      min-prunable-tool-chars: 1000
+      # 软修剪——保留头尾，中间用 "..." 替换
+      soft-trim:
+        max-chars: 8000
+        head-chars: 2000
+        tail-chars: 2000
+      # 硬清除——用占位符替换整个工具结果
+      hard-clear:
+        enabled: true
+        placeholder: "[earlier output trimmed for space]"
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.bootstrap  —  引导文件加载配置                     ║
+  # ║  AutoConfiguration: BootstrapAutoConfiguration           ║
+  # ║  详细设计见 07-renovation-phase3 §3                      ║
+  # ╚══════════════════════════════════════════════════════════╝
+  bootstrap:
+    # 是否启用引导文件加载
+    # 默认: false
+    enabled: false
+
+    # 单个引导文件最大字符数
+    # 默认: 50000
+    max-chars: 50000
+
+    # 所有引导文件总最大字符数
+    # 默认: 200000
+    total-max-chars: 200000
+
+    # 加载的文件列表（相对于 agentDir/workspaceDir）
+    files:
+      - "AGENTS.md"
+      - "BOOTSTRAP.md"
+      - "TOOLS.md"
+      - "MEMORY.md"
+      - "IDENTITY.md"
+
+    # 递归扫描子目录加载引导文件
+    # 默认: true
+    recursive: true
+
+    # 引导内容合并模式: PREPEND（追加到系统提示前）| SECTION（独立章节）
+    # 默认: PREPEND
+    merge-mode: PREPEND
+
+    # 是否发送 bootstrap_loaded SSE 事件
+    # 默认: false
+    notify: false
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.routing  —  Agent 路由配置                        ║
+  # ║  AutoConfiguration: RoutingAutoConfiguration             ║
+  # ║  详细设计见 07-renovation-phase3 §3.3                    ║
+  # ╚══════════════════════════════════════════════════════════╝
+  routing:
+    # 是否启用 Agent 路由器
+    # 默认: false
+    enabled: false
+
+    # 默认 Agent ID（无匹配时回退）
+    default-agent-id: chat
+
+    # ── 静态路由绑定（YAML 配置） ──────────
+    # 每个绑定: agentId + match条件（channel / mention / acp前缀）
+    bindings:
+      # 示例:
+      # - agent-id: code-reviewer
+      #   match:
+      #     channel: "#code-review"
+      # - agent-id: support-bot
+      #   match:
+      #     mention: "@bot help"
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.identity  —  身份与角色配置                        ║
+  # ║  AutoConfiguration: IdentityAutoConfiguration             ║
+  # ║  详细设计见 07-renovation-phase3 §4                      ║
+  # ╚══════════════════════════════════════════════════════════╝
+  identity:
+    # 是否启用身份系统
+    # 默认: false
+    enabled: false
+
+    # 默认角色名称
+    default-role: "assistant"
+
+    # 身份来源: FILE（IDENTITY.md 优先）| ANNOTATION（@Agent 注解优先）| CONFIG（yml 优先）
+    # 默认: FILE
+    source: FILE
+
+    # 身份文件路径（相对于 agentDir）
+    identity-file: "IDENTITY.md"
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.streaming  —  流式响应增强配置                     ║
+  # ║  AutoConfiguration: StreamingAutoConfiguration           ║
+  # ║  详细设计见 08-renovation-phase4 §4.1                    ║
+  # ╚══════════════════════════════════════════════════════════╝
+  streaming:
+    # ── 块流式（BlockStreaming） ─────────────────
+    block:
+      # 是否启用基于块的流式输出
+      # 默认: false
+      enabled: false
+
+      # 断块模式: TEXT_END（段落/列表项结束时断开）| MESSAGE_END（仅消息结束时断开）
+      # 默认: TEXT_END
+      break-mode: TEXT_END
+
+      # 每块最大字符数
+      # 默认: 80
+      max-chunk-chars: 80
+
+      # 刷新前最大空闲时间（毫秒）
+      # 默认: 150
+      max-idle-ms: 150
+
+      # 是否在换行边界处刷新
+      # 默认: true
+      preserve-newlines: true
+
+      # 是否过滤 <thinking> 标签
+      # 默认: false
+      strip-thinking: false
+
+    # ── 人类延迟模拟（HumanDelay） ──────────────
+    human-delay:
+      # 是否启用人类打字延迟模拟
+      # 默认: false
+      enabled: false
+
+      # 块间最小延迟（毫秒）
+      # 默认: 100
+      min-delay-ms: 100
+
+      # 块间最大延迟（毫秒）
+      # 默认: 400
+      max-delay-ms: 400
+
+      # 自适应速度（随回复增长加速）
+      # 默认: false
+      adaptive-speed: false
+
+    # ── 输入中指示器（TypingIndicator） ────────
+    typing-indicator:
+      # 模式: NEVER | INSTANT | THINKING | MESSAGE
+      # 默认: NEVER
+      mode: NEVER
+
+      # 指示器 SSE 事件发送间隔（秒）
+      # 默认: 3
+      interval-seconds: 3
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.sandbox  —  容器沙箱配置                           ║
+  # ║  AutoConfiguration: SandboxAutoConfiguration             ║
+  # ║  详细设计见 08-renovation-phase4 §4.2                    ║
+  # ╚══════════════════════════════════════════════════════════╝
+  sandbox:
+    # 容器后端: NONE | DOCKER | PODMAN
+    # 默认: NONE（回退到进程内 ToolSandbox）
+    backend: NONE
+
+    # 默认容器镜像
+    image: "ubuntu:22.04"
+
+    # 沙箱工作目录（容器内）
+    root-dir: "/workspace"
+
+    # 允许执行的命令列表（空=不限制）
+    allowed-commands: []
+
+    # 禁止执行的命令列表
+    denied-commands:
+      - "rm -rf /"
+      - "shutdown"
+
+    # 是否启用容器网络
+    # 默认: false
+    network-enabled: false
+
+    # 是否允许文件系统写入
+    # 默认: true
+    file-system-write-enabled: true
+
+    # 内存限制（MB）
+    # 默认: 512
+    memory-limit-mb: 512
+
+    # CPU 限制（核数）
+    # 默认: 1.0
+    cpu-limit: 1.0
+
+    # 容器执行超时（秒）
+    # 默认: 60
+    timeout-seconds: 60
+
+    # ── 文件系统桥接 ─────────────────────────
+    fs-bridge:
+      # 是否将宿主机工作目录绑定挂载到容器
+      # 默认: true
+      enabled: true
+      # 挂载模式: READ_ONLY | READ_WRITE
+      # 默认: READ_WRITE
+      mode: READ_WRITE
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.heartbeat  —  Agent 心跳配置                      ║
+  # ║  AutoConfiguration: HeartbeatAutoConfiguration           ║
+  # ║  详细设计见 08-renovation-phase4 §4.3                    ║
+  # ╚══════════════════════════════════════════════════════════╝
+  heartbeat:
+    # 是否启用心跳系统
+    # 默认: false
+    enabled: false
+
+    # 心跳间隔（cron 表达式或 Duration 如 "30m"、"1h"）
+    every: "30m"
+
+    # ── 活跃时间窗口 ─────────────────────────
+    active-hours:
+      # 开始时间
+      start: "09:00"
+      # 结束时间
+      end: "18:00"
+      # 时区
+      timezone: "Asia/Shanghai"
+      # 生效日（逗号分隔）
+      days-of-week: "MON,TUE,WED,THU,FRI"
+
+    # 心跳使用的模型（null = 使用 Agent 默认值）
+    model:
+
+    # 心跳会话标识 key
+    session-key: "daily-checkin"
+
+    # 结果投递目标: LAST | NONE
+    target: LAST
+
+    # 直接呼叫策略: ALLOW | BLOCK
+    direct-policy: ALLOW
+
+    # 投递目标地址（E.164 电话或聊天 ID）
+    to:
+
+    # 多账户选择器
+    account-id:
+
+    # 心跳提示词
+    prompt: "这是例行心跳检查。请根据上下文汇报当前状态。"
+
+    # 是否在心跳提示词中包含系统提示词章节
+    # 默认: true
+    include-system-prompt-section: true
+
+    # 心跳回复确认最大字符数（用于通知预览）
+    # 默认: 30
+    ack-max-chars: 30
+
+    # 是否抑制工具错误警告
+    # 默认: true
+    suppress-tool-error-warnings: true
+
+    # 心跳运行超时（秒）
+    # 默认: 120
+    timeout-seconds: 120
+
+    # 是否使用轻量上下文（仅加载 HEARTBEAT.md）
+    # 默认: true
+    light-context: true
+
+    # 是否为每次心跳创建隔离会话
+    # 默认: true
+    isolated-session: true
+
+    # 子 Agent 活跃时是否跳过心跳
+    # 默认: true
+    skip-when-busy: true
+
+    # 是否包含推理/思考内容
+    # 默认: false
+    include-reasoning: false
+
+    # 连续失败多少次后告警
+    # 默认: 3
+    max-consecutive-failures: 3
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.retry  —  运行重试增强配置  (RunRetriesConfig)     ║
+  # ║  AutoConfiguration: RetryAutoConfiguration               ║
+  # ║  详细设计见 08-renovation-phase4 §4.4                    ║
+  # ╚══════════════════════════════════════════════════════════╝
+  retry:
+    # 主模型基础重试迭代次数
+    # 默认: 24
+    base: 24
+
+    # 每个回退模型额外分配的迭代次数
+    # 默认: 8
+    per-profile: 8
+
+    # 总重试次数最小下限
+    # 默认: 32
+    min: 32
+
+    # 总重试次数最大上限
+    # 默认: 160
+    max: 160
+
+    # 重试终止质量阈值（反思分数达此值则提前停止）
+    # 默认: 0.7
+    quality-threshold: 0.7
+
+    # 重试模型选择策略: SAME_MODEL | FALLBACK_CHAIN | ADAPTIVE
+    # 默认: ADAPTIVE
+    default-strategy: ADAPTIVE
+
+    # 升级到回退模型前允许的最大连续失败次数（仅 ADAPTIVE 策略生效）
+    # 默认: 3
+    max-consecutive-failures-before-fallback: 3
+
+    # ── 指数退避配置 ─────────────────────────
+    backoff:
+      # 初始延迟（毫秒）
+      # 默认: 1000
+      initial-delay-ms: 1000
+      # 退避乘数
+      # 默认: 2.0
+      multiplier: 2.0
+      # 最大延迟（毫秒）
+      # 默认: 60000
+      max-delay-ms: 60000
