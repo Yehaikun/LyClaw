@@ -55,8 +55,12 @@ public class SessionManager implements SessionFactory {
         String sessionId = UUID.randomUUID().toString().substring(0, idLen);
         String filePath = buildFilePath(agentId, sessionId);
 
+        String defaultName = "Chat " + java.time.format.DateTimeFormatter
+                .ofPattern("MM-dd HH:mm").format(LocalDateTime.now());
+
         Session session = Session.builder()
                 .sessionId(sessionId)
+                .name(defaultName)
                 .agentId(agentId)
                 .model(model)
                 .filePath(filePath)
@@ -106,6 +110,7 @@ public class SessionManager implements SessionFactory {
 
         Session session = Session.builder()
                 .sessionId(sessionId)
+                .name((String) meta.get("name"))
                 .agentId((String) meta.get("agent_id"))
                 .filePath(filePath)
                 .messageIndex(totalCount)
@@ -149,6 +154,10 @@ public class SessionManager implements SessionFactory {
                 preview = preview.substring(0, maxLen);
             }
             sessionRepository.updateFirstMsgPreview(session.getSessionId(), preview);
+            // 同时将会话名称更新为首条消息预览
+            String name = preview != null ? preview : session.getName();
+            session.setName(name);
+            sessionRepository.updateName(session.getSessionId(), name);
         }
     }
 

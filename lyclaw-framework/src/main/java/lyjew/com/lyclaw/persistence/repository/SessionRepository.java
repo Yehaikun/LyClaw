@@ -55,19 +55,20 @@ public class SessionRepository {
 
         // 2. 插入SQLite元数据——用于快速列表查询
         String sql = """
-            INSERT INTO sessions (session_id, agent_id, parent_session_id, parent_agent_id,
+            INSERT INTO sessions (session_id, agent_id, name, parent_session_id, parent_agent_id,
                 created_at, updated_at, message_count, tool_call_count, total_tokens,
                 compaction_count, file_path, first_msg_preview)
-            VALUES (?,?,?,?,?,?,0,0,0,0,?,'')
+            VALUES (?,?,?,?,?,?,?,0,0,0,0,?,'')
             """;
         try (Connection c = cm.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, session.getSessionId());
             ps.setString(2, session.getAgentId());
-            ps.setString(3, session.getParentSessionId());
-            ps.setString(4, session.getParentAgentId());
-            ps.setLong(5, now);
+            ps.setString(3, session.getName() != null ? session.getName() : "");
+            ps.setString(4, session.getParentSessionId());
+            ps.setString(5, session.getParentAgentId());
             ps.setLong(6, now);
-            ps.setString(7, filePath);
+            ps.setLong(7, now);
+            ps.setString(8, filePath);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("创建Session SQLite记录失败", e);
@@ -126,7 +127,7 @@ public class SessionRepository {
 
     /** 按sessionId查询会话元数据（不含消息内容，消息通过readMessages获取） */
     public List<Map<String, Object>> findBySessionId(String sessionId) {
-        String sql = "SELECT session_id, agent_id, parent_session_id, parent_agent_id, " +
+        String sql = "SELECT session_id, agent_id, name, parent_session_id, parent_agent_id, " +
                 "created_at, updated_at, first_msg_preview, message_count, " +
                 "tool_call_count, total_tokens, compaction_count, file_path " +
                 "FROM sessions WHERE session_id = ?";
@@ -144,7 +145,7 @@ public class SessionRepository {
 
     /** 按agentId查询该Agent下所有会话，按更新时间降序（最新会话在前） */
     public List<Map<String, Object>> findByAgentId(String agentId) {
-        String sql = "SELECT session_id, agent_id, parent_session_id, parent_agent_id, " +
+        String sql = "SELECT session_id, agent_id, name, parent_session_id, parent_agent_id, " +
                 "created_at, updated_at, first_msg_preview, message_count, " +
                 "tool_call_count, total_tokens, compaction_count, file_path " +
                 "FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC";
@@ -175,6 +176,20 @@ public class SessionRepository {
             throw new RuntimeException("查询子会话列表失败", e);
         }
         return result;
+    }
+
+    /**
+     * 更新会话名称——用于用户重命名或首次消息自动命名。
+     */
+    public void updateName(String sessionId, String name) {
+        String sql = "UPDATE sessions SET name = ? WHERE session_id = ?";
+        try (Connection c = cm.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, name);
+            ps.setString(2, sessionId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("更新Session名称失败", e);
+        }
     }
 
     /**
