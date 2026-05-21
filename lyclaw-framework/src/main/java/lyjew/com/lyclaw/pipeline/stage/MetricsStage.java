@@ -32,8 +32,14 @@ public class MetricsStage extends PipelineStageBase {
 
     @Override
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
-        if (ctx.isTerminated()) return Flux.empty();
-        if (!ctx.isPipelineOk()) return Flux.empty();
+        if (ctx.isTerminated()) {
+            log.info("⏭️ [指标采集] 管线已终止，跳过");
+            return Flux.empty();
+        }
+        if (!ctx.isPipelineOk()) {
+            log.warn("⏭️ [指标采集] 管线状态异常(pipelineOk=false)，跳过");
+            return Flux.empty();
+        }
 
         return Flux.defer(() -> {
             String traceId = ctx.getTracing().getTraceId();
@@ -45,13 +51,18 @@ public class MetricsStage extends PipelineStageBase {
             int taskCount = toolResults.size();
             long now = System.currentTimeMillis();
 
+            log.info("\n\n========== [阶段 4] 指标采集 [METRICS] ==========");
+            log.info("📊 [指标采集] 开始 | sessionId={} | 任务数={} | 成功={} | 失败={} | 评分={}",
+                    sessionId, taskCount, successCount, failCount, String.format("%.2f", score));
+
             try {
+                log.info("🧠 [指标采集] 摄入记忆...");
                 PerceptionData perception = PerceptionData.builder()
                         .role("assistant")
-                        .content("Orchestration completed | Tasks: " + taskCount
-                                + " | Success: " + successCount
-                                + " | Failed: " + failCount
-                                + " | ReflectScore: " + score)
+                        .content("编排完成 | 任务: " + taskCount
+                                + " | 成功: " + successCount
+                                + " | 失败: " + failCount
+                                + " | 反思评分: " + score)
                         .timestamp(now)
                         .metadata(Map.of("sessionId", sessionId != null ? sessionId : "",
                                 "taskCount", taskCount,
@@ -60,9 +71,11 @@ public class MetricsStage extends PipelineStageBase {
                         .build();
                 MemoryEntry entry = memorySystem.ingestPerception(sessionId, perception);
                 entry.setUserId("default");
+                log.info("✅ [指标采集] 记忆摄入完成");
             } catch (Exception e) {
                 log.warn(logJson("WARN", "memory_ingest_failed", "METRICS", traceId,
-                        "Memory ingest failed (non-critical): " + e.getMessage(), null), e);
+                        "记忆摄入失败（非关键）: " + e.getMessage(), null), e);
+                log.warn("⚠️ [指标采集] 记忆摄入失败（非关键）| error={}", e.getMessage());
             }
 
             if (metricsCollector != null) {
@@ -72,9 +85,10 @@ public class MetricsStage extends PipelineStageBase {
 
             long totalDuration = ctx.getTracing().getTotalDuration();
             ctx.getTracing().markEnd();
-            log.info("\n\n========== [阶段 4/5] 指标采集 [METRICS] ==========");
             log.info(logJson("INFO", "pipeline_complete", "ORCHESTRATION_TOTAL", traceId,
-                    "Orchestration completed: " + taskCount + " tasks", totalDuration));
+                    "编排完成: " + taskCount + " 个任务", totalDuration));
+            log.info("🏁 [指标采集] 管线全部完成 | 总耗时={}ms | 任务数={} | traceId={}",
+                    totalDuration, taskCount, traceId);
 
             if (metricsCollector != null) {
                 metricsCollector.recordPipelineStage("ORCHESTRATION_TOTAL", totalDuration);
@@ -82,6 +96,7 @@ public class MetricsStage extends PipelineStageBase {
             }
 
             ctx.getCurrentStage().set("done");
+            log.info("══════════ 管线执行全部完成 ══════════");
 
             Map<String, Object> metricsData = new LinkedHashMap<>();
             metricsData.put("totalDurationMs", totalDuration);
@@ -94,7 +109,7 @@ public class MetricsStage extends PipelineStageBase {
             doneData.put("traceId", traceId);
 
             return Flux.just(
-                    sseEvent("respond_complete", "Response generated and memory persisted"),
+                    sseEvent("respond_complete", "响应已生成，记忆已持久化"),
                     sseEvent("metrics", metricsData),
                     sseEvent("done", doneData)
             );

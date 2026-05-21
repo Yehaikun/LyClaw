@@ -111,27 +111,30 @@ public class DefaultReActEngine implements ReActEngine {
     public String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor) {
         applyThinkingLevel(request);
         List<Message> messages = request.getMessages();
+        log.info("🧠 [ReAct引擎] 非流式ReAct启动 | 最大轮数={} | 有工具执行器={}", maxToolRounds, toolExecutor != null);
 
         // 无工具执行器时退化为单次 LLM 调用
         if (toolExecutor == null) {
+            log.info("ℹ️ [ReAct引擎] 无工具执行器，退化为单次LLM调用");
             try {
                 ModelResponse response = chatFacade.chat(request);
                 String content = response.getContent() != null ? response.getContent() : "";
                 messages.add(Message.assistant(content));
+                log.info("✅ [ReAct引擎] 单次LLM调用完成 | 响应长度={}", content.length());
                 return content;
             } catch (Exception e) {
-                log.error("ReAct LLM call failed (no tools): {}", e.getMessage(), e);
+                log.error("❌ [ReAct引擎] LLM调用失败（无工具）: {}", e.getMessage(), e);
                 return "[LLM调用失败: " + e.getMessage() + "]";
             }
         }
 
         for (int round = 0; round < maxToolRounds; round++) {
-            log.debug("ReAct round {}/{}", round + 1, maxToolRounds);
+            log.info("🔄 [ReAct引擎] 第{}/{}轮推理开始", round + 1, maxToolRounds);
             ModelResponse response;
             try {
                 response = chatFacade.chat(request);
             } catch (Exception e) {
-                log.error("ReAct LLM call failed in round {}: {}", round, e.getMessage(), e);
+                log.error("❌ [ReAct引擎] 第{}轮LLM调用失败: {}", round, e.getMessage(), e);
                 return "[LLM调用失败: " + e.getMessage() + "]";
             }
 
@@ -142,8 +145,13 @@ public class DefaultReActEngine implements ReActEngine {
                         .content(content)
                         .thinking(response.getThinking() != null ? response.getThinking() : "")
                         .build());
+                log.info("✅ [ReAct引擎] 第{}轮完成（纯文本响应）| 响应长度={}", round + 1, content.length());
                 return content;
             }
+
+            log.info("🔧 [ReAct引擎] 第{}轮检测到{}个工具调用: {}",
+                    round + 1, response.getToolCalls().size(),
+                    response.getToolCalls().stream().map(ModelResponse.ToolCallRequest::getName).toList());
 
             // 追加 assistant 消息（含工具调用列表）
             messages.add(Message.builder()
@@ -155,19 +163,22 @@ public class DefaultReActEngine implements ReActEngine {
 
             // 执行每个工具调用，追加 tool 消息
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
-                log.debug("ReAct executing tool: name={} id={}", req.getName(), req.getId());
+                log.info("🔨 [ReAct引擎] 执行工具: {} | toolCallId={}", req.getName(), req.getId());
                 try {
                     String toolOutput = toolExecutor.execute(
                             req.getName(), req.getId(),
                             req.getArguments() != null ? req.getArguments() : "{}");
                     messages.add(Message.tool(req.getId(), toolOutput));
+                    log.info("✅ [ReAct引擎] 工具执行完成: {} | 输出长度={}", req.getName(),
+                            toolOutput != null ? toolOutput.length() : 0);
                 } catch (Exception e) {
-                    log.error("Tool execution failed: name={} error={}", req.getName(), e.getMessage(), e);
-                    messages.add(Message.tool(req.getId(), "Tool error: " + e.getMessage()));
+                    log.error("❌ [ReAct引擎] 工具执行异常: name={} error={}", req.getName(), e.getMessage(), e);
+                    messages.add(Message.tool(req.getId(), "工具错误: " + e.getMessage()));
                 }
             }
         }
 
+        log.warn("⚠️ [ReAct引擎] 已达最大工具调用轮数({})", maxToolRounds);
         return "[已达最大工具调用轮数(" + maxToolRounds + ")]";
     }
 
@@ -179,11 +190,13 @@ public class DefaultReActEngine implements ReActEngine {
         applyThinkingLevel(request);
         // 无工具执行器时退化为简单流式
         if (toolExecutor == null) {
+            log.info("ℹ️ [ReAct流式] 无工具执行器，退化为简单流式");
             return simpleStream(chatFacade, request);
         }
 
         ChatModel model = chatFacade.resolveModel(chatFacade.route(request, null));
-        log.debug("ReAct stream-detect via {}:{}", model.provider(), model.model());
+        log.info("🌊 [ReAct流式] 启动流式+工具检测 | provider={} | model={} | 最大轮数={}",
+                model.provider(), model.model(), maxToolRounds);
 
         // 状态: 0=buffering(思考), 1=relaying(纯文本), 2=tools_detected
         int[] state = {0};
@@ -209,7 +222,7 @@ public class DefaultReActEngine implements ReActEngine {
                         if (hasToolCalls) {
                             state[0] = 2;
                             buffer.add(chunk);
-                            log.warn("Tool call appeared after content streaming began - unusual");
+                            log.warn("⚠️ [ReAct流式] 工具调用在文本流式传输后出现（异常情况）");
                             return;
                         }
                         if (hasContent) {
@@ -236,7 +249,7 @@ public class DefaultReActEngine implements ReActEngine {
                     if (state[0] == 2) {
                         request.setStream(false);
                         ModelResponse merged = model.mergeChunks(buffer);
-                        log.info("ReAct tools detected in stream: {}",
+                        log.info("🔧 [ReAct流式] 检测到工具调用: {}",
                                 merged.getToolCalls() != null
                                         ? merged.getToolCalls().stream()
                                                 .map(ModelResponse.ToolCallRequest::getName).toList()
@@ -306,6 +319,7 @@ public class DefaultReActEngine implements ReActEngine {
                         return emitApprovalFlow(req, toolExecutor, messages, toolArgs);
                     }
                     // 无需审批：直接执行
+                    log.info("🔨 [ReAct流式] 直接执行工具（无需审批）: {} | toolCallId={}", req.getName(), req.getId());
                     String execJson = toolCallEventJson(req.getId(), req.getName(),
                             "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
                     Mono<ServerSentEvent<String>> doneEvent = Mono.fromCallable(() -> {
@@ -315,14 +329,16 @@ public class DefaultReActEngine implements ReActEngine {
                             output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
                             success = true;
                         } catch (Exception e) {
-                            log.error("Tool execution failed: name={} error={}",
+                            log.error("❌ [ReAct流式] 工具执行失败: name={} error={}",
                                     req.getName(), e.getMessage(), e);
-                            output = "Tool error: " + e.getMessage();
+                            output = "工具错误: " + e.getMessage();
                             success = false;
                         }
                         messages.add(Message.tool(req.getId(), output));
                         String doneJson = toolCallEventJson(req.getId(), req.getName(),
                                 "done", req.getName() + " 完成", toolArgs, output, success);
+                        log.info("{} [ReAct流式] 工具执行完成: {} | 成功={}",
+                                success ? "✅" : "❌", req.getName(), success);
                         return sseEvent("tool_call", doneJson);
                     }).subscribeOn(Schedulers.boundedElastic());
                     return Flux.just(sseEvent("tool_call", execJson)).concatWith(doneEvent);
@@ -339,9 +355,8 @@ public class DefaultReActEngine implements ReActEngine {
             List<Message> messages, String toolArgs) {
         // 必须在 Flux 返回前创建 future，消除竞态：保证前端 approve() 时 future 已就绪
         CompletableFuture<Boolean> future = approvalStore.create(req.getId());
-        log.info("APPROVAL_DEBUG create: toolCallId={} pendingCount={} storeHash={}",
-                req.getId(), approvalStore.pendingCount(),
-                Integer.toHexString(System.identityHashCode(approvalStore)));
+        log.info("🛡️ [ReAct流式] 创建审批请求: toolCallId={} | 待审批数={} | toolName={}",
+                req.getId(), approvalStore.pendingCount(), req.getName());
 
         String approvalJson = toolApprovalEventJson(req.getId(), req.getName(), toolArgs);
         ServerSentEvent<String> approvalEvent = sseEvent("tool_approval", approvalJson);
@@ -354,10 +369,11 @@ public class DefaultReActEngine implements ReActEngine {
             try {
                 approved = future.get(approvalTimeoutSeconds, TimeUnit.SECONDS);
             } catch (Exception e) {
-                log.warn("审批超时或异常: toolCallId={} error={}", req.getId(), e.getMessage(), e);
+                log.warn("⏰ [ReAct流式] 审批超时或异常: toolCallId={} error={}", req.getId(), e.getMessage(), e);
                 approved = false;
             }
-            log.info("APPROVAL_DEBUG resolved: toolCallId={} approved={}", req.getId(), approved);
+            log.info("{} [ReAct流式] 审批结果: toolCallId={} approved={}",
+                    approved ? "✅" : "❌", req.getId(), approved);
             String output;
             boolean success;
             if (approved) {
@@ -410,7 +426,7 @@ public class DefaultReActEngine implements ReActEngine {
         }
 
         return Flux.defer(() -> {
-            log.debug("ReAct stream round {}/{}", round + 1, maxToolRounds);
+            log.info("🔄 [ReAct流式] 第{}/{}轮推理开始", round + 1, maxToolRounds);
             request.setStream(true);
             ChatModel model = chatFacade.resolveModel(chatFacade.route(request, null));
 
@@ -536,7 +552,7 @@ public class DefaultReActEngine implements ReActEngine {
         request.setToolChoice(null);
         applyThinkingLevel(request);
         ChatModel model = chatFacade.resolveModel(chatFacade.route(request, null));
-        log.debug("ReAct simple stream via {}:{}", model.provider(), model.model());
+        log.info("🌊 [ReAct流式] 简单流式模式 | provider={} | model={}", model.provider(), model.model());
         return model.stream(request)
                 .handle((chunk, sink) -> {
                     // Phase 2: emit thinking events for reasoning_content

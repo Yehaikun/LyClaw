@@ -46,7 +46,14 @@ public class ReflectionStage extends PipelineStageBase {
 
     @Override
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
-        if (ctx.isTerminated() || !ctx.isPipelineOk()) return Flux.empty();
+        if (ctx.isTerminated()) {
+            log.info("⏭️ [反思评估] 管线已终止，跳过");
+            return Flux.empty();
+        }
+        if (!ctx.isPipelineOk()) {
+            log.warn("⏭️ [反思评估] 管线状态异常(pipelineOk=false)，跳过");
+            return Flux.empty();
+        }
 
         return Flux.defer(() -> {
             String traceId = ctx.getTracing().getTraceId();
@@ -56,15 +63,17 @@ public class ReflectionStage extends PipelineStageBase {
                 ctx.getTracing().beginStage("REFLECTION");
                 long t = System.currentTimeMillis();
 
-                log.info("\n\n========== [阶段 4/6] 反思评估 [REFLECTION] ==========");
+                log.info("\n\n========== [阶段 3] 反思评估 [REFLECTION] ==========");
                 log.info(logJson("INFO", "stage_start", "REFLECTION", traceId,
-                        "Evaluating response quality", null));
-                events.add(sseEvent("reflection_start", "Evaluating response quality"));
+                        "开始评估响应质量", null));
+                events.add(sseEvent("reflection_start", "正在评估响应质量"));
 
                 String finalResponse = ctx.getAttribute("finalResponse");
                 List<String> toolResults = ctx.getToolResults();
                 int successCount = ctx.getSuccessCount().get();
                 int failCount = ctx.getFailCount().get();
+                log.info("🔍 [反思评估] 收集评估数据 | 响应长度={} | 工具调用成功={} 失败={}",
+                        finalResponse != null ? finalResponse.length() : 0, successCount, failCount);
 
                 ActionResult result = ActionResult.builder()
                         .nodeId(ctx.getSessionId())
@@ -81,6 +90,7 @@ public class ReflectionStage extends PipelineStageBase {
                 boolean needsRetry = false;
 
                 if (reflectionEngine != null) {
+                    log.info("🧠 [反思评估] 调用ReflectionEngine进行评估...");
                     ChatContext chatCtx = buildChatContext(ctx);
                     ReflectionReport report = reflectionEngine.reflect(chatCtx, result);
                     score = report.getOverallScore();
@@ -96,12 +106,15 @@ public class ReflectionStage extends PipelineStageBase {
                     ctx.getReflectScoreRef().set(score);
 
                     log.info(logJson("INFO", "reflection_result", "REFLECTION", traceId,
-                            String.format("score=%.2f errors=%d needsRetry=%s",
+                            String.format("评分=%.2f 错误数=%d 需重试=%s",
                                     score, errorCount, needsRetry), null));
+                    log.info("{} [反思评估] 评估完成 | 评分={} | 错误数={} | 需重试={}",
+                            needsRetry ? "⚠️" : "✅", String.format("%.2f", score), errorCount, needsRetry);
                 } else {
                     score = 1.0;
                     log.info(logJson("INFO", "reflection_skipped", "REFLECTION", traceId,
-                            "No ReflectionEngine available, skipping evaluation", null));
+                            "无ReflectionEngine可用，跳过评估", null));
+                    log.info("ℹ️ [反思评估] 无ReflectionEngine，跳过评估（默认满分）");
                 }
 
                 Map<String, Object> reflectionData = new LinkedHashMap<>();
@@ -112,13 +125,15 @@ public class ReflectionStage extends PipelineStageBase {
 
                 long stageDuration = System.currentTimeMillis() - t;
                 ctx.getTracing().endStage("REFLECTION");
+                log.info("✅ [反思评估] 阶段完成 | 总耗时={}ms", stageDuration);
                 if (metricsCollector != null) {
                     metricsCollector.recordPipelineStage("REFLECTION", stageDuration);
                 }
 
             } catch (Exception e) {
                 log.warn(logJson("WARN", "stage_error", "REFLECTION", traceId,
-                        "Reflection failed, continuing: " + e.getMessage(), null), e);
+                        "反思评估失败，继续执行: " + e.getMessage(), null), e);
+                log.warn("⚠️ [反思评估] 阶段异常（降级继续）| error={}", e.getMessage());
                 ctx.getReflectScoreRef().set(0.5);
                 events.add(sseEvent("reflection_complete",
                         Map.of("score", 0.0, "errors", 0, "degraded", true)));

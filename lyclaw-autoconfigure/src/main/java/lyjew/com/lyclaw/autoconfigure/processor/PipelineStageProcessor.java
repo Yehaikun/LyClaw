@@ -77,11 +77,11 @@ public class PipelineStageProcessor implements BeanPostProcessor, SmartInitializ
                         beforeConstraints.put(key, before);
                     }
                 }
-                log.info("正在注册 pipeline stage: {} (order={})",
+                log.info("📌 注册管线阶段: {} (order={})",
                         reactiveStage.getStageName(), reactiveStage.getOrder());
             }
         } catch (Exception e) {
-            log.error("Failed to process @PipelineStage bean '{}': {}", beanName, e.getMessage());
+            log.error("❌ 处理 @PipelineStage Bean '{}' 失败: {}", beanName, e.getMessage());
         }
         return bean;
     }
@@ -113,14 +113,14 @@ public class PipelineStageProcessor implements BeanPostProcessor, SmartInitializ
      */
     @Override
     public void afterSingletonsInstantiated() {
-        log.info("============================================");
-        log.info("  PipelineStageProcessor 管道阶段扫描完成");
+        log.info("════════════════════════════════════════════");
+        log.info("  PipelineStageProcessor 管线阶段扫描完成");
         log.info("  共发现 {} 个阶段", discoveredReactiveStages.size());
         for (int i = 0; i < discoveredReactiveStages.size(); i++) {
             ReactivePipelineStage s = discoveredReactiveStages.get(i);
             log.info("    {}. [{}] order={}", i + 1, s.getStageName(), s.getOrder());
         }
-        log.info("============================================");
+        log.info("════════════════════════════════════════════");
     }
     /** @return 按声明顺序排序后的阶段列表 */
     public List<ReactivePipelineStage> getSortedStages() {

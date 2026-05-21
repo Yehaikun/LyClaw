@@ -47,7 +47,10 @@ public class SecurityCheckStage extends PipelineStageBase {
 
     @Override
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
-        if (ctx.isTerminated()) return Flux.empty();
+        if (ctx.isTerminated()) {
+            log.info("⏭️ [安全检查] 管线已终止，跳过");
+            return Flux.empty();
+        }
 
         return Flux.defer(() -> {
             String traceId = ctx.getTracing().getTraceId();
@@ -57,58 +60,74 @@ public class SecurityCheckStage extends PipelineStageBase {
                 ctx.getTracing().beginStage("INTERCEPT");
                 long t2 = System.currentTimeMillis();
 
-                log.info("\n\n========== [阶段 1/5] 安全检查 - 身份验证与内容过滤 [INTERCEPT] ==========");
+                log.info("\n\n========== [阶段 1] 安全检查 - 身份验证与内容过滤 [INTERCEPT] ==========");
                 log.info(logJson("INFO", "stage_start", "INTERCEPT", traceId,
-                        "Running security checks and content filter", null));
-                events.add(sseEvent("intercept_start", "Running security checks and content filter"));
+                        "开始执行安全检查和内容过滤", null));
+                log.info("🛡️ [安全检查] 开始 | sessionId={}", ctx.getSessionId());
+                events.add(sseEvent("intercept_start", "正在执行安全检查和内容过滤"));
 
                 if (securityManager != null) {
+                    log.info("🔐 [安全检查] 执行安全审批 | action=EXECUTE_CHAT");
                     var approvalResult = securityManager.approve(buildChatContext(ctx), "EXECUTE_CHAT");
                     if (!approvalResult.isApproved()) {
                         String reason = approvalResult.getReason();
                         log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
-                                "Security check denied: " + reason, null));
+                                "安全审批拒绝: " + reason, null));
+                        log.warn("⛔ [安全检查] 安全审批拒绝 | reason={}", reason);
                         ctx.getTracing().endStage("INTERCEPT");
                         ctx.setTerminated(true);
-                        events.add(sseEvent("intercept_blocked", "Security check denied: " + reason));
+                        events.add(sseEvent("intercept_blocked", "安全审批拒绝: " + reason));
                         events.add(sseEvent("done", Map.of("status", "blocked")));
                         return Flux.fromIterable(events);
                     }
                     if (approvalResult.getSandboxLevel() != null) {
                         ctx.setSandboxLevel(approvalResult.getSandboxLevel());
                         log.info(logJson("INFO", "sandbox_level", "INTERCEPT", traceId,
-                                "Sandbox level: " + approvalResult.getSandboxLevel().name(), null));
+                                "沙箱级别: " + approvalResult.getSandboxLevel().name(), null));
+                        log.info("🏖️ [安全检查] 沙箱级别={}", approvalResult.getSandboxLevel().name());
                     }
+                    log.info("✅ [安全检查] 安全审批通过");
+                } else {
+                    log.info("ℹ️ [安全检查] 无SecurityManager，跳过安全审批");
                 }
 
                 if (contentFilter != null) {
+                    log.info("🔍 [安全检查] 执行内容过滤 | 原始消息长度={}",
+                            ctx.getUserMessage() != null ? ctx.getUserMessage().length() : 0);
                     FilterResult filterResult = contentFilter.filter(ctx.getUserMessage(), buildChatContext(ctx));
                     if (!filterResult.isPassed()) {
                         String reason = filterResult.getReason();
                         log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
-                                "Content filter blocked: " + reason, null));
+                                "内容过滤拦截: " + reason, null));
+                        log.warn("⛔ [安全检查] 内容过滤拦截 | reason={}", reason);
                         ctx.getTracing().endStage("INTERCEPT");
                         ctx.setTerminated(true);
-                        events.add(sseEvent("intercept_blocked", "Content filter blocked: " + reason));
+                        events.add(sseEvent("intercept_blocked", "内容过滤拦截: " + reason));
                         events.add(sseEvent("done", Map.of("status", "blocked")));
                         return Flux.fromIterable(events);
                     }
                     ctx.setUserMessage(filterResult.getFilteredContent());
+                    log.info("✅ [安全检查] 内容过滤通过 | 过滤后消息长度={}",
+                            filterResult.getFilteredContent() != null ? filterResult.getFilteredContent().length() : 0);
+                } else {
+                    log.info("ℹ️ [安全检查] 无ContentFilter，跳过内容过滤");
                 }
 
-                events.add(sseEvent("intercept_complete", "Security check and content filter passed"));
+                events.add(sseEvent("intercept_complete", "安全检查和内容过滤已通过"));
                 long stageDuration = System.currentTimeMillis() - t2;
                 ctx.getTracing().endStage("INTERCEPT");
                 log.info(logJson("INFO", "stage_complete", "INTERCEPT", traceId,
-                        "Intercept checks passed", stageDuration));
+                        "安全检查通过", stageDuration));
+                log.info("✅ [安全检查] 阶段完成 | 总耗时={}ms", stageDuration);
                 if (metricsCollector != null) {
                     metricsCollector.recordPipelineStage("INTERCEPT", stageDuration);
                 }
             } catch (Exception e) {
                 log.warn(logJson("WARN", "stage_error", "INTERCEPT", traceId,
-                        "Security check failed, continuing: " + e.getMessage(), null), e);
+                        "安全检查失败，继续执行: " + e.getMessage(), null), e);
+                log.warn("⚠️ [安全检查] 阶段异常（降级继续）| error={}", e.getMessage());
                 ctx.getTracing().endStage("INTERCEPT");
-                events.add(sseEvent("intercept_complete", "Security check skipped (error)"));
+                events.add(sseEvent("intercept_complete", "安全检查跳过（异常）"));
             }
             return Flux.fromIterable(events);
         });

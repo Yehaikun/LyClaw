@@ -43,7 +43,12 @@ public class RespondStage extends PipelineStageBase {
 
     @Override
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
-        if (ctx.isTerminated() || !ctx.isPipelineOk()) {
+        if (ctx.isTerminated()) {
+            log.info("⏭️ [响应生成] 管线已终止，跳过");
+            return Flux.empty();
+        }
+        if (!ctx.isPipelineOk()) {
+            log.warn("⏭️ [响应生成] 管线状态异常(pipelineOk=false)，跳过");
             return Flux.empty();
         }
 
@@ -53,9 +58,10 @@ public class RespondStage extends PipelineStageBase {
             int fc = ctx.getFailCount().get();
             List<String> toolResults = ctx.getToolResults();
 
-            log.info("\n\n========== [阶段 3/5] 响应生成 - ReAct循环 [RESPOND] ==========");
+            log.info("\n\n========== [阶段 2] 响应生成 - ReAct循环 [RESPOND] ==========");
             log.info(logJson("INFO", "stage_start", "RESPOND", traceId,
-                    "Starting response generation", null));
+                    "开始响应生成", null));
+            log.info("🤖 [响应生成] 开始 | sessionId={} | 成功任务={} | 失败任务={}", ctx.getSessionId(), sc, fc);
             ctx.getCurrentStage().set("RESPOND");
             ctx.getTracing().beginStage("RESPOND");
 
@@ -68,27 +74,32 @@ public class RespondStage extends PipelineStageBase {
                     toolDefs = toolRegistry.getAllDefinitions();
                 }
                 log.info(logJson("INFO", "tools_fetched", "RESPOND", traceId,
-                        toolDefs.size() + " tools available", null));
+                        "获取到 " + toolDefs.size() + " 个工具", null));
+                log.info("🔧 [响应生成] 工具列表获取完成 | 可用工具数={}", toolDefs.size());
             } catch (Exception e) {
-                log.error("获取工具列表失败: {}", e.getMessage(), e);
+                log.error("❌ [响应生成] 获取工具列表失败: {}", e.getMessage(), e);
                 toolDefs = Collections.emptyList();
             }
 
             Flux<ServerSentEvent<String>> bodyFlux;
             if (chatFacade != null && reActEngine != null && !toolDefs.isEmpty()) {
+                log.info("🧠 [响应生成] 使用ReAct引擎 + 工具调用模式");
                 bodyFlux = reactWithReActEngine(ctx, traceId, toolDefs);
             } else if (chatFacade != null) {
+                log.info("💬 [响应生成] 使用简单流式聊天模式（无工具）");
                 bodyFlux = simpleChatStream(ctx, traceId);
             } else {
+                log.warn("⚠️ [响应生成] 无ChatFacade可用，使用回退响应");
                 String fallback = buildFallbackResponse(sc, fc, toolResults);
                 bodyFlux = Flux.just(sseEvent("message", fallback));
             }
 
-            return Flux.just(sseEvent("respond_start", "Generating AI response"))
+            return Flux.just(sseEvent("respond_start", "正在生成AI响应"))
                     .concatWith(bodyFlux)
                     .onErrorResume(err -> {
                         log.error(logJson("ERROR", "stage_error", "RESPOND", traceId,
-                                "Response generation failed: " + err.getMessage(), null), err);
+                                "响应生成失败: " + err.getMessage(), null), err);
+                        log.error("❌ [响应生成] 阶段异常 | error={}", err.getMessage());
                         String fallback = buildFallbackResponse(sc, fc, toolResults);
                         return Flux.just(
                                 sseEvent("message", fallback),
@@ -114,7 +125,9 @@ public class RespondStage extends PipelineStageBase {
         request.setStream(true);
 
         log.info(logJson("INFO", "llm_stream_detect", "RESPOND", traceId,
-                "Streaming with tool detection via ReActEngine", null));
+                "通过ReActEngine进行流式+工具检测", null));
+        log.info("🌊 [响应生成] 启动ReAct引擎流式调用 | 工具数={} | 审批工具数={}",
+                toolDefs.size(), toolDefs.stream().filter(def -> !def.isReadOnly()).count());
 
         ToolExecutor toolExecutor = (toolName, toolCallId, arguments) -> {
             Map<String, Object> args;
@@ -125,11 +138,12 @@ public class RespondStage extends PipelineStageBase {
                     args = Collections.emptyMap();
                 }
             } catch (Exception e) {
-                log.error("工具参数JSON解析失败: tool={} error={}", toolName, e.getMessage(), e);
+                log.error("❌ [响应生成] 工具参数JSON解析失败: tool={} error={}", toolName, e.getMessage(), e);
                 args = Collections.emptyMap();
             }
 
             SandboxLevel level = ctx.getSandboxLevel() != null ? ctx.getSandboxLevel() : SandboxLevel.DIRECT;
+            log.debug("🔨 [响应生成] 执行工具: {} | toolCallId={} | 沙箱级别={}", toolName, toolCallId, level);
 
             try {
                 ToolCall toolCall = ToolCall.builder()
@@ -146,10 +160,13 @@ public class RespondStage extends PipelineStageBase {
                     ctx.getFailCount().incrementAndGet();
                 }
                 log.info(logJson("INFO", "tool_executed", "RESPOND", traceId,
-                        "tool=" + toolName + " success=" + result.isSuccess(), null));
+                        "工具=" + toolName + " 成功=" + result.isSuccess(), null));
+                log.info("{} [响应生成] 工具执行完成: {} | 成功={} | 累计成功={} 失败={}",
+                        result.isSuccess() ? "✅" : "❌", toolName, result.isSuccess(),
+                        ctx.getSuccessCount().get(), ctx.getFailCount().get());
                 return result.isSuccess() ? result.getResult() : "Error: " + result.getError();
             } catch (Exception e) {
-                log.error("工具执行失败: tool={} error={}", toolName, e.getMessage(), e);
+                log.error("❌ [响应生成] 工具执行异常: tool={} error={}", toolName, e.getMessage(), e);
                 ctx.getFailCount().incrementAndGet();
                 return "Tool error: " + e.getMessage();
             }
@@ -180,7 +197,8 @@ public class RespondStage extends PipelineStageBase {
             RoutingDecision decision = chatFacade.route(request, null);
             ChatModel model = chatFacade.resolveModel(decision);
             log.info(logJson("INFO", "llm_stream", "RESPOND", traceId,
-                    "Streaming via " + decision.provider() + ":" + decision.model(), null));
+                    "流式调用 " + decision.provider() + ":" + decision.model(), null));
+            log.info("📡 [响应生成] 路由决策 | provider={} | model={}", decision.provider(), decision.model());
 
             return model.stream(request)
                     .handle((response, sink) -> {
