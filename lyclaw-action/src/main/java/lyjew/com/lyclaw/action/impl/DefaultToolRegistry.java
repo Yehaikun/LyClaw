@@ -12,6 +12,8 @@ import lyjew.com.lyclaw.tool.ToolRegistry;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -57,6 +59,18 @@ public class DefaultToolRegistry implements ToolRegistry {
             for (Tool tool : toolList) {
                 register(tool);
             }
+        }
+    }
+
+    /**
+     * 在 Spring 容器刷新完成后自动发现并注册所有 {@link ToolProvider} Bean。
+     * 使用事件监听器避免与 SubagentSpawner → ToolRegistry 形成循环依赖。
+     */
+    @EventListener(ContextRefreshedEvent.class)
+    public void onContextRefreshed(ContextRefreshedEvent event) {
+        Map<String, ToolProvider> providerBeans = event.getApplicationContext().getBeansOfType(ToolProvider.class);
+        for (ToolProvider provider : providerBeans.values()) {
+            registerProvider(provider);
         }
     }
 
@@ -131,6 +145,18 @@ public class DefaultToolRegistry implements ToolRegistry {
      * @return 工具定义列表
      */
     public List<ToolDefinition> getAllDefinitions(ChatRequest request) {
+        return getAllDefinitions(request, Collections.emptyMap());
+    }
+
+    /**
+     * 获取适用于指定请求的所有工具定义，携带扩展属性（如 AgentContext）。
+     * 扩展属性会被传入 {@link ToolProviderRequest}，供 ToolProvider 在执行时使用。
+     *
+     * @param request    当前聊天请求，为 null 时只返回静态工具
+     * @param attributes 扩展属性（如 "agentContext" → AgentContext 实例）
+     * @return 工具定义列表
+     */
+    public List<ToolDefinition> getAllDefinitions(ChatRequest request, Map<String, Object> attributes) {
         Stream<ToolDefinition> staticDefs = tools.values().stream()
                 .map(Tool::getDefinition);
 
@@ -138,7 +164,7 @@ public class DefaultToolRegistry implements ToolRegistry {
             return staticDefs.collect(Collectors.toUnmodifiableList());
         }
 
-        ToolProviderRequest providerRequest = new ToolProviderRequest(request);
+        ToolProviderRequest providerRequest = new ToolProviderRequest(request, attributes);
         Stream<ToolDefinition> dynamicDefs = toolProviders.stream()
                 .flatMap(p -> p.provideTools(providerRequest).getDefinitions().stream());
 
@@ -150,13 +176,22 @@ public class DefaultToolRegistry implements ToolRegistry {
      * 合并所有工具执行器（静态 + 动态）用于查找。
      */
     private Tool resolveExecutor(String toolName, ChatRequest request) {
+        return resolveExecutor(toolName, request, Collections.emptyMap());
+    }
+
+    /**
+     * 合并所有工具执行器（静态 + 动态）用于查找，携带扩展属性。
+     * 扩展属性被传入 ToolProviderRequest，使 DelegateToAgentToolProvider
+     * 等能在执行时解析到 AgentContext。
+     */
+    private Tool resolveExecutor(String toolName, ChatRequest request, Map<String, Object> attributes) {
         // 优先查静态工具
         Tool tool = tools.get(toolName);
         if (tool != null) return tool;
 
         // 查动态提供者
         if (request != null) {
-            ToolProviderRequest providerRequest = new ToolProviderRequest(request);
+            ToolProviderRequest providerRequest = new ToolProviderRequest(request, attributes);
             for (ToolProvider provider : toolProviders) {
                 ToolProvider.ToolProviderResult result = provider.provideTools(providerRequest);
                 ToolExecutor executor = result.getExecutor(toolName);
@@ -181,20 +216,22 @@ public class DefaultToolRegistry implements ToolRegistry {
 
     /**
      * 执行指定工具的调用。先查静态注册表，再查动态提供者。
+     * 当工具未找到时返回 failure 结果而非抛出异常，
+     * 以便调用方可回退到 executeByName 尝试动态提供者。
      *
      * @param toolCall 工具调用信息（包含工具名和参数）
      * @param context  对话上下文
-     * @return 工具执行结果
-     * @throws IllegalArgumentException 当工具未注册
+     * @return 工具执行结果（工具未注册时返回 failure）
      */
     @Override
     public ToolExecutionResult execute(ToolCall toolCall, ChatContext context) {
         ChatRequest request = context != null ? context.getRequest() : null;
         Tool tool = resolveExecutor(toolCall.getName(), request);
         if (tool == null) {
-            throw new IllegalArgumentException(
+            return ToolExecutionResult.failure(
                     "Tool not found: " + toolCall.getName()
-                            + ". 可用工具: " + getAllToolNames(request));
+                            + ". 可用工具: " + getAllToolNames(request),
+                    toolCall.getName());
         }
         return tool.execute(toolCall, context);
     }
@@ -205,7 +242,18 @@ public class DefaultToolRegistry implements ToolRegistry {
      */
     public ToolExecutionResult executeByName(String toolName, String toolCallId,
                                               String argumentsJson, ChatRequest request) {
-        Tool tool = resolveExecutor(toolName, request);
+        return executeByName(toolName, toolCallId, argumentsJson, request, Collections.emptyMap());
+    }
+
+    /**
+     * 通过 ToolExecutor 直接执行工具，携带扩展属性。
+     * 扩展属性（如 "agentContext"）会被传入 ToolProviderRequest，
+     * 供 DelegateToAgentToolProvider 在执行时解析 AgentContext。
+     */
+    public ToolExecutionResult executeByName(String toolName, String toolCallId,
+                                              String argumentsJson, ChatRequest request,
+                                              Map<String, Object> attributes) {
+        Tool tool = resolveExecutor(toolName, request, attributes);
         if (tool == null) {
             return ToolExecutionResult.failure(
                     "Tool not found: " + toolName + ". 可用工具: " + getAllToolNames(request),

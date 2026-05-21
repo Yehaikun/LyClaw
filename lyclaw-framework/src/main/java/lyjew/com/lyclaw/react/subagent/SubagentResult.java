@@ -125,6 +125,19 @@ public class SubagentResult {
                 .build();
     }
 
+    /**
+     * Non-null proceed signal for use as a Mono sentinel value.
+     * Not a real result; downstream flatMaps should ignore this and
+     * map it to actual work. Only for internal use within spawnSubagent.
+     */
+    static SubagentResult proceed(String agentId) {
+        return SubagentResult.builder()
+                .success(true)
+                .agentId(agentId)
+                .output("__proceed__")
+                .build();
+    }
+
     // ================================================================
     // Formatting
     // ================================================================

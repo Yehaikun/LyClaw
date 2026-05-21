@@ -323,7 +323,7 @@ class AgentProxyIntegrationTest {
             ToolExecutionResult notFound = ToolExecutionResult.failure("not found", "search");
             ToolExecutionResult success = ToolExecutionResult.success("found it", "search");
             when(toolRegistry.execute(any(ToolCall.class), any())).thenReturn(notFound);
-            when(toolRegistry.executeByName(any(), any(), any(), any())).thenReturn(success);
+            when(toolRegistry.executeByName(any(), any(), any(), any(), any())).thenReturn(success);
 
             AtomicReference<ToolExecutor> captured = new AtomicReference<>();
             when(reActEngine.execute(any(), any(ChatRequest.class), any())).thenAnswer(inv -> {
@@ -339,7 +339,7 @@ class AgentProxyIntegrationTest {
             // 手动调用 ToolExecutor，验证回退到 executeByName
             String toolResult = captured.get().execute("search", "call-1", "{\"q\":\"test\"}");
             assertThat(toolResult).isEqualTo("found it");
-            verify(toolRegistry).executeByName(eq("search"), eq("call-1"), eq("{\"q\":\"test\"}"), any(ChatRequest.class));
+            verify(toolRegistry).executeByName(eq("search"), eq("call-1"), eq("{\"q\":\"test\"}"), any(ChatRequest.class), any());
         }
     }
 

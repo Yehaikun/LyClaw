@@ -213,7 +213,7 @@ public class SubagentSpawner {
                                 "Timed out waiting for concurrency slot (session: "
                                         + parentSessionId + ", agent: " + targetAgentId + ")");
                     }
-                    return null; // proceed signal
+                    return SubagentResult.proceed(targetAgentId); // non-null proceed signal
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(proceed -> runSubagent(
@@ -371,7 +371,7 @@ public class SubagentSpawner {
                         + "or when parallelizing work across multiple agents.")
                 .parameters(parameters)
                 .source("builtin")
-                .readOnly(false)
+                .readOnly(true)
                 .timeout(config.getRunTimeoutSeconds() * 1000L)
                 .build();
     }
@@ -441,7 +441,8 @@ public class SubagentSpawner {
                         .build();
                 lyjew.com.lyclaw.tool.ToolExecutionResult result = toolRegistry.execute(toolCall, null);
                 if (!result.isSuccess()) {
-                    result = toolRegistry.executeByName(toolName, toolCallId, argumentsJson, childCtx.getChatRequest());
+                    result = toolRegistry.executeByName(toolName, toolCallId, argumentsJson,
+                            childCtx.getChatRequest(), Map.of("agentContext", childCtx));
                 }
                 if (result.isSuccess()) {
                     return result.getResult() != null ? result.getResult() : "";

@@ -34,6 +34,8 @@ public class Message extends BaseDTO {
     private List<ToolCall> toolCalls;
     /** 工具调用 ID，用于将 tool 消息关联到对应的 tool_calls */
     private String toolCallId;
+    /** 工具名称，用于追踪是哪个工具产生了这条消息。Phase 3 ContextPruner 使用 */
+    private String toolName;
 
     /** 思考/推理内容，用于 DeepSeek 等 reasoning 模型（reasoning_content） */
     private String thinking;
@@ -77,5 +79,17 @@ public class Message extends BaseDTO {
      */
     public static Message tool(String toolCallId, String content) {
         return Message.builder().role("tool").toolCallId(toolCallId).content(content).build();
+    }
+
+    /**
+     * 创建工具返回结果消息（含工具名称）。
+     *
+     * @param toolCallId 关联的工具调用 ID
+     * @param toolName   工具名称
+     * @param content    工具执行返回的内容
+     * @return role 为 "tool" 的消息实例
+     */
+    public static Message tool(String toolCallId, String toolName, String content) {
+        return Message.builder().role("tool").toolCallId(toolCallId).toolName(toolName).content(content).build();
     }
 }

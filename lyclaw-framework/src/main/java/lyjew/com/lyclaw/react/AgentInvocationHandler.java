@@ -294,7 +294,8 @@ public class AgentInvocationHandler implements InvocationHandler {
                         .build();
                 ToolExecutionResult result = toolRegistry.execute(toolCall, null);
                 if (!result.isSuccess()) {
-                    result = toolRegistry.executeByName(toolName, toolCallId, argumentsJson, ctx.getChatRequest());
+                    result = toolRegistry.executeByName(toolName, toolCallId, argumentsJson,
+                            ctx.getChatRequest(), java.util.Map.of("agentContext", ctx));
                 }
                 String output;
                 if (result.isSuccess()) {
@@ -575,6 +576,12 @@ public class AgentInvocationHandler implements InvocationHandler {
                 (resolvedConfig.getModel() != null && !resolvedConfig.getModel().isEmpty()) ? resolvedConfig.getModel() : null;
         if (model != null && !model.isEmpty()) {
             builder.model(model);
+        }
+
+        // Phase 3: set agentId from resolved config so ChatRequest carries agent identity
+        // Enables AgentRouter to identify which agent is handling a given request
+        if (resolvedConfig.getAgentId() != null && !resolvedConfig.getAgentId().isEmpty()) {
+            builder.agentId(resolvedConfig.getAgentId());
         }
 
         Class<?> returnType = method.getReturnType();

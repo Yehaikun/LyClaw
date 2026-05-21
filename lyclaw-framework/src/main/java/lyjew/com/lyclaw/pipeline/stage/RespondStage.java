@@ -61,7 +61,12 @@ public class RespondStage extends PipelineStageBase {
 
             List<ToolDefinition> toolDefs;
             try {
-                toolDefs = toolRegistry.getAllDefinitions();
+                lyjew.com.lyclaw.model.ChatRequest req = ctx.getChatRequest();
+                if (req != null) {
+                    toolDefs = toolRegistry.getAllDefinitions(req, Map.of("agentContext", ctx));
+                } else {
+                    toolDefs = toolRegistry.getAllDefinitions();
+                }
                 log.info(logJson("INFO", "tools_fetched", "RESPOND", traceId,
                         toolDefs.size() + " tools available", null));
             } catch (Exception e) {
@@ -131,7 +136,8 @@ public class RespondStage extends PipelineStageBase {
                         .toolCallId(toolCallId).name(toolName).arguments(arguments).build();
                 ToolExecutionResult result = ctx.getToolRegistry().execute(toolCall, null);
                 if (!result.isSuccess()) {
-                    result = ctx.getToolRegistry().executeByName(toolName, toolCallId, arguments, request);
+                    result = ctx.getToolRegistry().executeByName(toolName, toolCallId, arguments, request,
+                            Map.of("agentContext", ctx));
                 }
                 ctx.addToolResult(result.isSuccess() ? result.getResult() : result.getError());
                 if (result.isSuccess()) {

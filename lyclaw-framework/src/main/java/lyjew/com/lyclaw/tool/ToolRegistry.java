@@ -6,6 +6,7 @@ import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 工具注册表 SPI 接口。
@@ -48,6 +49,18 @@ public interface ToolRegistry {
     }
 
     /**
+     * 获取适用于指定请求的所有工具定义，携带扩展属性。
+     * 扩展属性（如 "agentContext"）会被传入 ToolProviderRequest，
+     * 供 ToolProvider 在生成定义和执行时使用。
+     *
+     * @param request    当前聊天请求
+     * @param attributes 扩展属性
+     */
+    default List<ToolDefinition> getAllDefinitions(ChatRequest request, Map<String, Object> attributes) {
+        return getAllDefinitions(request);
+    }
+
+    /**
      * 根据工具调用请求执行对应的工具。
      */
     ToolExecutionResult execute(ToolCall toolCall, ChatContext context);
@@ -61,5 +74,16 @@ public interface ToolRegistry {
         ToolCall toolCall = ToolCall.builder()
                 .toolCallId(toolCallId).name(toolName).arguments(argumentsJson).build();
         return execute(toolCall, null);
+    }
+
+    /**
+     * 通过工具名称和参数直接执行，携带扩展属性。
+     * 扩展属性（如 "agentContext"）会被传入 ToolProviderRequest，
+     * 供 DelegateToAgentToolProvider 在执行时解析 AgentContext。
+     */
+    default ToolExecutionResult executeByName(String toolName, String toolCallId,
+                                               String argumentsJson, ChatRequest request,
+                                               Map<String, Object> attributes) {
+        return executeByName(toolName, toolCallId, argumentsJson, request);
     }
 }
