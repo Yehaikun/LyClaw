@@ -109,25 +109,24 @@ CompactionEngine 通过以下方式解决此问题：
 ```java
 package lyjew.com.lyclaw.compaction;
 
-import lombok.Builder;
-import lombok.Data;
-import java.time.Duration;
 import java.util.List;
 
 /**
- * 压缩引擎的配置。
+ * 压缩引擎的运行时配置 POJO。
  *
  * <p>控制何时以及如何压缩会话对话记录，以防止
  * 长时间运行的代理会话出现上下文窗口溢出。</p>
  *
- * <p>映射自 application.yml 中的 {@code lyclaw.compaction}。</p>
+ * <p>通过 {@code lyclaw.compaction} YAML 前缀绑定，由
+ * {@link CompactionProperties} 提供 Spring Boot 配置绑定，
+ * 本类作为框架内部传递的不可变配置快照。</p>
+ *
+ * <p>字段默认值即框架硬编码默认值，Spring Boot 通过 setter
+ * 覆盖 YAML 中显式配置的字段。</p>
  */
-@Data
-@Builder
 public class CompactionConfig {
 
     /** 压缩策略模式。 */
-    @Builder.Default
     CompactionMode mode = CompactionMode.DEFAULT;
 
     /**
@@ -135,14 +134,12 @@ public class CompactionConfig {
      * 用于系统提示、引导内容和工具定义。
      * 默认值：8000（按每 token 4 字符计，约 32KB）。
      */
-    @Builder.Default
     int reserveTokens = 8000;
 
     /**
      * 保留最近 N 个 token 的对话历史不被压缩。
      * 默认值：4000（约 16KB）。
      */
-    @Builder.Default
     int keepRecentTokens = 4000;
 
     /**
@@ -150,7 +147,6 @@ public class CompactionConfig {
      * 也不会压缩到低于此剩余 token 数。
      * 默认值：2000。
      */
-    @Builder.Default
     int reserveTokensFloor = 2000;
 
     /**
@@ -158,7 +154,6 @@ public class CompactionConfig {
      * 当历史记录超过此份额时，触发压缩。
      * 默认值：0.5（50%）。
      */
-    @Builder.Default
     double maxHistoryShare = 0.5;
 
     /** 注入到压缩 LLM 提示中的自定义指令。 */
@@ -169,7 +164,6 @@ public class CompactionConfig {
      * 这些是紧邻当前用户消息之前的轮次。
      * 默认值：3。
      */
-    @Builder.Default
     int recentTurnsPreserve = 3;
 
     /**
@@ -179,26 +173,21 @@ public class CompactionConfig {
      * OFF：无特殊处理。
      * CUSTOM：使用 identifierInstructions 进行指导。
      */
-    @Builder.Default
     IdentifierPolicy identifierPolicy = IdentifierPolicy.STRICT;
 
     /** 标识符保留的自定义指令（仅 CUSTOM 模式）。 */
     String identifierInstructions;
 
     /** 质量把关配置。 */
-    @Builder.Default
     QualityGuard qualityGuard = new QualityGuard();
 
     /** 中途预检查配置。 */
-    @Builder.Default
     MidTurnPrecheck midTurnPrecheck = new MidTurnPrecheck();
 
     /** 压缩后是否同步或异步重新索引记忆。 */
-    @Builder.Default
     PostIndexSync postIndexSync = PostIndexSync.ASYNC;
 
     /** 记忆刷新配置（在压缩之前运行）。 */
-    @Builder.Default
     MemoryFlush memoryFlush = new MemoryFlush();
 
     /**
@@ -206,7 +195,6 @@ public class CompactionConfig {
      * 典型值："Session Startup"、"Red Lines"。
      * 这些内容在上下文转移后重新锚定代理的行为。
      */
-    @Builder.Default
     List<String> postCompactionSections = List.of("Session Startup", "Red Lines");
 
     /**
@@ -216,29 +204,65 @@ public class CompactionConfig {
     String model;
 
     /** 单次压缩 LLM 调用的超时时间。默认值：900 秒。 */
-    @Builder.Default
     int timeoutSeconds = 900;
 
     /**
      * 如果为 true，则在压缩后截断尾部内容，
      * 而不是将其与摘要一起保留。默认值：false。
      */
-    @Builder.Default
     boolean truncateAfterCompaction = false;
 
     /**
      * 触发压缩的最大活跃对话记录字节数。
      * 默认值：10 MB（10 * 1024 * 1024）。
      */
-    @Builder.Default
     long maxActiveTranscriptBytes = 10 * 1024 * 1024;
 
     /**
      * 如果为 true，则发送 SSE 事件通知用户压缩已发生。
      * 默认值：false（静默）。
      */
-    @Builder.Default
     boolean notifyUser = false;
+
+    // ── getters / setters（供 Spring Boot 配置绑定） ──────────
+    public CompactionMode getMode() { return mode; }
+    public void setMode(CompactionMode mode) { this.mode = mode; }
+    public int getReserveTokens() { return reserveTokens; }
+    public void setReserveTokens(int reserveTokens) { this.reserveTokens = reserveTokens; }
+    public int getKeepRecentTokens() { return keepRecentTokens; }
+    public void setKeepRecentTokens(int keepRecentTokens) { this.keepRecentTokens = keepRecentTokens; }
+    public int getReserveTokensFloor() { return reserveTokensFloor; }
+    public void setReserveTokensFloor(int reserveTokensFloor) { this.reserveTokensFloor = reserveTokensFloor; }
+    public double getMaxHistoryShare() { return maxHistoryShare; }
+    public void setMaxHistoryShare(double maxHistoryShare) { this.maxHistoryShare = maxHistoryShare; }
+    public String getCustomInstructions() { return customInstructions; }
+    public void setCustomInstructions(String customInstructions) { this.customInstructions = customInstructions; }
+    public int getRecentTurnsPreserve() { return recentTurnsPreserve; }
+    public void setRecentTurnsPreserve(int recentTurnsPreserve) { this.recentTurnsPreserve = recentTurnsPreserve; }
+    public IdentifierPolicy getIdentifierPolicy() { return identifierPolicy; }
+    public void setIdentifierPolicy(IdentifierPolicy identifierPolicy) { this.identifierPolicy = identifierPolicy; }
+    public String getIdentifierInstructions() { return identifierInstructions; }
+    public void setIdentifierInstructions(String identifierInstructions) { this.identifierInstructions = identifierInstructions; }
+    public QualityGuard getQualityGuard() { return qualityGuard; }
+    public void setQualityGuard(QualityGuard qualityGuard) { this.qualityGuard = qualityGuard; }
+    public MidTurnPrecheck getMidTurnPrecheck() { return midTurnPrecheck; }
+    public void setMidTurnPrecheck(MidTurnPrecheck midTurnPrecheck) { this.midTurnPrecheck = midTurnPrecheck; }
+    public PostIndexSync getPostIndexSync() { return postIndexSync; }
+    public void setPostIndexSync(PostIndexSync postIndexSync) { this.postIndexSync = postIndexSync; }
+    public MemoryFlush getMemoryFlush() { return memoryFlush; }
+    public void setMemoryFlush(MemoryFlush memoryFlush) { this.memoryFlush = memoryFlush; }
+    public List<String> getPostCompactionSections() { return postCompactionSections; }
+    public void setPostCompactionSections(List<String> postCompactionSections) { this.postCompactionSections = postCompactionSections; }
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
+    public int getTimeoutSeconds() { return timeoutSeconds; }
+    public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
+    public boolean isTruncateAfterCompaction() { return truncateAfterCompaction; }
+    public void setTruncateAfterCompaction(boolean truncateAfterCompaction) { this.truncateAfterCompaction = truncateAfterCompaction; }
+    public long getMaxActiveTranscriptBytes() { return maxActiveTranscriptBytes; }
+    public void setMaxActiveTranscriptBytes(long maxActiveTranscriptBytes) { this.maxActiveTranscriptBytes = maxActiveTranscriptBytes; }
+    public boolean isNotifyUser() { return notifyUser; }
+    public void setNotifyUser(boolean notifyUser) { this.notifyUser = notifyUser; }
 }
 ```
 
@@ -280,10 +304,7 @@ public enum PostIndexSync {
 ```java
 package lyjew.com.lyclaw.compaction;
 
-import lombok.Data;
-
 /** 质量把关：通过第二次 LLM 调用进行压缩后验证。 */
-@Data
 public class QualityGuard {
     /** 启用质量把关。默认值：true。 */
     boolean enabled = true;
@@ -293,20 +314,26 @@ public class QualityGuard {
      * 默认值：2。
      */
     int maxRetries = 2;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public int getMaxRetries() { return maxRetries; }
+    public void setMaxRetries(int maxRetries) { this.maxRetries = maxRetries; }
 }
 
 /** 中途预检查：在长时间工具循环期间，检查是否需要压缩。 */
-@Data
 public class MidTurnPrecheck {
     /** 启用中途预检查。默认值：true。 */
     boolean enabled = true;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
 }
 
 /**
  * 记忆刷新：在压缩丢弃原始文本之前，从即将被压缩的区域
  * 提取关键事实并将其持久化到 MemorySystem。
  */
-@Data
 public class MemoryFlush {
     /** 启用压缩前的记忆刷新。默认值：true。 */
     boolean enabled = true;
@@ -326,6 +353,19 @@ public class MemoryFlush {
     String prompt;
     /** 记忆提取的系统提示覆盖。 */
     String systemPrompt;
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
+    public int getSoftThresholdTokens() { return softThresholdTokens; }
+    public void setSoftThresholdTokens(int softThresholdTokens) { this.softThresholdTokens = softThresholdTokens; }
+    public long getForceFlushTranscriptBytes() { return forceFlushTranscriptBytes; }
+    public void setForceFlushTranscriptBytes(long forceFlushTranscriptBytes) { this.forceFlushTranscriptBytes = forceFlushTranscriptBytes; }
+    public String getPrompt() { return prompt; }
+    public void setPrompt(String prompt) { this.prompt = prompt; }
+    public String getSystemPrompt() { return systemPrompt; }
+    public void setSystemPrompt(String systemPrompt) { this.systemPrompt = systemPrompt; }
 }
 ```
 
@@ -365,14 +405,14 @@ import java.util.List;
 public class CompactionEngine {
 
     private final ChatFacade chatFacade;
-    private final MemorySystem memorySystem;
     private final CompactionConfig config;
+    private final MemorySystem memorySystem; // 可空，仅 memoryFlush 启用时需要
 
-    public CompactionEngine(ChatFacade chatFacade, MemorySystem memorySystem,
-                            CompactionConfig config) {
+    public CompactionEngine(ChatFacade chatFacade, CompactionConfig config,
+                            MemorySystem memorySystem) {
         this.chatFacade = chatFacade;
-        this.memorySystem = memorySystem;
         this.config = config;
+        this.memorySystem = memorySystem;
     }
 
     /**
@@ -380,19 +420,16 @@ public class CompactionEngine {
      * 是否需要压缩。
      *
      * @param session 当前会话
-     * @param config  压缩配置
      * @return 如果需要压缩则返回 true
      */
-    public boolean needsCompaction(Session session, CompactionConfig config) {
+    public boolean needsCompaction(Session session) {
         long transcriptBytes = estimateTranscriptBytes(session);
         if (transcriptBytes >= config.getMaxActiveTranscriptBytes()) {
             return true;
         }
-        // 同时检查基于 token 的预算
         int totalTokens = estimateTokenCount(session);
         int systemTokens = estimateSystemTokens(session);
         int historyTokens = totalTokens - systemTokens;
-        int budget = systemTokens + config.getReserveTokens();
         double share = (double) historyTokens / (double) totalTokens;
         return share > config.getMaxHistoryShare()
                 || historyTokens > (totalTokens - config.getReserveTokensFloor());
@@ -406,32 +443,26 @@ public class CompactionEngine {
      * 持久化到 MemorySystem。</p>
      *
      * @param session 要压缩的会话
-     * @param config  压缩配置
      * @param ctx     当前代理上下文（用于钩子分派、追踪、模型访问）
      * @return 压缩结果
      */
-    public Mono<CompactionResult> compact(Session session, CompactionConfig config,
-                                          AgentContext ctx) {
+    public Mono<CompactionResult> compact(Session session, AgentContext ctx) {
         return Mono.fromCallable(() -> {
-            // 1. 分区消息：头部（系统/启动）、中间（待总结）、尾部（最近）
             MessagePartition partition = partitionMessages(
-                    session.getMessages(), config);
+                    session.getMessages());
 
-            // 2. 可选的记忆刷新
-            if (config.getMemoryFlush().isEnabled()) {
+            // 可选的记忆刷新
+            if (config.getMemoryFlush().isEnabled() && memorySystem != null) {
                 long middleBytes = estimateBytes(partition.middle());
                 if (middleBytes >= config.getMemoryFlush().getForceFlushTranscriptBytes()
                         || estimateTokenCount(partition.middle())
                            >= config.getMemoryFlush().getSoftThresholdTokens()) {
-                    flushMemory(partition.middle(), config, ctx);
+                    flushMemory(partition.middle(), ctx);
                 }
             }
 
-            // 3. 构建压缩提示并调用 LLM
-            String summary = callCompactionLLM(partition, config, ctx);
-
-            // 4. 重建消息列表
-            reconstructMessages(session, partition, summary, config);
+            String summary = callCompactionLLM(partition, ctx);
+            reconstructMessages(session, partition, summary);
 
             return new CompactionResult(
                     partition.headCount(), partition.middleCount(),
@@ -443,31 +474,19 @@ public class CompactionEngine {
     /**
      * 验证压缩没有丢失关键信息。
      * 在 SAFEGUARD 模式下或 qualityGuard 启用时使用。
-     *
-     * <p>该方法将压缩前和压缩后的对话记录发送给 LLM，
-     * 附带关键信息检查清单，询问压缩是否保留了这些信息。</p>
-     *
-     * @param result 待验证的压缩结果
-     * @param config 压缩配置
-     * @return 验证通过返回 true
      */
-    public Mono<Boolean> validateCompaction(CompactionResult result,
-                                            CompactionConfig config) {
+    public Mono<Boolean> validateCompaction(CompactionResult result) {
         if (!config.getQualityGuard().isEnabled()) {
             return Mono.just(true);
         }
-        // 实现：将压缩前后的摘要与检查清单一起发送给 LLM
+        // 将压缩前后的摘要与检查清单一起发送给 LLM
         // ...
         return Mono.just(true);
     }
 
     /**
      * 中途预检查：在长时间工具调用循环期间调用，
-     * 检查上下文窗口是否处于压力之下。如果是，则发出信号
-     * 表明 ReAct 循环应该暂停以进行压缩。
-     *
-     * @param ctx 包含当前工具结果和历史记录的代理上下文
-     * @return 如果中途需要压缩则返回 true
+     * 检查上下文窗口是否处于压力之下。
      */
     public Mono<Boolean> midTurnPrecheck(AgentContext ctx) {
         if (!config.getMidTurnPrecheck().isEnabled()) {
@@ -524,29 +543,26 @@ public class CompactionEngine {
      * - 中间：历史记录的主体（待总结）
      * - 尾部：最近的 `recentTurnsPreserve` 个轮次
      */
-    private MessagePartition partitionMessages(List<Message> messages,
-                                               CompactionConfig config) {
-        // 实现细节：遍历消息列表，标识系统前缀，
-        // 标识尾部轮次，其余均为中间部分。
+    private MessagePartition partitionMessages(List<Message> messages) {
+        // 遍历消息列表，标识系统前缀、尾部轮次、中间部分
+        // 使用 this.config 的 recentTurnsPreserve / postCompactionSections
         // ...
         return new MessagePartition(List.of(), List.of(), List.of(), 0, 0, 0);
     }
 
-    private void flushMemory(List<Message> middle, CompactionConfig config,
-                             AgentContext ctx) {
+    private void flushMemory(List<Message> middle, AgentContext ctx) {
         // 通过 LLM 从中间消息中提取事实，持久化到 MemorySystem
         // ...
     }
 
-    private String callCompactionLLM(MessagePartition partition,
-                                     CompactionConfig config, AgentContext ctx) {
+    private String callCompactionLLM(MessagePartition partition, AgentContext ctx) {
         // 构建压缩提示，调用 LLM，返回摘要字符串
         // ...
         return "";
     }
 
     private void reconstructMessages(Session session, MessagePartition partition,
-                                     String summary, CompactionConfig config) {
+                                     String summary) {
         // 用包含摘要的合成系统消息替换中间消息
         // ...
     }
@@ -571,9 +587,6 @@ public class CompactionEngine {
 ```java
 package lyjew.com.lyclaw.compaction;
 
-import lombok.Builder;
-import lombok.Data;
-
 import java.time.Duration;
 import java.util.Set;
 
@@ -583,98 +596,89 @@ import java.util.Set;
  *
  * <p>映射自 application.yml 中的 {@code lyclaw.compaction.pruning}。</p>
  */
-@Data
-@Builder
 public class ContextPruningConfig {
 
     public enum PruningMode {
-        /** 禁用修剪。 */
         OFF,
-        /**
-         * 缓存 TTL 模式：超过 `ttl` 的工具结果可根据
-         * 年龄和大小进行软修剪或硬清除。
-         */
+        /** 缓存 TTL 模式：超过 ttl 的工具结果可根据年龄和大小进行软修剪或硬清除。 */
         CACHE_TTL
     }
 
     /** 修剪模式。默认值：OFF。 */
-    @Builder.Default
     PruningMode mode = PruningMode.OFF;
 
     /** 工具结果内容的生存时间。默认值：30 分钟。 */
-    @Builder.Default
     Duration ttl = Duration.ofMinutes(30);
 
-    /**
-     * 保留最近 N 条助手消息不被修剪。
-     * 默认值：5。
-     */
-    @Builder.Default
+    /** 保留最近 N 条助手消息不被修剪。默认值：5。 */
     int keepLastAssistants = 5;
 
-    /**
-     * 当工具结果的字符数超过上下文预算的此比例时，
-     * 应用软修剪（保留头部 + 尾部）。
-     * 默认值：0.3（30%）。
-     */
-    @Builder.Default
+    /** 应用软修剪的上下文比例阈值。默认值：0.3（30%）。 */
     double softTrimRatio = 0.3;
 
-    /**
-     * 当工具结果总字符数超过上下文预算的此比例时，
-     * 对最旧的结果应用硬清除（替换为占位符）。
-     * 默认值：0.6（60%）。
-     */
-    @Builder.Default
+    /** 触发硬清除的上下文比例阈值。默认值：0.6（60%）。 */
     double hardClearRatio = 0.6;
 
-    /**
-     * 工具结果可被修剪的最小字符数。
-     * 较小的结果保留起来成本很低。默认值：1000。
-     */
-    @Builder.Default
+    /** 工具结果可被修剪的最小字符数。默认值：1000。 */
     int minPrunableToolChars = 1000;
 
-    /**
-     * 允许列表：可以被修剪的工具名称。
-     * 为空时，所有工具都符合条件（受 toolDeny 约束）。
-     */
+    /** 允许列表：可以被修剪的工具名称。为空时所有工具都符合条件。 */
     Set<String> toolAllow;
 
-    /**
-     * 拒绝列表：不能被修剪的工具名称。
-     * 用于高价值工具，如 file_read，其输出
-     * 必须保留在上下文中。
-     */
+    /** 拒绝列表：不能被修剪的工具名称（如 file_read、file_search）。 */
     Set<String> toolDeny;
 
     /** 软修剪配置。 */
-    @Builder.Default
     SoftTrim softTrim = new SoftTrim();
 
     /** 硬清除配置。 */
-    @Builder.Default
     HardClear hardClear = new HardClear();
 
+    // ── getters / setters ──────────────────────────
+    public PruningMode getMode() { return mode; }
+    public void setMode(PruningMode mode) { this.mode = mode; }
+    public Duration getTtl() { return ttl; }
+    public void setTtl(Duration ttl) { this.ttl = ttl; }
+    public int getKeepLastAssistants() { return keepLastAssistants; }
+    public void setKeepLastAssistants(int keepLastAssistants) { this.keepLastAssistants = keepLastAssistants; }
+    public double getSoftTrimRatio() { return softTrimRatio; }
+    public void setSoftTrimRatio(double softTrimRatio) { this.softTrimRatio = softTrimRatio; }
+    public double getHardClearRatio() { return hardClearRatio; }
+    public void setHardClearRatio(double hardClearRatio) { this.hardClearRatio = hardClearRatio; }
+    public int getMinPrunableToolChars() { return minPrunableToolChars; }
+    public void setMinPrunableToolChars(int minPrunableToolChars) { this.minPrunableToolChars = minPrunableToolChars; }
+    public Set<String> getToolAllow() { return toolAllow; }
+    public void setToolAllow(Set<String> toolAllow) { this.toolAllow = toolAllow; }
+    public Set<String> getToolDeny() { return toolDeny; }
+    public void setToolDeny(Set<String> toolDeny) { this.toolDeny = toolDeny; }
+    public SoftTrim getSoftTrim() { return softTrim; }
+    public void setSoftTrim(SoftTrim softTrim) { this.softTrim = softTrim; }
+    public HardClear getHardClear() { return hardClear; }
+    public void setHardClear(HardClear hardClear) { this.hardClear = hardClear; }
+
     /** 软修剪：保留头部和尾部各 N 个字符，中间用 "..." 替换。 */
-    @Data
     public static class SoftTrim {
-        /** 修剪后的最大字符数。默认值：8000。 */
         int maxChars = 8000;
-        /** 从头部保留的字符数。默认值：2000。 */
         int headChars = 2000;
-        /** 从尾部保留的字符数。默认值：2000。 */
         int tailChars = 2000;
+
+        public int getMaxChars() { return maxChars; }
+        public void setMaxChars(int maxChars) { this.maxChars = maxChars; }
+        public int getHeadChars() { return headChars; }
+        public void setHeadChars(int headChars) { this.headChars = headChars; }
+        public int getTailChars() { return tailChars; }
+        public void setTailChars(int tailChars) { this.tailChars = tailChars; }
     }
 
     /** 硬清除：用占位符消息替换整个工具结果。 */
-    @Data
     public static class HardClear {
-        /** 启用硬清除。默认值：true。 */
         boolean enabled = true;
-        /** 占位符文本。默认值："[earlier output trimmed for space]"。 */
-        @Builder.Default
         String placeholder = "[earlier output trimmed for space]";
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getPlaceholder() { return placeholder; }
+        public void setPlaceholder(String placeholder) { this.placeholder = placeholder; }
     }
 }
 ```
@@ -794,9 +798,6 @@ public class ContextPruner {
 ```java
 package lyjew.com.lyclaw.compaction;
 
-import lombok.Builder;
-import lombok.Data;
-
 /**
  * 各个上下文组件的硬性限制。
  *
@@ -805,29 +806,29 @@ import lombok.Data;
  *
  * <p>映射自 application.yml 中的 {@code lyclaw.compaction.limits}。</p>
  */
-@Data
-@Builder
 public class AgentContextLimits {
 
     /** 每次检索调用从 MemorySystem 返回的最大字符数。默认值：12000。 */
-    @Builder.Default
     int memoryGetMaxChars = 12000;
 
     /** 检索的默认记忆行数。默认值：120。 */
-    @Builder.Default
     int memoryGetDefaultLines = 120;
 
     /** 对话记录中任何单个工具结果的最大字符数。默认值：16000。 */
-    @Builder.Default
     int toolResultMaxChars = 16000;
 
-    /**
-     * 压缩后注入章节内容的最大字符数。
-     * postCompactionSections 中的每个章节都会被截断到此值。
-     * 默认值：1800。
-     */
-    @Builder.Default
+    /** 压缩后注入章节内容的最大字符数。默认值：1800。 */
     int postCompactionMaxChars = 1800;
+
+    // ── getters / setters ──────────────────────────
+    public int getMemoryGetMaxChars() { return memoryGetMaxChars; }
+    public void setMemoryGetMaxChars(int memoryGetMaxChars) { this.memoryGetMaxChars = memoryGetMaxChars; }
+    public int getMemoryGetDefaultLines() { return memoryGetDefaultLines; }
+    public void setMemoryGetDefaultLines(int memoryGetDefaultLines) { this.memoryGetDefaultLines = memoryGetDefaultLines; }
+    public int getToolResultMaxChars() { return toolResultMaxChars; }
+    public void setToolResultMaxChars(int toolResultMaxChars) { this.toolResultMaxChars = toolResultMaxChars; }
+    public int getPostCompactionMaxChars() { return postCompactionMaxChars; }
+    public void setPostCompactionMaxChars(int postCompactionMaxChars) { this.postCompactionMaxChars = postCompactionMaxChars; }
 
     /**
      * 将工具结果截断到 toolResultMaxChars。
@@ -867,6 +868,8 @@ package lyjew.com.lyclaw.compaction;
 
 import lyjew.com.lyclaw.annotation.PipelineStage;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
+import lyjew.com.lyclaw.pipeline.stage.PipelineStageBase;
+import lyjew.com.lyclaw.pipeline.stage.ReflectionStage;
 import lyjew.com.lyclaw.react.AgentContext;
 import lyjew.com.lyclaw.react.AgentHook;
 import lyjew.com.lyclaw.model.Session;
@@ -881,16 +884,15 @@ import java.util.List;
 /**
  * 管道阶段，检查上下文窗口压力并在需要时触发压缩。
  *
- * <p>排序在 ReflectionStage（可能已产生值得保留的最终评估数据）
- * 之后、MetricsStage（记录最终会话统计信息）之前。</p>
+ * <p>排在 ReflectionStage 之后执行（压缩前可以保留反思评估数据）。
+ * 通过 {@code after} 声明拓扑顺序。</p>
  */
 @PipelineStage(
-    name = "compaction",
-    after = {ReflectionStage.class},
-    before = {MetricsStage.class},
+    name = "Compaction",
+    after = ReflectionStage.class,
     group = "POSTPROCESSING"
 )
-public class CompactionStage implements ReactivePipelineStage {
+public class CompactionStage extends PipelineStageBase {
 
     private static final Logger log = LoggerFactory.getLogger(CompactionStage.class);
 
@@ -919,34 +921,29 @@ public class CompactionStage implements ReactivePipelineStage {
         }
 
         return Flux.defer(() -> {
-            if (!compactionEngine.needsCompaction(session, config)) {
+            if (!compactionEngine.needsCompaction(session)) {
                 return Flux.empty();
             }
 
             log.info("会话 {} 触发压缩", session.getSessionId());
 
-            // 1. 分派压缩前钩子
+            // 分派压缩前钩子（AgentHook 已有 beforeCompaction 方法）
             hooks.forEach(h -> h.beforeCompaction(ctx));
 
-            // 2. 执行压缩
-            return compactionEngine.compact(session, config, ctx)
+            return compactionEngine.compact(session, ctx)
                     .flatMapMany(result -> {
-                        // 3. 验证（质量把关）
-                        return compactionEngine.validateCompaction(result, config)
+                        return compactionEngine.validateCompaction(result)
                                 .flatMapMany(valid -> {
                                     if (!valid) {
                                         log.warn("会话 {} 的压缩验证失败",
                                                 session.getSessionId());
-                                        // 可以重试或回退到截断
                                     }
 
-                                    // 4. 注入压缩后章节
                                     injectPostCompactionSections(ctx, session);
 
-                                    // 5. 分派压缩后钩子
-                                    hooks.forEach(h -> h.afterCompaction(ctx, result));
+                                    // 分派压缩后钩子（AgentHook 已有 afterCompaction 方法）
+                                    hooks.forEach(h -> h.afterCompaction(ctx));
 
-                                    // 6. 如配置则通知用户
                                     if (config.isNotifyUser()) {
                                         return Flux.just(
                                                 ServerSentEvent.<String>builder()
@@ -962,7 +959,7 @@ public class CompactionStage implements ReactivePipelineStage {
                     })
                     .doOnError(e -> log.error("会话 {} 压缩失败",
                             session.getSessionId(), e))
-                    .onErrorResume(e -> Flux.empty()); // 绝不阻塞管道
+                    .onErrorResume(e -> Flux.empty());
         });
     }
 
@@ -975,35 +972,17 @@ public class CompactionStage implements ReactivePipelineStage {
     public int getOrder() { return 500; }
 
     @Override
-    public String getStageName() { return "compaction"; }
+    public String getStageName() { return "Compaction"; }
 }
 ```
 
-#### 钩子扩展
+#### 钩子集成
 
-为 `AgentHook` 添加压缩生命周期的新方法：
-
-```java
-// 添加到 AgentHook 接口的方法：
-public interface AgentHook {
-
-    // ... 现有方法 ...
-
-    /**
-     * 在压缩开始之前调用。钩子可以保存关键状态、
-     * 禁用工具修剪，或通知外部系统。
-     */
-    default void beforeCompaction(AgentContext ctx) {}
-
-    /**
-     * 在压缩成功完成后调用。
-     * 钩子可以验证关键指令是否得到保留。
-     *
-     * @param ctx    代理上下文
-     * @param result 包含指标的压缩结果
-     */
-    default void afterCompaction(AgentContext ctx, CompactionResult result) {}
-}
+`AgentHook` 在 Phase 2 已包含 `beforeCompaction(AgentContext ctx)` 和
+`afterCompaction(AgentContext ctx)` 两个压缩生命周期方法，
+`CompactionStage` 直接调用即可，无需额外扩展。压缩结果通过
+`AgentContext.attributes` 传递（key: `"compactionResult"`），
+避免修改接口签名。
 ```
 
 #### 中途压缩触发
@@ -1011,12 +990,10 @@ public interface AgentHook {
 在 `DefaultReActEngine` 中，在工具执行轮次之间检查上下文压力：
 
 ```java
-// 在 DefaultReActEngine.continueReActRounds() 或类似循环中：
-
-// 每轮工具之后，检查中途上下文压力
+// 在 DefaultReActEngine.continueReActRounds() 中：每轮工具后检查中途上下文压力
 if (compactionEngine != null) {
-    Boolean needsCompaction = compactionEngine.midTurnPrecheck(ctx).block();
-    if (Boolean.TRUE.equals(needsCompaction)) {
+    Boolean needsMidTurn = compactionEngine.midTurnPrecheck(ctx).block();
+    if (Boolean.TRUE.equals(needsMidTurn)) {
         log.warn("需要中途压缩；暂停 ReAct 循环");
         // 发出暂停事件，压缩，然后恢复
         // ...
@@ -1032,7 +1009,7 @@ if (compactionEngine != null) {
 package lyjew.com.lyclaw.compaction;
 
 import lyjew.com.lyclaw.model.Session;
-import lyjew.com.lyclaw.storage.StoreLayer;
+import lyjew.com.lyclaw.react.subagent.SubagentSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -1049,13 +1026,13 @@ public class ContextPruningScheduler {
 
     private final ContextPruner pruner;
     private final ContextPruningConfig config;
-    private final StoreLayer storeLayer;
+    private final SubagentSessionManager sessionManager;
 
     public ContextPruningScheduler(ContextPruner pruner, ContextPruningConfig config,
-                                   StoreLayer storeLayer) {
+                                   SubagentSessionManager sessionManager) {
         this.pruner = pruner;
         this.config = config;
-        this.storeLayer = storeLayer;
+        this.sessionManager = sessionManager;
     }
 
     /**
@@ -1068,10 +1045,10 @@ public class ContextPruningScheduler {
         }
 
         Instant now = Instant.now();
-        var sessions = storeLayer.getActiveSessions(); // 需要 StoreLayer 扩展
+        var sessions = sessionManager.getActiveSessions();
         int totalModified = 0;
 
-        for (Session session : sessions) {
+        for (Session session : sessions.values()) {
             try {
                 int modified = pruner.prune(session, now);
                 totalModified += modified;
@@ -1245,9 +1222,6 @@ lyclaw:
 ```java
 package lyjew.com.lyclaw.bootstrap;
 
-import lombok.Builder;
-import lombok.Data;
-
 import java.util.List;
 
 /**
@@ -1258,58 +1232,54 @@ import java.util.List;
  *
  * <p>映射自 application.yml 中的 {@code lyclaw.bootstrap}。</p>
  */
-@Data
-@Builder
 public class BootstrapConfig {
 
     /** 完全跳过所有引导加载。默认值：false。 */
-    @Builder.Default
     boolean skipBootstrap = false;
 
-    /**
-     * 需要跳过的可选引导文件列表。
-     * 即使引导已启用，这些特定文件也会被忽略。
-     * 例如：["SOUL.md", "HEARTBEAT.md"]。
-     */
+    /** 需要跳过的可选引导文件列表（如 ["SOUL.md", "HEARTBEAT.md"]）。 */
     List<String> skipOptionalBootstrapFiles;
 
-    /**
-     * 何时将引导内容注入到上下文中。
-     * 默认值：ALWAYS。
-     */
-    @Builder.Default
+    /** 何时将引导内容注入上下文。默认值：ALWAYS。 */
     ContextInjectionPolicy contextInjection = ContextInjectionPolicy.ALWAYS;
 
     /** 每个引导文件的最大字符数。默认值：20000。 */
-    @Builder.Default
     int bootstrapMaxChars = 20000;
 
     /** 所有引导文件的总最大字符数。默认值：150000。 */
-    @Builder.Default
     int bootstrapTotalMaxChars = 150000;
 
-    /**
-     * 截断警告策略。
-     * ONCE：内容被截断时每个会话警告一次。
-     * ALWAYS：每次都警告。
-     * NEVER：抑制警告。
-     */
-    @Builder.Default
+    /** 截断警告策略：ONCE / ALWAYS / NEVER。 */
     BootstrapTruncationWarning truncationWarning = BootstrapTruncationWarning.ONCE;
 
     /** 启动上下文配置。 */
-    @Builder.Default
     StartupContextConfig startupContext = new StartupContextConfig();
 
-    /**
-     * 代理目录路径。如果为 null，则默认为 {@code ${user.dir}/agents/{agentId}}。
-     */
+    /** 代理目录路径。null 时默认 {@code ${user.dir}/agents/{agentId}}。 */
     String agentDir;
 
-    /**
-     * 工作区目录路径。如果为 null，则默认为 {@code ${user.dir}}。
-     */
+    /** 工作区目录路径。null 时默认 {@code ${user.dir}}。 */
     String workspaceDir;
+
+    // ── getters / setters ──────────────────────────
+    public boolean isSkipBootstrap() { return skipBootstrap; }
+    public void setSkipBootstrap(boolean skipBootstrap) { this.skipBootstrap = skipBootstrap; }
+    public List<String> getSkipOptionalBootstrapFiles() { return skipOptionalBootstrapFiles; }
+    public void setSkipOptionalBootstrapFiles(List<String> skipOptionalBootstrapFiles) { this.skipOptionalBootstrapFiles = skipOptionalBootstrapFiles; }
+    public ContextInjectionPolicy getContextInjection() { return contextInjection; }
+    public void setContextInjection(ContextInjectionPolicy contextInjection) { this.contextInjection = contextInjection; }
+    public int getBootstrapMaxChars() { return bootstrapMaxChars; }
+    public void setBootstrapMaxChars(int bootstrapMaxChars) { this.bootstrapMaxChars = bootstrapMaxChars; }
+    public int getBootstrapTotalMaxChars() { return bootstrapTotalMaxChars; }
+    public void setBootstrapTotalMaxChars(int bootstrapTotalMaxChars) { this.bootstrapTotalMaxChars = bootstrapTotalMaxChars; }
+    public BootstrapTruncationWarning getTruncationWarning() { return truncationWarning; }
+    public void setTruncationWarning(BootstrapTruncationWarning truncationWarning) { this.truncationWarning = truncationWarning; }
+    public StartupContextConfig getStartupContext() { return startupContext; }
+    public void setStartupContext(StartupContextConfig startupContext) { this.startupContext = startupContext; }
+    public String getAgentDir() { return agentDir; }
+    public void setAgentDir(String agentDir) { this.agentDir = agentDir; }
+    public String getWorkspaceDir() { return workspaceDir; }
+    public void setWorkspaceDir(String workspaceDir) { this.workspaceDir = workspaceDir; }
 }
 ```
 
@@ -1341,45 +1311,43 @@ public enum BootstrapTruncationWarning {
 ```java
 package lyjew.com.lyclaw.bootstrap;
 
-import lombok.Builder;
-import lombok.Data;
-
 /**
  * 启动上下文：在会话启动时注入的文件列表、目录结构、
  * 最近的更改，为代理提供态势感知。
  */
-@Data
-@Builder
 public class StartupContextConfig {
 
     /** 启用启动上下文注入。默认值：true。 */
-    @Builder.Default
     boolean enabled = true;
 
-    /**
-     * 何时应用启动上下文。
-     * FIRST_TURN：仅在会话的第一轮。
-     * EVERY_RESET：在 /new 和 /reset 时。
-     * EVERY_TURN：每轮都注入（冗长，不推荐）。
-     */
-    @Builder.Default
+    /** 何时应用：FIRST_TURN / EVERY_RESET / EVERY_TURN。默认 FIRST_TURN。 */
     StartupContextApplyOn applyOn = StartupContextApplyOn.FIRST_TURN;
 
     /** 启动上下文中包含的每日记忆天数。默认值：3。 */
-    @Builder.Default
     int dailyMemoryDays = 3;
 
     /** 列出目录内容时的最大文件字节数。默认值：500KB。 */
-    @Builder.Default
     long maxFileBytes = 500 * 1024;
 
     /** 单个目录中列出的最大文件数。默认值：200。 */
-    @Builder.Default
     int maxFilesPerDir = 200;
 
     /** 启动上下文中目录列表的最大总字符数。默认值：8000。 */
-    @Builder.Default
     int maxDirListChars = 8000;
+
+    // ── getters / setters ──────────────────────────
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public StartupContextApplyOn getApplyOn() { return applyOn; }
+    public void setApplyOn(StartupContextApplyOn applyOn) { this.applyOn = applyOn; }
+    public int getDailyMemoryDays() { return dailyMemoryDays; }
+    public void setDailyMemoryDays(int dailyMemoryDays) { this.dailyMemoryDays = dailyMemoryDays; }
+    public long getMaxFileBytes() { return maxFileBytes; }
+    public void setMaxFileBytes(long maxFileBytes) { this.maxFileBytes = maxFileBytes; }
+    public int getMaxFilesPerDir() { return maxFilesPerDir; }
+    public void setMaxFilesPerDir(int maxFilesPerDir) { this.maxFilesPerDir = maxFilesPerDir; }
+    public int getMaxDirListChars() { return maxDirListChars; }
+    public void setMaxDirListChars(int maxDirListChars) { this.maxDirListChars = maxDirListChars; }
 }
 
 public enum StartupContextApplyOn {
@@ -1640,81 +1608,72 @@ public class BootstrapContent {
 
 ### 3.2.5 管道集成
 
-现有的 `ContextBuildStage` 被增强以加载和注入引导内容：
+现有的 `ContextBuildStage` 被增强以加载和注入引导内容。
+
+增强要点：
+- 新增 `BootstrapLoader` 和 `IdentityService` 依赖
+- 在现有记忆检索逻辑之前注入引导内容和身份前缀
 
 ```java
 // 在 ContextBuildStage（增强版）中：
 
-@PipelineStage(name = "contextBuild", group = "PREPROCESSING")
-public class ContextBuildStage implements ReactivePipelineStage {
+@PipelineStage(name = "ContextBuild", group = "PREPROCESSING")
+public class ContextBuildStage extends PipelineStageBase {
 
-    private final ContextBuilder contextBuilder;
+    private final MemorySystem memorySystem;
+    private final MetricsCollector metricsCollector;
     private final BootstrapLoader bootstrapLoader;   // 新增
-    private final BootstrapConfig bootstrapConfig;    // 新增
-    private final IdentityConfig identityConfig;      // 新增（参见 §3.4）
+    private final IdentityService identityService;   // 新增（参见 §3.4）
 
-    // ... 构造函数 ...
+    public ContextBuildStage(MemorySystem memorySystem,
+                              @Nullable MetricsCollector metricsCollector,
+                              BootstrapLoader bootstrapLoader,
+                              IdentityService identityService) {
+        this.memorySystem = memorySystem;
+        this.metricsCollector = metricsCollector;
+        this.bootstrapLoader = bootstrapLoader;
+        this.identityService = identityService;
+    }
 
     @Override
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
         if (ctx.isTerminated()) return Flux.empty();
 
-        String agentId = ctx.getAttribute("agentId"); // 由 AgentRouter 设置
-        String agentDir = bootstrapConfig.getAgentDir() != null
-                ? bootstrapConfig.getAgentDir()
-                : resolveAgentDir(agentId);
+        return Flux.defer(() -> {
+            String traceId = ctx.getTracing().getTraceId();
+            List<ServerSentEvent<String>> events = new ArrayList<>();
+            try {
+                ctx.getCurrentStage().set("CONTEXT_BUILD");
 
-        // 1. 加载引导内容
-        BootstrapContent bootstrap = bootstrapLoader.loadBootstrap(
-                agentDir, bootstrapConfig.getWorkspaceDir(), bootstrapConfig);
+                // 1. 加载引导内容并注入到系统提示
+                String agentId = ctx.getAgentId();
+                String agentDir = ctx.getAgentDir();
+                if (agentId != null && bootstrapLoader != null) {
+                    BootstrapContent bootstrap = bootstrapLoader.loadBootstrap(
+                            agentDir, ctx.getWorkspaceDir());
+                    String injection = bootstrapLoader.buildContextInjection(bootstrap);
+                    if (injection != null && !injection.isEmpty()) {
+                        String currentPrompt = ctx.getSystemPrompt();
+                        ctx.setSystemPrompt(injection + "\n\n" + currentPrompt);
+                    }
+                }
 
-        // 2. 确定注入策略
-        ContextInjectionPolicy policy = bootstrapConfig.getContextInjection();
-        boolean isContinuation = ctx.getAttribute("isContinuation") != null
-                && (Boolean) ctx.getAttribute("isContinuation");
-        if (policy == ContextInjectionPolicy.CONTINUATION_SKIP && isContinuation) {
-            policy = ContextInjectionPolicy.NEVER;
-        }
+                // 2. 解析身份并存储到 ctx（供下游 RespondStage 使用）
+                if (identityService != null && agentId != null) {
+                    IdentityConfig identity = identityService.resolveIdentity(agentId, agentDir);
+                    ctx.setAttribute("identity", identity);
+                }
 
-        // 3. 构建注入字符串
-        String injection = bootstrapLoader.buildContextInjection(bootstrap, policy);
+                // 3. 现有的记忆检索逻辑
+                // ... (保持现有 MemorySystem.retrieve 逻辑不变) ...
 
-        // 4. 注入到系统提示中
-        String enrichedSystemPrompt = buildEnrichedSystemPrompt(
-                ctx.getSystemPrompt(), injection, identityConfig);
-
-        ctx.setSystemPrompt(enrichedSystemPrompt);
-
-        // ... 继续现有的上下文构建逻辑 ...
-
-        return Flux.empty();
+                // ...
+            } catch (Exception e) {
+                log.warn("Context build error: {}", e.getMessage(), e);
+            }
+            return Flux.fromIterable(events);
+        });
     }
-
-    private String buildEnrichedSystemPrompt(String basePrompt, String bootstrapInjection,
-                                             IdentityConfig identity) {
-        StringBuilder sb = new StringBuilder();
-        if (bootstrapInjection != null && !bootstrapInjection.isEmpty()) {
-            sb.append(bootstrapInjection).append("\n\n");
-        }
-        if (basePrompt != null && !basePrompt.isEmpty()) {
-            sb.append(basePrompt);
-        }
-        // 应用身份前缀（参见 §3.4）
-        if (identity != null && identity.getNamePrefix() != null) {
-            sb.insert(0, identity.getNamePrefix() + "\n");
-        }
-        return sb.toString();
-    }
-
-    private String resolveAgentDir(String agentId) {
-        return System.getProperty("user.dir") + "/agents/" + agentId;
-    }
-
-    @Override
-    public int getOrder() { return 10; }
-
-    @Override
-    public String getStageName() { return "contextBuild"; }
 }
 ```
 
@@ -1778,8 +1737,6 @@ LyClaw 目前只有一个 `ChatController`，将所有流量路由到一个
 package lyjew.com.lyclaw.routing;
 
 import lombok.Builder;
-import lombok.Data;
-
 import java.util.Set;
 
 /**
@@ -1789,27 +1746,45 @@ import java.util.Set;
  * 多个非 null 字段之间是 AND 关系。至少需要一个字段
  * 为非 null 才能使绑定被考虑。</p>
  */
-@Data
-@Builder
 public class AgentBindingMatch {
 
     /** 要匹配的渠道名称（例如 "general"、"engineering"）。 */
-    String channel;
+    private String channel;
 
     /** 要匹配的账户 ID。 */
-    String accountId;
+    private String accountId;
 
     /** 要匹配的对等体 ID / 用户 ID。 */
-    String peer;
+    private String peer;
 
     /** 要匹配的公会 / 服务器 ID。 */
-    String guildId;
+    private String guildId;
 
     /** 要匹配的团队 ID。 */
-    String teamId;
+    private String teamId;
 
     /** 必需的角色（用户必须拥有所有这些角色）。 */
-    Set<String> roles;
+    private Set<String> roles;
+
+    // ======== getters / setters ========
+
+    public String getChannel() { return channel; }
+    public void setChannel(String channel) { this.channel = channel; }
+
+    public String getAccountId() { return accountId; }
+    public void setAccountId(String accountId) { this.accountId = accountId; }
+
+    public String getPeer() { return peer; }
+    public void setPeer(String peer) { this.peer = peer; }
+
+    public String getGuildId() { return guildId; }
+    public void setGuildId(String guildId) { this.guildId = guildId; }
+
+    public String getTeamId() { return teamId; }
+    public void setTeamId(String teamId) { this.teamId = teamId; }
+
+    public Set<String> getRoles() { return roles; }
+    public void setRoles(Set<String> roles) { this.roles = roles; }
 
     /**
      * 检查此匹配条件是否是给定条件的超集。
@@ -1899,42 +1874,56 @@ public sealed interface AgentBinding
  * <p>当请求的元数据与条件匹配时，它将被路由
  * 到指定的代理。</p>
  */
-@Data
-@Builder
 public final class AgentRouteBinding implements AgentBinding {
 
-    @Builder.Default
-    String type = "route";
+    private String type = "route";
 
     /** 目标代理 ID。 */
-    String agentId;
+    private String agentId;
 
     /** 此绑定的人类可读注释。 */
-    String comment;
+    private String comment;
 
     /** 匹配条件（渠道、账户、对等体、公会、团队、角色）。 */
-    AgentBindingMatch match;
+    private AgentBindingMatch match;
 
     /** 会话范围配置。 */
-    @Builder.Default
-    SessionScope session = new SessionScope();
+    private SessionScope session = new SessionScope();
+
+    // ======== getters / setters ========
+
+    @Override
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+
+    @Override
+    public String getAgentId() { return agentId; }
+    public void setAgentId(String agentId) { this.agentId = agentId; }
+
+    public String getComment() { return comment; }
+    public void setComment(String comment) { this.comment = comment; }
 
     @Override
     public AgentBindingMatch getMatch() { return match; }
+    public void setMatch(AgentBindingMatch match) { this.match = match; }
+
+    public SessionScope getSession() { return session; }
+    public void setSession(SessionScope session) { this.session = session; }
 
     /**
      * DM 会话范围：控制私信是与渠道绑定的会话共享
      * 还是拥有自己的会话。
      */
-    @Data
     public static class SessionScope {
         /**
          * 私信的范围。
          * SHARED：DM 使用与渠道路由相同的会话。
          * ISOLATED：DM 拥有自己的会话。
          */
-        @Builder.Default
-        DmScope dmScope = DmScope.SHARED;
+        private DmScope dmScope = DmScope.SHARED;
+
+        public DmScope getDmScope() { return dmScope; }
+        public void setDmScope(DmScope dmScope) { this.dmScope = dmScope; }
     }
 
     public enum DmScope { SHARED, ISOLATED }
@@ -1944,42 +1933,66 @@ public final class AgentRouteBinding implements AgentBinding {
  * ACP（代理通信协议）绑定：类似 RouteBinding
  * 但具有额外的 ACP 特定覆盖。
  */
-@Data
-@Builder
 public final class AgentAcpBinding implements AgentBinding {
 
-    @Builder.Default
-    String type = "acp";
+    private String type = "acp";
 
     /** 目标代理 ID。 */
-    String agentId;
+    private String agentId;
 
     /** 人类可读注释。 */
-    String comment;
+    private String comment;
 
     /** 匹配条件。 */
-    AgentBindingMatch match;
+    private AgentBindingMatch match;
 
     /** ACP 特定覆盖。 */
-    @Builder.Default
-    AcpOverrides acp = new AcpOverrides();
+    private AcpOverrides acp = new AcpOverrides();
+
+    // ======== getters / setters ========
+
+    @Override
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+
+    @Override
+    public String getAgentId() { return agentId; }
+    public void setAgentId(String agentId) { this.agentId = agentId; }
+
+    public String getComment() { return comment; }
+    public void setComment(String comment) { this.comment = comment; }
 
     @Override
     public AgentBindingMatch getMatch() { return match; }
+    public void setMatch(AgentBindingMatch match) { this.match = match; }
 
-    @Data
+    public AcpOverrides getAcp() { return acp; }
+    public void setAcp(AcpOverrides acp) { this.acp = acp; }
+
     public static class AcpOverrides {
         /** ACP 模式。 */
-        String mode;
+        private String mode;
 
         /** 用于显示的 ACP 标签。 */
-        String label;
+        private String label;
 
         /** 此绑定的工作目录覆盖。 */
-        String cwd;
+        private String cwd;
 
         /** 后端覆盖。 */
-        String backend;
+        private String backend;
+
+        public String getMode() { return mode; }
+        public void setMode(String mode) { this.mode = mode; }
+
+        public String getLabel() { return label; }
+        public void setLabel(String label) { this.label = label; }
+
+        public String getCwd() { return cwd; }
+        public void setCwd(String cwd) { this.cwd = cwd; }
+
+        public String getBackend() { return backend; }
+        public void setBackend(String backend) { this.backend = backend; }
     }
 }
 ```
@@ -2075,11 +2088,11 @@ public class AgentRouter {
         }
 
         // 返回默认代理的合成路由绑定
-        return AgentRouteBinding.builder()
-                .agentId(defaultAgentId)
-                .comment("默认路由（回退）")
-                .match(AgentBindingMatch.builder().build())
-                .build();
+        AgentRouteBinding fallback = new AgentRouteBinding();
+        fallback.setAgentId(defaultAgentId);
+        fallback.setComment("默认路由（回退）");
+        fallback.setMatch(new AgentBindingMatch());
+        return fallback;
     }
 
     /**
@@ -2125,16 +2138,17 @@ public class AgentRouter {
 
 ### 3.3.4 ChatController 更新
 
+ChatController 新增 `AgentRouter` 依赖，在请求进入时从 `ChatRequest.extras` 中提取路由元数据，
+解析出目标 agentId，存入 `ChatRequest.agentId` 字段。`ChatAgent` 代理内部通过 `AgentContext`
+携带 agentId，从而在整个管线中生效。
+
 ```java
 package lyjew.com.lyclaw.web.controller;
 
 import lyjew.com.lyclaw.model.ChatRequest;
-import lyjew.com.lyclaw.model.Message;
-import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.routing.AgentRouter;
 import lyjew.com.lyclaw.routing.RequestMetadata;
 import lyjew.com.lyclaw.web.agent.ChatAgent;
-import lyjew.com.lyclaw.web.agent.AgentRegistry; // 或类似
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -2142,48 +2156,40 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.List;
+import java.util.*;
 
-/**
- * 增强的 ChatController，支持多代理路由。
- *
- * <p>从请求头中读取渠道/账户元数据，并使用
- * {@link AgentRouter} 在创建会话上下文之前
- * 解析目标代理。</p>
- */
 @RestController
 @RequestMapping("/api")
 public class ChatController {
 
-    private final ChatAgent defaultChatAgent;
-    private final AgentRouter agentRouter;
-    private final Map<String, ChatAgent> agentRegistry; // agentId -> 代理代理
+    private final ChatAgent chatAgent;
+    private final AgentRouter agentRouter;          // 新增
 
-    public ChatController(ChatAgent defaultChatAgent, AgentRouter agentRouter,
-                          Map<String, ChatAgent> agentRegistry) {
-        this.defaultChatAgent = defaultChatAgent;
+    public ChatController(ChatAgent chatAgent, AgentRouter agentRouter) {
+        this.chatAgent = chatAgent;
         this.agentRouter = agentRouter;
-        this.agentRegistry = agentRegistry;
     }
 
     /**
-     * 从请求头中提取路由元数据。
+     * 从 ChatRequest.extras 提取路由元数据，解析 agentId 并写入 request。
      */
+    private void applyRouting(ChatRequest request) {
+        if (agentRouter == null || request.getExtras() == null) return;
+        RequestMetadata metadata = extractMetadata(request);
+        String resolvedAgentId = agentRouter.resolveAgentId(metadata);
+        if (resolvedAgentId != null && !resolvedAgentId.isEmpty()) {
+            request.setAgentId(resolvedAgentId);
+        }
+    }
+
     private RequestMetadata extractMetadata(ChatRequest request) {
+        Map<String, Object> extras = request.getExtras();
         return RequestMetadata.builder()
-                .channel(request.getExtras() != null
-                        ? (String) request.getExtras().get("channel") : null)
-                .accountId(request.getExtras() != null
-                        ? (String) request.getExtras().get("accountId") : null)
-                .peer(request.getExtras() != null
-                        ? (String) request.getExtras().get("peer") : null)
-                .guildId(request.getExtras() != null
-                        ? (String) request.getExtras().get("guildId") : null)
-                .teamId(request.getExtras() != null
-                        ? (String) request.getExtras().get("teamId") : null)
+                .channel(str(extras, "channel"))
+                .accountId(str(extras, "accountId"))
+                .peer(str(extras, "peer"))
+                .guildId(str(extras, "guildId"))
+                .teamId(str(extras, "teamId"))
                 .roles(extractRoles(request))
                 .build();
     }
@@ -2197,32 +2203,32 @@ public class ChatController {
         return Set.of();
     }
 
-    /**
-     * 根据路由元数据解析此请求的 ChatAgent。
-     */
-    private ChatAgent resolveAgent(ChatRequest request) {
-        RequestMetadata metadata = extractMetadata(request);
-        String agentId = agentRouter.resolveAgentId(metadata);
-        ChatAgent agent = agentRegistry.get(agentId);
-        if (agent != null) {
-            return agent;
-        }
-        return defaultChatAgent;
+    private static String str(Map<String, Object> m, String key) {
+        Object v = m != null ? m.get(key) : null;
+        return v instanceof String s ? s : null;
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request) {
+    public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request,
+                                                     @RequestParam(required = false) String agentId) {
+        applyRouting(request);
+        String resolvedAgentId = agentId != null && !agentId.isEmpty() ? agentId
+                : request.getAgentId() != null && !request.getAgentId().isEmpty() ? request.getAgentId()
+                : null;
         String userMessage = request.getLastUserMessage();
-        ChatAgent agent = resolveAgent(request);
-        return agent.chatStream(userMessage);
+        return chatAgent.chatStream(userMessage);
     }
 
     @PostMapping("/chat")
-    public Mono<Map<String, Object>> chat(@RequestBody ChatRequest request) {
+    public Mono<Map<String, Object>> chat(@RequestBody ChatRequest request,
+                                          @RequestParam(required = false) String agentId) {
+        applyRouting(request);
+        String resolvedAgentId = agentId != null && !agentId.isEmpty() ? agentId
+                : request.getAgentId() != null && !request.getAgentId().isEmpty() ? request.getAgentId()
+                : null;
         String userMessage = request.getLastUserMessage();
         String sessionId = request.getSessionId() != null ? request.getSessionId() : "";
-        ChatAgent agent = resolveAgent(request);
-        return Mono.fromCallable(() -> agent.chat(userMessage))
+        return Mono.fromCallable(() -> chatAgent.chat(userMessage))
                 .subscribeOn(Schedulers.boundedElastic())
                 .map(reply -> Map.of("content", reply, "sessionId", sessionId));
     }
@@ -2302,11 +2308,6 @@ lyclaw:
 ```java
 package lyjew.com.lyclaw.identity;
 
-import lombok.Builder;
-import lombok.Data;
-import lyjew.com.lyclaw.bootstrap.BootstrapConfig;
-import lyjew.com.lyclaw.bootstrap.BootstrapLoader;
-
 /**
  * 代理身份和展示配置。
  *
@@ -2316,8 +2317,6 @@ import lyjew.com.lyclaw.bootstrap.BootstrapLoader;
  * <p>映射自 application.yml 中的 {@code lyclaw.identity}，或
  * 从代理的 IDENTITY.md 引导文件加载。</p>
  */
-@Data
-@Builder
 public class IdentityConfig {
 
     /** UI 中显示的显示名称。 */
@@ -2329,30 +2328,33 @@ public class IdentityConfig {
     /** 头像图片文件路径（本地）。 */
     String avatarFilePath;
 
-    /**
-     * 在聊天中前置到代理回复的名称前缀。
-     * 例如："[CoderBot] " -> "[CoderBot] 这是你的代码..."
-     */
+    /** 在聊天中前置到代理回复的名称前缀（如 "[CoderBot] "）。 */
     String namePrefix;
 
-    /**
-     * 前置到每轮最终回复的响应前缀。
-     * 与 namePrefix（在所有输出之前）不同，此后缀
-     * 仅前置到最终文本回复，而非工具调用通知。
-     */
+    /** 前置到每轮最终文本回复的响应前缀。 */
     String responsePrefix;
 
-    /**
-     * 前置到此代理所有消息的消息前缀，
-     * 包括工具调用 SSE 事件和状态更新。
-     */
+    /** 前置到所有消息（含工具调用、状态更新）的前缀。 */
     String messagePrefix;
 
-    /**
-     * 用于确认消息的表情回应。
-     * 例如："eyes" 或 "white_check_mark"。
-     */
+    /** 确认消息的表情回应（如 "eyes"）。 */
     String ackReaction;
+
+    // ── getters / setters ──────────────────────────
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+    public String getAvatarFilePath() { return avatarFilePath; }
+    public void setAvatarFilePath(String avatarFilePath) { this.avatarFilePath = avatarFilePath; }
+    public String getNamePrefix() { return namePrefix; }
+    public void setNamePrefix(String namePrefix) { this.namePrefix = namePrefix; }
+    public String getResponsePrefix() { return responsePrefix; }
+    public void setResponsePrefix(String responsePrefix) { this.responsePrefix = responsePrefix; }
+    public String getMessagePrefix() { return messagePrefix; }
+    public void setMessagePrefix(String messagePrefix) { this.messagePrefix = messagePrefix; }
+    public String getAckReaction() { return ackReaction; }
+    public void setAckReaction(String ackReaction) { this.ackReaction = ackReaction; }
 
     /**
      * 从身份配置构建显示标签。
@@ -2535,29 +2537,29 @@ public class IdentityService {
      * @return 有效的身份配置
      */
     public IdentityConfig resolveIdentity(String agentId, String agentDir) {
-        // 以配置的身份为基础
-        IdentityConfig.IdentityConfigBuilder builder = IdentityConfig.builder();
+        IdentityConfig resolved = new IdentityConfig();
 
+        // 第 1 层：从 YAML 配置复制
         if (configuredIdentity != null) {
-            builder.displayName(configuredIdentity.getDisplayName())
-                    .avatarUrl(configuredIdentity.getAvatarUrl())
-                    .avatarFilePath(configuredIdentity.getAvatarFilePath())
-                    .namePrefix(configuredIdentity.getNamePrefix())
-                    .responsePrefix(configuredIdentity.getResponsePrefix())
-                    .messagePrefix(configuredIdentity.getMessagePrefix())
-                    .ackReaction(configuredIdentity.getAckReaction());
+            resolved.setDisplayName(configuredIdentity.getDisplayName());
+            resolved.setAvatarUrl(configuredIdentity.getAvatarUrl());
+            resolved.setAvatarFilePath(configuredIdentity.getAvatarFilePath());
+            resolved.setNamePrefix(configuredIdentity.getNamePrefix());
+            resolved.setResponsePrefix(configuredIdentity.getResponsePrefix());
+            resolved.setMessagePrefix(configuredIdentity.getMessagePrefix());
+            resolved.setAckReaction(configuredIdentity.getAckReaction());
         }
 
-        // 如果 IDENTITY.md 可用，则用其覆盖
+        // 第 2 层：如果 IDENTITY.md 可用，则用其覆盖
         // （IDENTITY.md 内容遵循简单的 key: value 格式）
         // ... 解析 IDENTITY.md 并应用覆盖 ...
 
-        // 回退显示名称
-        if (builder.build().getDisplayName() == null) {
-            builder.displayName(agentId);
+        // 第 3 层：回退显示名称
+        if (resolved.getDisplayName() == null) {
+            resolved.setDisplayName(agentId);
         }
 
-        return builder.build();
+        return resolved;
     }
 
     /**
@@ -2740,7 +2742,7 @@ lyclaw:
 ### 3.1 上下文引擎与压缩
 
 - [ ] 创建 `lyclaw-framework/src/main/java/lyjew/com/lyclaw/compaction/` 包
-- [ ] 实现 `CompactionConfig` 及所有字段和 builder
+- [ ] 实现 `CompactionConfig`（POJO，不使用 Lombok builder）
 - [ ] 实现枚举：`CompactionMode`、`IdentifierPolicy`、`PostIndexSync`
 - [ ] 实现子配置：`QualityGuard`、`MidTurnPrecheck`、`MemoryFlush`
 - [ ] 实现 `CompactionEngine` 带 `needsCompaction()`、`compact()`、`validateCompaction()`、`midTurnPrecheck()`
@@ -2748,23 +2750,24 @@ lyclaw:
 - [ ] 实现 `ContextPruningConfig` 带 `SoftTrim`、`HardClear`
 - [ ] 实现 `ContextPruner` 带 `prune()` 方法
 - [ ] 实现 `AgentContextLimits` 带截断辅助方法
-- [ ] 创建 `CompactionStage`（`@PipelineStage`，在 ReflectionStage 之后，MetricsStage 之前）
-- [ ] 向 `AgentHook` 接口添加 `beforeCompaction`/`afterCompaction` 方法
+- [ ] 创建 `CompactionStage`（`@PipelineStage(name = "Compaction", after = ReflectionStage.class, group = "POST_PROCESSING")`，extends PipelineStageBase）
+- [ ] **修改 `MetricsStage` 的 `@PipelineStage` 注解**：`after` 从 `ReflectionStage.class` 改为 `CompactionStage.class`，以维持拓扑顺序
+- [ ] `AgentHook` 的 `beforeCompaction`/`afterCompaction` 已在 Phase 2 定义，无需新增
 - [ ] 实现 `ContextPruningScheduler` 带 `@Scheduled`
-- [ ] 向 `LyClawConfigurationProperties` 添加 `CompactionProperties` 用于 YAML 绑定
-- [ ] 在 `CompactionAutoConfiguration` 中连线（或扩展现有的 autoconfigure）
-- [ ] 扩展 `StoreLayer` 添加 `getActiveSessions()` 供修剪调度器使用
+- [ ] 创建 `CompactionProperties`（`@ConfigurationProperties("lyclaw.compaction")`）用于 YAML 绑定
+- [ ] 在 `CompactionAutoConfiguration` 中连线
+- [ ] `SubagentSessionManager.getActiveSessions()` 供修剪调度器使用（已在 Phase 2 中存在）
 
 ### 3.2 工作区引导
 
 - [ ] 创建 `lyclaw-framework/src/main/java/lyjew/com/lyclaw/bootstrap/` 包
-- [ ] 实现 `BootstrapConfig` 及所有字段和 builder
+- [ ] 实现 `BootstrapConfig`（POJO，不使用 Lombok builder）
 - [ ] 实现枚举：`ContextInjectionPolicy`、`BootstrapTruncationWarning`、`StartupContextApplyOn`
 - [ ] 实现 `StartupContextConfig`
 - [ ] 实现 `BootstrapLoader` 带 `loadBootstrap()` 和 `buildContextInjection()`
 - [ ] 实现 `BootstrapContent` 不可变容器
 - [ ] 增强 `ContextBuildStage` 以调用 `BootstrapLoader` 并注入内容
-- [ ] 向 `LyClawConfigurationProperties` 添加 `BootstrapProperties` 用于 YAML 绑定
+- [ ] 创建 `BootstrapProperties`（`@ConfigurationProperties("lyclaw.bootstrap")`）用于 YAML 绑定
 - [ ] 在 `BootstrapAutoConfiguration` 中连线
 - [ ] 在 `/agents/default/` 中创建示例引导文件
 
@@ -2775,8 +2778,8 @@ lyclaw:
 - [ ] 实现 `AgentBindingMatch` 带 `matches()` 和 `specificity()`
 - [ ] 实现密封的 `AgentBinding` 接口，以及 `AgentRouteBinding` 和 `AgentAcpBinding`
 - [ ] 实现 `AgentRouter` 带 `resolveAgentId()`、`resolveBinding()`、`resolveByPattern()`
-- [ ] 增强 `ChatController` 以从 `ChatRequest.extras` 提取元数据并路由到解析后的代理
-- [ ] 向 `LyClawConfigurationProperties` 添加 `RoutingProperties` 用于 YAML 绑定
+- [ ] 增强 `ChatController`：注入 `AgentRouter`，从 `ChatRequest.extras` 提取元数据，将解析出的 agentId 写入 `request.agentId`
+- [ ] 创建 `RoutingProperties`（`@ConfigurationProperties("lyclaw.routing")`）用于 YAML 绑定
 - [ ] 在 `RoutingAutoConfiguration` 中连线
 
 ### 3.4 身份与头像
@@ -2786,8 +2789,8 @@ lyclaw:
 - [ ] 实现 `AvatarKind` 枚举和 `AgentAvatarResolution` 带 `resolve()`
 - [ ] 实现 `IdentityService` 带 `resolveIdentity()` 和 `applyIdentity()`
 - [ ] 增强 `ContextBuildStage` 以调用 `IdentityService` 并在 `AgentContext` 中存储身份
-- [ ] 在 `RespondStage` 中发出最终响应之前应用身份前缀
-- [ ] 向 `LyClawConfigurationProperties` 添加 `IdentityProperties` 用于 YAML 绑定
+- [ ] 在 `RespondStage.execute()` 开头发出 `identity` SSE 事件（携带 displayName、avatarUrl），由前端渲染
+- [ ] 创建 `IdentityProperties`（`@ConfigurationProperties("lyclaw.identity")`）用于 YAML 绑定
 - [ ] 在 `IdentityAutoConfiguration` 中连线
 
 ### 跨领域
@@ -2796,4 +2799,4 @@ lyclaw:
 - [ ] 为 `CompactionEngine`、`BootstrapLoader`、`AgentRouter`、`IdentityService` 添加单元测试
 - [ ] 为带有压缩和引导的完整管道添加集成测试
 - [ ] 记录新的 SSE 事件：`compaction`、身份元数据
-- [ ] 更新 Actuator 端点（`LyClawConfigEndpoint`、`LyClawPipelineEndpoint`）以暴露新的配置章节
+- [ ] 在 `AutoConfiguration.imports` 中注册所有新增的 AutoConfiguration 类
