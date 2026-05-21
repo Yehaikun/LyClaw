@@ -10,17 +10,12 @@ import lyjew.com.lyclaw.task.PlanValidator;
 import lyjew.com.lyclaw.task.TaskNode;
 import lyjew.com.lyclaw.task.TaskPlan;
 import lyjew.com.lyclaw.task.TaskPlanner;
-import lyjew.com.lyclaw.annotation.PipelineStage;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 
 import java.util.*;
 
-/**
- * 计划执行阶段，order=2。将用户意图分解为 TaskNode DAG。
- */
 @Slf4j
-@PipelineStage(name = "PlanExecution", after = SecurityCheckStage.class, group = "CORE")
 public class PlanExecutionStage extends PipelineStageBase {
 
     private final TaskPlanner taskPlanner;

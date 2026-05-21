@@ -24,7 +24,7 @@ import java.util.*;
  * 响应生成阶段，order=3。内嵌 ReAct 循环，LLM 推理 + 工具调用。
  */
 @Slf4j
-@PipelineStage(name = "Respond", after = PlanExecutionStage.class, group = "POSTPROCESSING")
+@PipelineStage(name = "Respond", after = SecurityCheckStage.class, group = "POSTPROCESSING")
 public class RespondStage extends PipelineStageBase {
 
     private final ChatFacade chatFacade;
