@@ -34,6 +34,18 @@
         <PanelLeftOpen v-if="settingsStore.sidebarCollapsed" :size="16" />
         <PanelLeftClose v-else :size="16" />
       </button>
+      <AgentSelector
+        v-if="isChatRoute"
+        :model-value="agentStore.currentAgentId"
+        :agents="agentStore.agents"
+        @update:model-value="handleAgentChange"
+      />
+      <SessionSelector
+        v-if="isChatRoute"
+        :model-value="sessionStore.currentSessionId"
+        :sessions="sessionStore.sessions"
+        @update:model-value="handleSessionChange"
+      />
     </div>
     <div class="header-right">
       <ModelSelector
@@ -63,16 +75,50 @@ import { Plus, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
 import { useChatStore } from '@/stores/chat'
 import { useSessionStore } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
+import { useAgentStore } from '@/stores/agent'
+import { fetchMessages } from '@/api/chat'
+import { mapRawToMessage } from '@/utils/message-mapper'
 import ModelSelector from './ModelSelector.vue'
+import AgentSelector from './AgentSelector.vue'
+import SessionSelector from './SessionSelector.vue'
 
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
 const sessionStore = useSessionStore()
 const settingsStore = useSettingsStore()
+const agentStore = useAgentStore()
+
+agentStore.fetchAgents().catch(() => {})
 
 /** 是否在聊天页面：仅/chat路由下显示模型选择器和清空按钮 */
 const isChatRoute = computed(() => route.path === '/chat')
+
+async function handleAgentChange(agentId: string) {
+  agentStore.selectAgent(agentId)
+  await sessionStore.setAgentId(agentId)
+  chatStore.clearChat()
+  chatStore.setSessionId('')
+  router.push('/chat')
+}
+
+async function handleSessionChange(sessionId: string | null) {
+  if (sessionId === null) {
+    chatStore.clearChat()
+    chatStore.setSessionId('')
+    sessionStore.selectSession('')
+    router.push('/chat')
+    return
+  }
+  sessionStore.selectSession(sessionId)
+  chatStore.setSessionId(sessionId)
+  chatStore.clearChat()
+  try {
+    const rawMessages = await fetchMessages(sessionStore.currentAgentId, sessionId)
+    chatStore.setMessages(rawMessages.map(mapRawToMessage))
+  } catch { /* session may be empty */ }
+  router.replace({ query: { session: sessionId } })
+}
 
 /**
  * 创建新聊天：清空当前对话、解除会话关联并导航到聊天页。
@@ -111,6 +157,7 @@ function handleSettings() {
 .header-left {
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 
 .header-right {

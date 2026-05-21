@@ -31,29 +31,6 @@
       </router-link>
     </div>
 
-    <div class="sidebar-sessions" v-if="sessions && sessions.length > 0">
-      <button class="sessions-header" @click="sessionsExpanded = !sessionsExpanded">
-        <ChevronRight
-          class="chevron"
-          :class="{ expanded: sessionsExpanded }"
-          :size="12"
-        />
-        <span>Recent Sessions</span>
-      </button>
-      <div class="sessions-list" v-show="sessionsExpanded">
-        <button
-          v-for="session in recentSessions"
-          :key="session.id"
-          class="session-item"
-          :class="{ active: currentSession?.sessionId === session.sessionId }"
-          @click="goToSession(session.sessionId)"
-        >
-          <MessageSquare class="session-icon" :size="12" />
-          <span class="session-name">{{ session.name || 'Untitled' }}</span>
-        </button>
-      </div>
-    </div>
-
     <div class="sidebar-footer">
       <span class="version">v2.0.0</span>
     </div>
@@ -61,8 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import {
   MessageSquare,
   History,
@@ -73,19 +49,11 @@ import {
   Users,
   LayoutDashboard,
   Settings,
-  ChevronRight,
 } from 'lucide-vue-next'
-import { useSessionStore } from '@/stores/session'
-import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 
 const route = useRoute()
-const router = useRouter()
-const sessionStore = useSessionStore()
-const chatStore = useChatStore()
 const settingsStore = useSettingsStore()
-
-const sessionsExpanded = ref(true)
 
 const mainNav = [
   { to: '/chat', label: 'Chat', icon: MessageSquare },
@@ -102,20 +70,8 @@ const bottomNav = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-const sessions = computed(() => sessionStore.sessions ?? [])
-const recentSessions = computed(() => sessions.value.slice(0, 10))
-const currentSession = computed(() => sessionStore.currentSession ?? null)
-
 function isActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')
-}
-
-function goToSession(sessionId: string) {
-  // 移动端导航后自动折叠侧栏
-  if (window.innerWidth <= 768) {
-    settingsStore.sidebarCollapsed = true
-  }
-  router.push({ path: '/chat', query: { session: sessionId } })
 }
 </script>
 
@@ -216,86 +172,6 @@ function goToSession(sessionId: string) {
 }
 
 .nav-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ---- Sessions ---- */
-.sidebar-sessions {
-  padding: 0 var(--spacing-xs) var(--spacing-xs);
-  border-top: 1px solid var(--color-surface-dark-elevated);
-}
-
-.sessions-header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xxs);
-  width: 100%;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  color: var(--color-on-dark-soft);
-  font-size: var(--caption-size);
-  font-weight: 500;
-  letter-spacing: var(--caption-letter-spacing);
-  text-transform: uppercase;
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: color var(--transition-fast);
-}
-
-.sessions-header:hover {
-  color: var(--color-on-dark);
-}
-
-.chevron {
-  flex-shrink: 0;
-  transition: transform var(--transition-fast);
-}
-
-.chevron.expanded {
-  transform: rotate(90deg);
-}
-
-.sessions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-top: 2px;
-}
-
-.session-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  width: 100%;
-  padding: 4px var(--spacing-sm);
-  border-radius: var(--rounded-sm);
-  color: var(--color-on-dark-soft);
-  font-size: var(--body-sm-size);
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-  text-align: left;
-}
-
-.session-item:hover {
-  background-color: var(--color-surface-dark-elevated);
-  color: var(--color-on-dark);
-}
-
-.session-item.active {
-  color: var(--color-canvas);
-  background-color: var(--color-surface-dark-elevated);
-}
-
-.session-icon {
-  flex-shrink: 0;
-  opacity: 0.6;
-}
-
-.session-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -35,6 +35,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Message, ChatRequest, ChatResult, ToolCall } from '@/types'
 import { postChat, postChatStream, createSession } from '@/api/chat'
+import { useSessionStore } from '@/stores/session'
 import { post, ApiError } from '@/api/client'
 
 interface PendingApproval {
@@ -137,9 +138,11 @@ export const useChatStore = defineStore('chat', () => {
 
     if (!activeSessionId) {
       try {
-        const session = await createSession()
+        const sessionStore = useSessionStore()
+        const session = await createSession(sessionStore.currentAgentId)
         activeSessionId = session.sessionId
         currentSessionId.value = activeSessionId
+        sessionStore.currentSessionId = activeSessionId
       } catch (err) {
         error.value = `Failed to create session: ${(err as Error).message}`
         errorTraceId.value = undefined
@@ -454,6 +457,10 @@ export const useChatStore = defineStore('chat', () => {
     currentSessionId.value = id
   }
 
+  function setMessages(msgs: Message[]): void {
+    messages.value = msgs
+  }
+
   /**
    * 添加工具调用的结果消息到对话中。
    *
@@ -549,6 +556,7 @@ export const useChatStore = defineStore('chat', () => {
     retry,
     setModel,
     setSessionId,
+    setMessages,
     addToolCallMessage,
     respondToApproval,
     setThinking,

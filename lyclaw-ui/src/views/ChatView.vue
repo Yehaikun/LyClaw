@@ -42,6 +42,8 @@ import { ref, watch, nextTick, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useSessionStore } from '@/stores/session'
+import { fetchMessages } from '@/api/chat'
+import { mapRawToMessage } from '@/utils/message-mapper'
 import { useSettingsStore } from '@/stores/settings'
 import WelcomeHero from '@/components/WelcomeHero.vue'
 import MessageBubble from '@/components/MessageBubble.vue'
@@ -224,11 +226,15 @@ onMounted(() => {
  * 检测到session变化 → 选择新会话 → 清空当前聊天 → 加载新会话历史。
  * 不清空输入框文本，用户可能想在切换前发送。
  */
-watch(() => route.query.session, (newId) => {
+watch(() => route.query.session, async (newId) => {
   if (newId && typeof newId === 'string' && newId !== sessionStore.currentSessionId) {
     sessionStore.selectSession(newId)
     chatStore.setSessionId(newId)
     chatStore.clearChat()
+    try {
+      const rawMessages = await fetchMessages(sessionStore.currentAgentId, newId)
+      chatStore.setMessages(rawMessages.map(mapRawToMessage))
+    } catch { /* session may be empty */ }
   }
 })
 

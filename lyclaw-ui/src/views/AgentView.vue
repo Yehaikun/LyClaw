@@ -82,6 +82,7 @@ import {
   GitGraph,
 } from 'lucide-vue-next'
 import { getAgentCard } from '@/api/protocol'
+import { useAgentStore } from '@/stores/agent'
 import type { AgentCard, AgentCapability } from '@/types'
 import { AgentCapability as CapEnum } from '@/types'
 
@@ -303,8 +304,11 @@ async function handleDiscover() {
   }
 }
 
+const agentStore = useAgentStore()
+
 onMounted(() => {
-  // 未来可在此处实现实时Agent发现功能
+  // 从后端加载真实Agent列表
+  agentStore.fetchAgents().catch(() => {})
 })
 </script>
 

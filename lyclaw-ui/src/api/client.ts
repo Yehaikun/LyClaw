@@ -161,6 +161,10 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
  * @param path 请求路径（不含BASE_URL前缀）
  * @returns Promise<T> 解析后的响应数据
  */
+export async function put<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>('PUT', path, body)
+}
+
 export async function del<T>(path: string): Promise<T> {
   return request<T>('DELETE', path)
 }
