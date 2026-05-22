@@ -172,7 +172,6 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push(assistantMsg)
           }
           currentStreamingText.value = ''
-          thinkingText.value = ''
           subagentEvents.value = []
           toolStatus.value = ''
           liveToolCalls.value = []
@@ -191,7 +190,6 @@ export const useChatStore = defineStore('chat', () => {
             messages.value.push(partialMsg)
           }
           currentStreamingText.value = ''
-          thinkingText.value = ''
           subagentEvents.value = []
           liveToolCalls.value = []
           pendingApproval.value = null
