@@ -126,6 +126,13 @@ export const useSessionStore = defineStore('session', () => {
     try {
       const data = await apiFetchSessions(currentAgentId.value)
       sessions.value = data.map(mapSession)
+      // 自动选择：无当前会话且列表非空时，选最近创建的会话
+      if (!currentSessionId.value && sessions.value.length > 0) {
+        const sorted = [...sessions.value].sort((a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        currentSessionId.value = sorted[0].sessionId
+      }
     } catch (err) {
       console.warn(
         `GET /api/agents/${currentAgentId.value}/sessions unavailable, using in-memory sessions`,

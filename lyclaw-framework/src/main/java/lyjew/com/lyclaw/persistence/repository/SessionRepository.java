@@ -163,6 +163,19 @@ public class SessionRepository {
         return result;
     }
 
+    /** 统计某Agent下的会话总数 */
+    public int countByAgent(String agentId) {
+        String sql = "SELECT COUNT(*) FROM sessions WHERE agent_id = ?";
+        try (Connection c = cm.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("统计会话数失败", e);
+        }
+    }
+
     /** 查询某父会话的所有子会话（按创建时间升序） */
     public List<Map<String, Object>> findByParentSessionId(String parentSessionId) {
         String sql = "SELECT session_id, agent_id, created_at, updated_at, message_count, " +

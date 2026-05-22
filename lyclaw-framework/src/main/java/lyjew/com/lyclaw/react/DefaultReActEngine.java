@@ -325,7 +325,7 @@ public class DefaultReActEngine implements ReActEngine {
                 .build());
 
         return textFlux
-                .concatWith(emitRoundToolCallEvents(firstResponse.getToolCalls(), toolExecutor, messages))
+                .concatWith(emitRoundToolCallEvents(firstResponse.getToolCalls(), toolExecutor, messages, request))
                 .concatWith(continueReActRounds(chatFacade, request, toolExecutor, 1));
     }
 
@@ -335,13 +335,14 @@ public class DefaultReActEngine implements ReActEngine {
      *  WebClient 的 epoll/netty 事件循环线程。</p> */
     private Flux<ServerSentEvent<String>> emitRoundToolCallEvents(
             List<ModelResponse.ToolCallRequest> toolCalls, ToolExecutor toolExecutor,
-            List<Message> messages) {
+            List<Message> messages, ChatRequest request) {
         return Flux.fromIterable(toolCalls)
                 .concatMap(req -> {
                     String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
                     // 需要用户审批时走审批流程
                     if (approvalRequired.contains(req.getName())) {
-                        return emitApprovalFlow(req, toolExecutor, messages, toolArgs);
+                        return emitApprovalFlow(req, toolExecutor, messages, toolArgs,
+                                request.getSessionId(), request.getAgentId());
                     }
                     // 无需审批：直接执行
                     log.info("🔨 [ReAct流式] 直接执行工具（无需审批）: {} | toolCallId={}", req.getName(), req.getId());
@@ -377,9 +378,10 @@ public class DefaultReActEngine implements ReActEngine {
      *  approve()，导致匹配不到 pending future（竞态条件）。</p> */
     private Flux<ServerSentEvent<String>> emitApprovalFlow(
             ModelResponse.ToolCallRequest req, ToolExecutor toolExecutor,
-            List<Message> messages, String toolArgs) {
+            List<Message> messages, String toolArgs, String sessionId, String agentId) {
         // 必须在 Flux 返回前创建 future，消除竞态：保证前端 approve() 时 future 已就绪
-        CompletableFuture<Boolean> future = approvalStore.create(req.getId());
+        CompletableFuture<Boolean> future = approvalStore.create(
+                req.getId(), sessionId, agentId, req.getName(), toolArgs);
         log.info("🛡️ [ReAct流式] 创建审批请求: toolCallId={} | 待审批数={} | toolName={}",
                 req.getId(), approvalStore.pendingCount(), req.getName());
 
@@ -518,7 +520,7 @@ public class DefaultReActEngine implements ReActEngine {
                                     .build());
 
                             return preTextFlux
-                                    .concatWith(emitRoundToolCallEvents(merged.getToolCalls(), toolExecutor, request.getMessages()))
+                                    .concatWith(emitRoundToolCallEvents(merged.getToolCalls(), toolExecutor, request.getMessages(), request))
                                     .concatWith(continueReActRounds(chatFacade, request, toolExecutor, round + 1));
                         }
                         if (state[0] == 1) {

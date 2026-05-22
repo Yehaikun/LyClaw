@@ -59,7 +59,8 @@ public class ApprovalHook implements AgentHook {
                 return inner.execute(toolName, toolCallId, argumentsJson);
             }
             log.info("等待审批: tool={} toolCallId={}", toolName, toolCallId);
-            CompletableFuture<Boolean> future = approvalStore.create(toolCallId);
+            CompletableFuture<Boolean> future = approvalStore.create(
+                    toolCallId, ctx.getSessionId(), ctx.getAgentId(), toolName, argumentsJson);
             try {
                 Boolean approved = future.get(APPROVAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 if (Boolean.TRUE.equals(approved)) {

@@ -201,4 +201,24 @@ public class StorageAutoConfiguration {
             log.info("默认chat Agent创建完成: dir={}", dirPath);
         };
     }
+
+    /**
+     * 幂等初始化默认chat Session——首次启动时若chat Agent无任何Session则创建一个。
+     * 确保前端SessionSelector默认有可选项，避免空白状态。
+     */
+    @Bean
+    public ApplicationRunner defaultSessionInitializer(SessionManager sessionManager,
+                                                        SessionRepository sessionRepo) {
+        Logger log = LoggerFactory.getLogger(StorageAutoConfiguration.class);
+        return args -> {
+            int count = sessionRepo.countByAgent("chat");
+            if (count > 0) {
+                log.debug("chat Agent已有{}个Session，跳过默认Session创建", count);
+                return;
+            }
+            log.info("首次启动——为chat Agent创建默认Session...");
+            var session = sessionManager.createSession("chat", null);
+            log.info("默认Session创建完成: sessionId={}", session.getSessionId());
+        };
+    }
 }

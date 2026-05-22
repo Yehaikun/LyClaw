@@ -192,11 +192,20 @@ const messageListStyle = computed(() => {
 })
 
 /**
- * 确保当前存在活跃会话：无会话时自动创建并绑定。
- * 在onMounted中调用，保证进入聊天页面时始终有会话上下文。
- * 创建失败静默处理，不阻塞聊天功能。
+ * 确保当前存在活跃会话：优先复用 fetchSessions 自动选择的最近会话，
+ * 仅当列表确实为空时才创建新会话。
+ * 等待 AppHeader 发起的 fetchSessions 完成后再决定。
  */
 async function ensureSession() {
+  // 等待 fetchSessions 完成（AppHeader 在 onMounted 时 fire-and-forget 发起）
+  if (sessionStore.isLoading) {
+    await new Promise<void>(resolve => {
+      const stop = watch(() => sessionStore.isLoading, (v) => {
+        if (!v) { stop(); resolve() }
+      })
+    })
+  }
+  // fetchSessions 已自动选择最近 session，或列表为空需要创建
   if (!sessionStore.currentSessionId) {
     try {
       const session = await sessionStore.createSession()
@@ -204,6 +213,8 @@ async function ensureSession() {
     } catch {
       // 会话创建失败 — 不阻塞，允许无会话继续使用
     }
+  } else {
+    chatStore.setSessionId(sessionStore.currentSessionId)
   }
 }
 
@@ -212,17 +223,22 @@ async function ensureSession() {
  * - 有?session=xxx参数 → 加载指定会话的历史消息
  * - 无参数 → 调用ensureSession创建新会话
  */
-onMounted(() => {
+onMounted(async () => {
   const sessionId = route.query.session as string | undefined
   if (sessionId) {
     sessionStore.selectSession(sessionId)
     chatStore.setSessionId(sessionId)
-    // 从URL恢复会话时加载历史消息
     fetchMessages(sessionStore.currentAgentId, sessionId)
       .then(raw => chatStore.setMessages(raw.map(mapRawToMessage)))
       .catch(() => {})
   } else {
-    ensureSession()
+    await ensureSession()
+    // 若 auto-select 选中了已有 session，加载其历史消息
+    if (sessionStore.currentSessionId) {
+      fetchMessages(sessionStore.currentAgentId, sessionStore.currentSessionId)
+        .then(raw => chatStore.setMessages(raw.map(mapRawToMessage)))
+        .catch(() => {})
+    }
   }
 })
 
