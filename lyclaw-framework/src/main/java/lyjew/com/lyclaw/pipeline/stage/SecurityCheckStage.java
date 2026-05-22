@@ -42,7 +42,7 @@ public class SecurityCheckStage extends PipelineStageBase {
         List<Message> messages = ctx.getChatRequest() != null && ctx.getChatRequest().getMessages() != null
                 ? ctx.getChatRequest().getMessages() : List.of();
         session.setMessages(new ArrayList<>(messages));
-        return new ChatContext(ctx.getChatRequest(), session, null, List.of(), null, null);
+        return new ChatContext(ctx.getChatRequest(), session, null, List.of(), null, null, ctx.getTracing().getTraceId());
     }
 
     @Override
