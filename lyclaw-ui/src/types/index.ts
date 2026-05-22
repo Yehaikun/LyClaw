@@ -172,11 +172,13 @@ export interface ChatRequest {
 /** 聊天会话：消息的容器，拥有唯一ID和元数据 */
 export interface Session {
   /** 内部ID */
-  id: string
+  id?: string
   /** 会话唯一标识（UUID格式） */
   sessionId: string
   /** 会话名称（可被用户重命名） */
   name: string
+  /** 所属Agent ID */
+  agentId?: string
   /** 创建会话时使用的模型 */
   model?: string
   /** 会话中包含的所有消息 */
@@ -185,6 +187,22 @@ export interface Session {
   createdAt: string
   /** 最后更新时间（ISO local datetime格式） */
   updatedAt: string
+  /** 消息数量 */
+  messageCount?: number
+  /** 工具调用次数 */
+  toolCallCount?: number
+  /** 总Token消耗 */
+  totalTokens?: number
+  /** 压缩次数 */
+  compactionCount?: number
+  /** 首条消息预览 */
+  firstMsgPreview?: string
+  /** JSONL文件路径 */
+  filePath?: string
+  /** 父会话ID */
+  parentSessionId?: string | null
+  /** 父Agent ID */
+  parentAgentId?: string | null
 }
 
 /** 聊天结果：非流式聊天请求的完整响应 */

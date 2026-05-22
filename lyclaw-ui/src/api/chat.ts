@@ -55,8 +55,8 @@ export function createSession(agentId: string, req?: ChatRequest): Promise<Sessi
  * 获取指定Agent的所有会话列表。
  * GET /api/agents/{agentId}/sessions
  */
-export function fetchSessions(agentId: string): Promise<Session[]> {
-  return get<Session[]>(`/api/agents/${agentId}/sessions`)
+export function fetchSessions(agentId: string): Promise<Record<string, unknown>[]> {
+  return get<Record<string, unknown>[]>(`/api/agents/${agentId}/sessions`)
 }
 
 /**

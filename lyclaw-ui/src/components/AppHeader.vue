@@ -95,6 +95,9 @@ const initialAgent = route.query.agent as string | undefined
 if (initialAgent && initialAgent !== agentStore.currentAgentId) {
   agentStore.selectAgent(initialAgent)
   sessionStore.setAgentId(initialAgent)
+} else if (!initialAgent) {
+  router.replace({ query: { agent: agentStore.currentAgentId } })
+  sessionStore.fetchSessions().catch(() => {})
 } else {
   sessionStore.fetchSessions().catch(() => {})
 }

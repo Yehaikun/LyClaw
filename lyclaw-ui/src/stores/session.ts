@@ -95,11 +95,37 @@ export const useSessionStore = defineStore('session', () => {
    * 从服务端获取当前Agent的所有会话列表。
    * GET /api/agents/{agentId}/sessions
    */
+  /**
+   * 将后端返回的 snake_case 字段映射为前端 camelCase Session 对象。
+   * 后端 SessionRepository.rowToMap 透传SQLite列名(session_id, created_at...)，
+   * Jackson对Map的key不做转换，因此必须在前端显式映射。
+   */
+  function mapSession(raw: Record<string, unknown>): Session {
+    return {
+      id: raw.session_id as string ?? '',
+      sessionId: raw.session_id as string ?? '',
+      name: raw.name as string ?? '',
+      agentId: raw.agent_id as string ?? '',
+      model: raw.model as string,
+      messages: [],
+      createdAt: raw.created_at ? new Date(raw.created_at as number).toISOString() : '',
+      updatedAt: raw.updated_at ? new Date(raw.updated_at as number).toISOString() : '',
+      messageCount: raw.message_count as number ?? 0,
+      toolCallCount: raw.tool_call_count as number ?? 0,
+      totalTokens: raw.total_tokens as number ?? 0,
+      compactionCount: raw.compaction_count as number ?? 0,
+      firstMsgPreview: raw.first_msg_preview as string ?? '',
+      filePath: raw.file_path as string ?? '',
+      parentSessionId: (raw.parent_session_id as string) ?? null,
+      parentAgentId: (raw.parent_agent_id as string) ?? null,
+    }
+  }
+
   async function fetchSessions(): Promise<void> {
     isLoading.value = true
     try {
       const data = await apiFetchSessions(currentAgentId.value)
-      sessions.value = data
+      sessions.value = data.map(mapSession)
     } catch (err) {
       console.warn(
         `GET /api/agents/${currentAgentId.value}/sessions unavailable, using in-memory sessions`,
