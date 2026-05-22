@@ -145,6 +145,7 @@ public class AgentInvocationHandler implements InvocationHandler {
             sessionId = request.getSessionId() != null
                     ? request.getSessionId() : UUID.randomUUID().toString().substring(0, 8);
         }
+        request.setSessionId(sessionId);
         // 同步agentId
         String httpAgentId = SessionRequestContext.getAgentId();
         if (httpAgentId != null && !httpAgentId.isEmpty()) {

@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lyjew.com.lyclaw.config.StorageProperties;
+import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.persistence.repository.SessionRepository;
 import lyjew.com.lyclaw.web.session.SessionManager;
 import org.springframework.web.bind.annotation.*;
@@ -59,6 +60,20 @@ public class SessionController {
             @PathVariable String agentId,
             @PathVariable String sessionId) {
         return sessionRepository.findByParentSessionId(sessionId);
+    }
+
+    @Operation(summary = "重命名会话", description = "更新会话名称并持久化到SQLite和内存缓存")
+    @PatchMapping("/{sessionId}")
+    public Map<String, Object> renameSession(
+            @PathVariable String agentId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, String> body) {
+        String name = body.get("name");
+        if (name == null || name.isBlank()) return Map.of("error", "name is required");
+        sessionRepository.updateName(sessionId, name);
+        Session session = sessionManager.getSession(sessionId);
+        if (session != null) session.setName(name);
+        return Map.of("sessionId", sessionId, "name", name);
     }
 
     @Operation(summary = "删除会话", description = "删除指定会话的JSONL文件和SQLite记录，同时清理缓存")

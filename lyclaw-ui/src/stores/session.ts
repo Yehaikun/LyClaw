@@ -23,6 +23,7 @@ import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
   fetchSessions as apiFetchSessions,
+  renameSession as apiRenameSession,
 } from '@/api/chat'
 
 export const useSessionStore = defineStore('session', () => {
@@ -169,14 +170,7 @@ export const useSessionStore = defineStore('session', () => {
       session.name = name
     }
     try {
-      await fetch(
-        `/api/agents/${currentAgentId.value}/sessions/${id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        },
-      )
+      await apiRenameSession(currentAgentId.value, id, name)
     } catch (err) {
       console.error('Failed to rename session:', err)
     }

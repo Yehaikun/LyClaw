@@ -46,6 +46,7 @@
         :sessions="sessionStore.sessions"
         @update:model-value="handleSessionChange"
         @delete-session="handleSessionDelete"
+        @rename-session="handleSessionRename"
       />
     </div>
     <div class="header-right">
@@ -78,7 +79,7 @@ import { useSessionStore } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
 import { useAgentStore } from '@/stores/agent'
 import { fetchMessages } from '@/api/chat'
-import { mapRawToMessage } from '@/utils/message-mapper'
+import { processRawMessages } from '@/utils/message-mapper'
 import ModelSelector from './ModelSelector.vue'
 import AgentSelector from './AgentSelector.vue'
 import SessionSelector from './SessionSelector.vue'
@@ -126,7 +127,7 @@ async function handleSessionChange(sessionId: string | null) {
   chatStore.clearChat()
   try {
     const rawMessages = await fetchMessages(sessionStore.currentAgentId, sessionId)
-    chatStore.setMessages(rawMessages.map(mapRawToMessage))
+    chatStore.setMessages(processRawMessages(rawMessages))
   } catch { /* session may be empty */ }
   router.replace({ query: { ...route.query, session: sessionId } })
 }
@@ -141,6 +142,10 @@ async function handleSessionDelete(sessionId: string) {
     sessionStore.selectSession('')
     router.push({ path: '/chat', query: { agent: route.query.agent } })
   }
+}
+
+async function handleSessionRename(sessionId: string, name: string) {
+  await sessionStore.renameSession(sessionId, name)
 }
 
 /**

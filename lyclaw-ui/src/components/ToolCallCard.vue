@@ -106,9 +106,9 @@ const formattedArgs = computed(() => {
     </button>
 
     <div v-if="isExpanded" class="tool-call-body">
-      <div class="tool-section" v-if="toolCall.description">
+      <div class="tool-section">
         <div class="tool-section-label">Description</div>
-        <div class="tool-section-text">{{ toolCall.description }}</div>
+        <div class="tool-section-text">{{ toolCall.description || toolCall.name }}</div>
       </div>
 
       <div class="tool-section">

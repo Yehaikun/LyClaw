@@ -43,7 +43,7 @@ import { useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useSessionStore } from '@/stores/session'
 import { fetchMessages } from '@/api/chat'
-import { mapRawToMessage } from '@/utils/message-mapper'
+import { processRawMessages } from '@/utils/message-mapper'
 import { useSettingsStore } from '@/stores/settings'
 import WelcomeHero from '@/components/WelcomeHero.vue'
 import MessageBubble from '@/components/MessageBubble.vue'
@@ -229,14 +229,14 @@ onMounted(async () => {
     sessionStore.selectSession(sessionId)
     chatStore.setSessionId(sessionId)
     fetchMessages(sessionStore.currentAgentId, sessionId)
-      .then(raw => chatStore.setMessages(raw.map(mapRawToMessage)))
+      .then(raw => chatStore.setMessages(processRawMessages(raw)))
       .catch(() => {})
   } else {
     await ensureSession()
     // 若 auto-select 选中了已有 session，加载其历史消息
     if (sessionStore.currentSessionId) {
       fetchMessages(sessionStore.currentAgentId, sessionStore.currentSessionId)
-        .then(raw => chatStore.setMessages(raw.map(mapRawToMessage)))
+        .then(raw => chatStore.setMessages(processRawMessages(raw)))
         .catch(() => {})
     }
   }
@@ -254,7 +254,7 @@ watch(() => route.query.session, async (newId) => {
     chatStore.clearChat()
     try {
       const rawMessages = await fetchMessages(sessionStore.currentAgentId, newId)
-      chatStore.setMessages(rawMessages.map(mapRawToMessage))
+      chatStore.setMessages(processRawMessages(rawMessages))
     } catch { /* session may be empty */ }
   }
 })

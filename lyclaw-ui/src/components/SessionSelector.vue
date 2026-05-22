@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ChevronDown, Plus, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import type { Session } from '@/types'
 
 const props = defineProps<{
@@ -11,10 +11,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string | null): void
   (e: 'delete-session', sessionId: string): void
+  (e: 'rename-session', sessionId: string, name: string): void
 }>()
 
 const isOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
+const editingId = ref<string | null>(null)
+const editName = ref('')
+const editInputRef = ref<HTMLInputElement | null>(null)
 
 const currentLabel = computed(() => {
   if (!props.modelValue) return 'New Session'
@@ -31,6 +35,36 @@ function onDelete(e: Event, sessionId: string) {
   e.stopPropagation()
   if (confirm('Delete this session and all its messages?')) {
     emit('delete-session', sessionId)
+  }
+}
+
+function startRename(e: Event, session: Session) {
+  e.stopPropagation()
+  editingId.value = session.sessionId
+  editName.value = session.name || ''
+  requestAnimationFrame(() => editInputRef.value?.focus())
+}
+
+function commitRename() {
+  if (editingId.value && editName.value.trim()) {
+    emit('rename-session', editingId.value, editName.value.trim())
+  }
+  editingId.value = null
+  editName.value = ''
+}
+
+function cancelRename() {
+  editingId.value = null
+  editName.value = ''
+}
+
+function onRenameKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    commitRename()
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    cancelRename()
   }
 }
 
@@ -73,7 +107,19 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
         type="button"
         @click="select(session.sessionId)"
       >
-        <span class="session-name">{{ session.name || 'Untitled' }}</span>
+        <input
+          v-if="editingId === session.sessionId"
+          ref="editInputRef"
+          v-model="editName"
+          class="rename-input"
+          @click.stop
+          @keydown="onRenameKeydown"
+          @blur="commitRename"
+        />
+        <span v-else class="session-name">{{ session.name || 'Untitled' }}</span>
+        <span class="btn-edit" title="Rename session" @click="startRename($event, session)">
+          <Pencil :size="12" />
+        </span>
         <span class="btn-delete" title="Delete session" @click="onDelete($event, session.sessionId)">
           <Trash2 :size="13" />
         </span>
@@ -180,6 +226,27 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   flex: 1;
 }
 
+.btn-edit {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--rounded-sm);
+  color: var(--color-muted);
+  flex-shrink: 0;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.session-option:hover .btn-edit {
+  display: flex;
+}
+
+.btn-edit:hover {
+  color: var(--color-primary);
+  background: var(--color-surface-card);
+}
+
 .btn-delete {
   display: none;
   align-items: center;
@@ -199,6 +266,19 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 .btn-delete:hover {
   color: var(--color-danger, #e03131);
   background: var(--color-surface-card);
+}
+
+.rename-input {
+  flex: 1;
+  padding: 2px 4px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--rounded-sm);
+  background: var(--color-canvas);
+  color: var(--color-body);
+  font-family: var(--font-sans);
+  font-size: var(--body-sm-size);
+  outline: none;
+  min-width: 0;
 }
 
 .dropdown-option.active {

@@ -3,6 +3,7 @@ package lyjew.com.lyclaw.react;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -276,7 +277,7 @@ class AgentHookIntegrationTest {
                     .thenReturn(ToolExecutionResult.success("文件写入成功", "write_file"));
 
             CompletableFuture<Boolean> approvalFuture = new CompletableFuture<>();
-            when(approvalStore.create("call-approve")).thenReturn(approvalFuture);
+            when(approvalStore.create(eq("call-approve"), anyString(), anyString(), anyString(), anyString())).thenReturn(approvalFuture);
 
             AtomicReference<ToolExecutor> captured = new AtomicReference<>();
             when(reActEngine.execute(any(), any(ChatRequest.class), any())).thenAnswer(inv -> {
@@ -330,7 +331,7 @@ class AgentHookIntegrationTest {
 
             System.out.println("<<< AI 回复：" + reply);
             assertThat(reply).contains("2026-05-18");
-            verify(approvalStore, never()).create(any());
+            verify(approvalStore, never()).create(anyString(), anyString(), anyString(), anyString(), anyString());
         }
 
         @Test
@@ -346,7 +347,7 @@ class AgentHookIntegrationTest {
             CompletableFuture<Boolean> timeoutFuture = new CompletableFuture<>();
             // 不 complete —— 等待 30s 超时太久了，让底层 executor 自己处理
             // 我们直接用 approve/deny 管理
-            when(approvalStore.create("call-timeout")).thenReturn(timeoutFuture);
+            when(approvalStore.create(eq("call-timeout"), anyString(), anyString(), anyString(), anyString())).thenReturn(timeoutFuture);
 
             AtomicReference<ToolExecutor> captured = new AtomicReference<>();
             when(reActEngine.execute(any(), any(ChatRequest.class), any())).thenAnswer(inv -> {
@@ -397,7 +398,7 @@ class AgentHookIntegrationTest {
 
             // 3. 审批
             CompletableFuture<Boolean> approvalFuture = new CompletableFuture<>();
-            when(approvalStore.create("call-full")).thenReturn(approvalFuture);
+            when(approvalStore.create(eq("call-full"), anyString(), anyString(), anyString(), anyString())).thenReturn(approvalFuture);
 
             AtomicReference<ToolExecutor> captured = new AtomicReference<>();
             when(reActEngine.execute(any(), any(ChatRequest.class), any())).thenAnswer(inv -> {
@@ -432,8 +433,7 @@ class AgentHookIntegrationTest {
             // 验证链路顺序
             verify(securityManager).approve(any(ChatContext.class), eq("EXECUTE_CHAT"));
             verify(toolSandbox).execute(eq(mockTool), any(), eq(SandboxLevel.SANDBOX));
-            verify(approvalStore).create("call-full");
-        }
+            verify(approvalStore).create(eq("call-full"), anyString(), anyString(), anyString(), anyString());        }
 
         @Test
         @DisplayName("空 Hook 链 → 行为不变（向后兼容）")

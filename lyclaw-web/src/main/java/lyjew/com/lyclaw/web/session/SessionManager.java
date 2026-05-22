@@ -154,10 +154,6 @@ public class SessionManager implements SessionFactory {
                 preview = preview.substring(0, maxLen);
             }
             sessionRepository.updateFirstMsgPreview(session.getSessionId(), preview);
-            // 同时将会话名称更新为首条消息预览
-            String name = preview != null ? preview : session.getName();
-            session.setName(name);
-            sessionRepository.updateName(session.getSessionId(), name);
         }
     }
 
@@ -290,13 +286,32 @@ public class SessionManager implements SessionFactory {
     }
 
     private Message mapToMessage(Map<String, Object> fields) {
-        return Message.builder()
+        var builder = Message.builder()
                 .role((String) fields.get("role"))
                 .content((String) fields.get("content"))
                 .toolCallId((String) fields.get("toolCallId"))
                 .toolName((String) fields.get("toolName"))
                 .model((String) fields.get("model"))
-                .thinking((String) fields.get("thinking"))
+                .thinking((String) fields.get("thinking"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rawToolCalls = (List<Map<String, Object>>) fields.get("toolCalls");
+        if (rawToolCalls != null) {
+            List<lyjew.com.lyclaw.model.ToolCall> toolCalls = rawToolCalls.stream()
+                    .map(this::mapToToolCall)
+                    .collect(java.util.stream.Collectors.toList());
+            builder.toolCalls(toolCalls);
+        }
+        return builder.build();
+    }
+
+    private lyjew.com.lyclaw.model.ToolCall mapToToolCall(Map<String, Object> fields) {
+        return lyjew.com.lyclaw.model.ToolCall.builder()
+                .toolCallId((String) fields.get("toolCallId"))
+                .name((String) fields.get("name"))
+                .description((String) fields.get("description"))
+                .arguments((String) fields.get("arguments"))
+                .result((String) fields.get("result"))
                 .build();
     }
 

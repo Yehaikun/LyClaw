@@ -7,6 +7,7 @@ import lyjew.com.lyclaw.config.AgentProperties;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
+import lyjew.com.lyclaw.persistence.repository.ApprovalRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -44,16 +45,18 @@ class ApprovalIntegrationTest {
     class ApprovalStoreTests {
 
         private ApprovalStore store;
+        private ApprovalRepository approvalRepo;
 
         @BeforeEach
         void setUp() {
-            store = new ApprovalStore(new AgentProperties());
+            approvalRepo = mock(ApprovalRepository.class);
+            store = new ApprovalStore(new AgentProperties(), approvalRepo);
         }
 
         @Test
         @DisplayName("create → approve 返回 true")
         void testCreateAndApprove() throws Exception {
-            CompletableFuture<Boolean> future = store.create("call-1");
+            CompletableFuture<Boolean> future = store.create("call-1", "sess-1", "agent-1", "tool", "{}");
             assertNotNull(future);
             assertEquals(1, store.pendingCount());
 
@@ -65,7 +68,7 @@ class ApprovalIntegrationTest {
         @Test
         @DisplayName("create → deny 返回 false")
         void testCreateAndDeny() throws Exception {
-            CompletableFuture<Boolean> future = store.create("call-2");
+            CompletableFuture<Boolean> future = store.create("call-2", "sess-1", "agent-1", "tool", "{}");
             assertEquals(1, store.pendingCount());
 
             assertTrue(store.deny("call-2"));
@@ -76,7 +79,7 @@ class ApprovalIntegrationTest {
         @Test
         @DisplayName("重复 approve/deny 对同一 ID 返回 false（幂等保护）")
         void testDuplicateResponseReturnsFalse() {
-            store.create("call-3");
+            store.create("call-3", "sess-1", "agent-1", "tool", "{}");
             store.approve("call-3");
             assertFalse(store.approve("call-3"));
             assertFalse(store.deny("call-3"));
@@ -92,9 +95,9 @@ class ApprovalIntegrationTest {
         @Test
         @DisplayName("denyAll 拒绝所有待审批请求")
         void testDenyAllRejectsAllPending() throws Exception {
-            CompletableFuture<Boolean> f1 = store.create("a");
-            CompletableFuture<Boolean> f2 = store.create("b");
-            CompletableFuture<Boolean> f3 = store.create("c");
+            CompletableFuture<Boolean> f1 = store.create("a", "sess-1", "agent-1", "tool", "{}");
+            CompletableFuture<Boolean> f2 = store.create("b", "sess-1", "agent-1", "tool", "{}");
+            CompletableFuture<Boolean> f3 = store.create("c", "sess-1", "agent-1", "tool", "{}");
             assertEquals(3, store.pendingCount());
 
             store.denyAll();
@@ -109,9 +112,9 @@ class ApprovalIntegrationTest {
         @DisplayName("pendingCount 正确追踪待审批数量")
         void testPendingCountTracking() {
             assertEquals(0, store.pendingCount());
-            store.create("x");
+            store.create("x", "sess-1", "agent-1", "tool", "{}");
             assertEquals(1, store.pendingCount());
-            store.create("y");
+            store.create("y", "sess-1", "agent-1", "tool", "{}");
             assertEquals(2, store.pendingCount());
             store.approve("x");
             assertEquals(1, store.pendingCount());
@@ -123,7 +126,7 @@ class ApprovalIntegrationTest {
         @DisplayName("审批超时自动拒绝：不调用 approve/deny 时 future 应在超时后完成")
         void testTimeoutAutoDeny() throws Exception {
             // 验证 future 不会立即完成（不会在短时间窗口内自动完成）
-            CompletableFuture<Boolean> future = store.create("timeout-test");
+            CompletableFuture<Boolean> future = store.create("timeout-test", "sess-1", "agent-1", "tool", "{}");
             assertFalse(future.isDone(), "刚创建的 future 不应已完成");
 
             // 超时时间 60s，这里只验证框架设计正确——future 在短时间不完成
@@ -143,9 +146,12 @@ class ApprovalIntegrationTest {
         private ChatFacade chatFacade;
         private ChatModel chatModel;
 
+        private ApprovalRepository approvalRepo;
+
         @BeforeEach
         void setUp() {
-            approvalStore = new ApprovalStore(new AgentProperties());
+            approvalRepo = mock(ApprovalRepository.class);
+            approvalStore = new ApprovalStore(new AgentProperties(), approvalRepo);
             engine = new DefaultReActEngine(approvalStore, new AgentProperties());
             chatFacade = mock(ChatFacade.class);
             chatModel = mock(ChatModel.class);

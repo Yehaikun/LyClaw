@@ -9,7 +9,7 @@
  * 所有会话API使用 /api/agents/{agentId}/sessions 路径前缀，
  * 对应后端 ChatController + SessionController。
  */
-import { post, get, del, postSSE } from './client'
+import { post, get, del, patch, postSSE } from './client'
 import type { ChatRequest, ChatResult, Session } from '../types'
 
 /**
@@ -75,6 +75,21 @@ export function fetchMessages(
   const qs = params.toString()
   return get<Record<string, unknown>[]>(
     `/api/agents/${agentId}/sessions/${sessionId}/messages${qs ? '?' + qs : ''}`,
+  )
+}
+
+/**
+ * 重命名会话。
+ * PATCH /api/agents/{agentId}/sessions/{sessionId}
+ */
+export function renameSession(
+  agentId: string,
+  sessionId: string,
+  name: string,
+): Promise<{ sessionId: string; name: string }> {
+  return patch<{ sessionId: string; name: string }>(
+    `/api/agents/${agentId}/sessions/${sessionId}`,
+    { name },
   )
 }
 
