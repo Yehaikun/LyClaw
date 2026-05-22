@@ -3,6 +3,9 @@ package lyjew.com.lyclaw.react;
 import java.lang.reflect.Proxy;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import lyjew.com.lyclaw.annotation.Agent;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.config.AgentConfigResolver;
@@ -17,6 +20,8 @@ import lyjew.com.lyclaw.tool.ToolRegistry;
  * 接口创建运行时实现，将方法调用透明地转换为 Stage 管线 + ReAct 循环。</p>
  */
 public class AgentProxyFactory {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentProxyFactory.class);
 
     private final ChatFacade chatFacade;
     private final ReActEngine reActEngine;
@@ -103,6 +108,9 @@ public class AgentProxyFactory {
         AgentInvocationHandler handler = new AgentInvocationHandler(
                 chatFacade, reActEngine, toolRegistry, systemPrompt, model, provider,
                 hooks, stages, resolvedConfig);
+
+        log.info("🏭 [AgentProxyFactory] 创建Agent代理: interface={} model={} provider={} hooks={} stages={}",
+                agentInterface.getSimpleName(), model, provider, hooks.size(), stages.size());
 
         return (T) Proxy.newProxyInstance(
                 agentInterface.getClassLoader(),

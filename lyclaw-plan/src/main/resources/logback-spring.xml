@@ -4,7 +4,7 @@
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy年MM月dd日 HH时mm分ss秒 SSS毫秒} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
     <logger name="lyjew.com.lyclaw.plan" level="DEBUG"/>

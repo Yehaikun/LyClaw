@@ -45,34 +45,57 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
     public String execute(ToolCall toolCall, AgentContext ctx) {
         String toolName = toolCall.getName();
         String toolCallId = toolCall.getToolCallId();
+        long pipelineStart = System.currentTimeMillis();
+        log.info("⚙️ [ToolPipeline] 开始执行 7步管线 | toolName={} toolCallId={}", toolName, toolCallId);
 
         // Step 1: Resolve — 查找工具实例
+        long t1 = System.currentTimeMillis();
         Tool tool = toolRegistry.get(toolName);
         if (tool == null) {
-            log.warn("Tool not found: {}", toolName);
+            log.warn("❌ [ToolPipeline] Step1-Resolve失败: 工具未找到 toolName={}", toolName);
             return "Error: tool not found: " + toolName;
         }
+        log.info("  ├─ [Step1-Resolve] 工具查找完成 | 耗时={}ms | type={}",
+                System.currentTimeMillis() - t1, tool.getClass().getSimpleName());
 
         // Step 2: Policy check — 策略检查（频率限制、黑白名单）
+        long t2 = System.currentTimeMillis();
         if (toolCallPolicy != null && !toolCallPolicy.canExecute(toolName, null)) {
-            log.warn("Tool call blocked by policy: {}", toolName);
+            log.warn("⛔ [ToolPipeline] Step2-Policy拦截: toolName={}", toolName);
             return "Error: tool call blocked by policy: " + toolName;
         }
+        log.info("  ├─ [Step2-Policy] 策略检查通过 | 耗时={}ms | policy={}",
+                System.currentTimeMillis() - t2,
+                toolCallPolicy != null ? toolCallPolicy.getClass().getSimpleName() : "none");
 
         // Step 3: beforeExecution hooks
-        for (ToolHook hook : toolHooks) {
-            try {
-                hook.beforeExecution(toolCall, ctx);
-            } catch (Exception e) {
-                log.warn("ToolHook.beforeExecution failed: {}", e.getMessage(), e);
-                return hook.onError(toolCall, e, ctx);
+        long t3 = System.currentTimeMillis();
+        if (toolHooks.isEmpty()) {
+            log.info("  ├─ [Step3-beforeHook] 无注册钩子，跳过");
+        } else {
+            log.info("  ├─ [Step3-beforeHook] 执行 {} 个钩子: {}",
+                    toolHooks.size(),
+                    toolHooks.stream().map(h -> h.getClass().getSimpleName() + "(order=" + h.getOrder() + ")").toList());
+            for (ToolHook hook : toolHooks) {
+                try {
+                    log.info("    ├─ {}(order={})", hook.getClass().getSimpleName(), hook.getOrder());
+                    hook.beforeExecution(toolCall, ctx);
+                } catch (Exception e) {
+                    log.warn("    └─ ToolHook.beforeExecution失败: {} error={}", hook.getClass().getSimpleName(), e.getMessage(), e);
+                    return hook.onError(toolCall, e, ctx);
+                }
             }
         }
+        log.info("  ├─ [Step3-beforeHook] 完成 | 耗时={}ms", System.currentTimeMillis() - t3);
 
         // Step 4: Bind — 参数绑定
+        long t4 = System.currentTimeMillis();
         Map<String, Object> args = parseArgs(toolCall.getArguments());
+        log.info("  ├─ [Step4-Bind] 参数绑定完成 | 耗时={}ms | 参数数={}",
+                System.currentTimeMillis() - t4, args.size());
 
         // Step 5: Invoke — 实际执行
+        long t5 = System.currentTimeMillis();
         String result;
         try {
             ToolExecutionResult execResult = toolRegistry.execute(toolCall, null);
@@ -90,8 +113,12 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
                 ctx.getFailCount().incrementAndGet();
             }
             ctx.addToolResult(execResult.isSuccess() ? execResult.getResult() : execResult.getError());
+            log.info("  ├─ [Step5-Invoke] 执行完成 | 耗时={}ms | 成功={} | resultLen={}",
+                    System.currentTimeMillis() - t5, execResult.isSuccess(),
+                    result != null ? result.length() : 0);
         } catch (Exception e) {
-            log.error("Tool execution failed: tool={}", toolName, e);
+            log.error("  ├─ [Step5-Invoke] 执行异常 | 耗时={}ms | tool={} error={}",
+                    System.currentTimeMillis() - t5, toolName, e.getMessage(), e);
             ctx.getFailCount().incrementAndGet();
             // Step onError
             for (ToolHook hook : toolHooks) {
@@ -105,15 +132,25 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
         }
 
         // Step 6: afterExecution hooks
-        for (ToolHook hook : toolHooks) {
-            try {
-                result = hook.afterExecution(result, toolCall, ctx);
-            } catch (Exception e) {
-                log.warn("ToolHook.afterExecution failed: {}", e.getMessage(), e);
+        long t6 = System.currentTimeMillis();
+        if (toolHooks.isEmpty()) {
+            log.info("  ├─ [Step6-afterHook] 无注册钩子，跳过");
+        } else {
+            for (ToolHook hook : toolHooks) {
+                try {
+                    log.info("    ├─ {}(order={})", hook.getClass().getSimpleName(), hook.getOrder());
+                    result = hook.afterExecution(result, toolCall, ctx);
+                } catch (Exception e) {
+                    log.warn("    └─ ToolHook.afterExecution失败: {} error={}", hook.getClass().getSimpleName(), e.getMessage(), e);
+                }
             }
         }
+        log.info("  ├─ [Step6-afterHook] 完成 | 耗时={}ms | resultLen={}",
+                System.currentTimeMillis() - t6, result != null ? result.length() : 0);
 
         // Step 7: Format — 结果格式化（目前直接返回，后续可接 ResultFormatter）
+        long totalDuration = System.currentTimeMillis() - pipelineStart;
+        log.info("  └─ [Step7-Format] 管线全部完成 | 总耗时={}ms | toolName={}", totalDuration, toolName);
         return result;
     }
 

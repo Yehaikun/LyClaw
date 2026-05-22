@@ -2,6 +2,8 @@ package lyjew.com.lyclaw.interceptor;
 
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.ChatResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -15,6 +17,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Component
 public class InterceptorChain {
 
+    private static final Logger log = LoggerFactory.getLogger(InterceptorChain.class);
+
     /** 拦截器列表，使用 CopyOnWriteArrayList 保证并发读写的安全性 */
     private final List<Interceptor> interceptors = new CopyOnWriteArrayList<>();
 
@@ -25,8 +29,9 @@ public class InterceptorChain {
      */
     public void addInterceptor(Interceptor interceptor) {
         this.interceptors.add(interceptor);
-        // 按优先级升序排列，order值越小越靠前
         this.interceptors.sort(Comparator.comparingInt(Interceptor::getOrder));
+        log.info("🔗 [InterceptorChain] 注册拦截器: {} (order={}) 总数={}",
+                interceptor.getClass().getSimpleName(), interceptor.getOrder(), interceptors.size());
     }
 
     /**
@@ -37,6 +42,8 @@ public class InterceptorChain {
     public void removeInterceptor(Interceptor interceptor) {
         this.interceptors.remove(interceptor);
         this.interceptors.sort(Comparator.comparingInt(Interceptor::getOrder));
+        log.info("🔗 [InterceptorChain] 移除拦截器: {} 剩余={}",
+                interceptor.getClass().getSimpleName(), interceptors.size());
     }
 
     /**
@@ -47,11 +54,19 @@ public class InterceptorChain {
      * @return 全部通过返回 true，被拦截返回 false
      */
     public boolean preHandle(ChatContext context) {
+        if (interceptors.isEmpty()) {
+            log.debug("🔗 [InterceptorChain] preHandle: 无注册拦截器，跳过");
+            return true;
+        }
+        log.info("🔗 [InterceptorChain] preHandle: 执行 {} 个拦截器 (按order升序)", interceptors.size());
         for (Interceptor interceptor : interceptors) {
+            log.info("  ├─ {}(order={})", interceptor.getClass().getSimpleName(), interceptor.getOrder());
             if (!interceptor.preHandle(context)) {
-                return false; // 中断执行，阻止请求继续处理
+                log.warn("  └─ ⛔ 拦截器 {} 中断了请求处理", interceptor.getClass().getSimpleName());
+                return false;
             }
         }
+        log.info("  └─ preHandle全部通过");
         return true;
     }
 
@@ -63,12 +78,18 @@ public class InterceptorChain {
      * @param result  聊天处理结果
      */
     public void postHandle(ChatContext context, ChatResult result) {
+        if (interceptors.isEmpty()) {
+            log.debug("🔗 [InterceptorChain] postHandle: 无注册拦截器，跳过");
+            return;
+        }
         List<Interceptor> reversed = new ArrayList<>(interceptors);
-        // 逆序排列，高优先级的拦截器后执行 postHandle
         reversed.sort(Comparator.comparingInt(Interceptor::getOrder).reversed());
+        log.info("🔗 [InterceptorChain] postHandle: 执行 {} 个拦截器 (按order降序)", reversed.size());
         for (Interceptor interceptor : reversed) {
+            log.info("  ├─ {}(order={})", interceptor.getClass().getSimpleName(), interceptor.getOrder());
             interceptor.postHandle(context, result);
         }
+        log.info("  └─ postHandle完成");
     }
 
     /**

@@ -95,12 +95,39 @@ public abstract class AbstractChatModel implements ChatModel {
     @Override
     public Flux<ModelResponse> stream(ChatRequest request) {
         return Flux.defer(() -> {
+            log.info("🌊 [AbstractChatModel] 流式调用开始 | provider={} model={} messagesCount={} stream={}",
+                    provider(), model(), request.getMessages() != null ? request.getMessages().size() : 0,
+                    request.isStream());
+            long t0 = System.currentTimeMillis();
+
+            log.info("  ├─ [Step1-Validate] 校验请求...");
+            long t1 = System.currentTimeMillis();
             validateRequest(request);
+            log.info("  ├─ [Step1-Validate] 校验通过 | 耗时={}ms", System.currentTimeMillis() - t1);
+
+            log.info("  ├─ [Step2-BuildNative] 构建原生请求...");
+            long t2 = System.currentTimeMillis();
             Object nativeRequest = buildNativeRequest(request);
+            log.info("  ├─ [Step2-BuildNative] 构建完成 | 耗时={}ms", System.currentTimeMillis() - t2);
+
+            log.info("  ├─ [Step3-Send] 发送HTTP流式请求 | baseUrl={}", baseUrl);
+            long t3 = System.currentTimeMillis();
             return sendNativeRequest(nativeRequest)
-                    .map(this::parseChunk)
-                    .doOnComplete(() -> log.debug("{} stream completed", provider()))
-                    .doOnError(this::handleError);
+                    .map(raw -> {
+                        ModelResponse chunk = parseChunk(raw);
+                        return chunk;
+                    })
+                    .doOnComplete(() -> {
+                        long total = System.currentTimeMillis() - t0;
+                        log.info("  └─ [AbstractChatModel] 流式调用完成 | provider={} model={} 总耗时={}ms",
+                                provider(), model(), total);
+                    })
+                    .doOnError(error -> {
+                        long total = System.currentTimeMillis() - t0;
+                        log.error("  └─ [AbstractChatModel] 流式调用失败 | provider={} model={} 耗时={}ms error={}",
+                                provider(), model(), total, error.getMessage());
+                        handleError(error);
+                    });
         });
     }
 

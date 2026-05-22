@@ -110,8 +110,11 @@ public class DefaultChatFacade implements ChatFacade {
     public ModelResponse chat(ChatRequest request) {
         RoutingDecision decision = route(request, null);
         ChatModel model = resolveModel(decision);
-        log.debug("路由决策: {}:{} (tier={}, reason={})",
+        log.info("🧭 [ChatFacade] 路由决策 | provider={} model={} tier={} reason={}",
                 decision.provider(), decision.model(), decision.tier(), decision.reason());
+        log.info("📡 [ChatFacade] 调用模型 | provider={} model={} stream={} messagesCount={}",
+                model.provider(), model.model(), request.isStream(),
+                request.getMessages() != null ? request.getMessages().size() : 0);
         return model.call(request);
     }
 
@@ -240,6 +243,9 @@ public class DefaultChatFacade implements ChatFacade {
             ChatRequest request = buildRequest();
             RoutingDecision decision = facade.route(request, null);
             ChatModel model = facade.resolveModel(decision);
+            log.info("🌊 [ChatClient] 流式调用 | provider={} model={} messagesCount={}",
+                    model.provider(), model.model(),
+                    request.getMessages() != null ? request.getMessages().size() : 0);
             return model.stream(request);
         }
 
@@ -248,6 +254,9 @@ public class DefaultChatFacade implements ChatFacade {
             ChatRequest request = buildRequest();
             RoutingDecision decision = facade.route(request, null);
             ChatModel model = facade.resolveModel(decision);
+            log.info("📞 [ChatClient] 同步调用 | provider={} model={} messagesCount={}",
+                    model.provider(), model.model(),
+                    request.getMessages() != null ? request.getMessages().size() : 0);
             return model.call(request);
         }
 

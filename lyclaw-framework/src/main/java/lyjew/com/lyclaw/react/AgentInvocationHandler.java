@@ -208,16 +208,22 @@ public class AgentInvocationHandler implements InvocationHandler {
         // resolvedConfig.getDelegationMode() is not "none" and allowAgents is non-empty.
 
         // 0. beforeAgentRun hook dispatch (with fully prepared context)
-        log.info("🪝 派发 beforeAgentRun 钩子...");
+        log.info("🪝 [AgentInvocationHandler] 派发 beforeAgentRun 钩子...");
         hookRegistry.dispatchBeforeAgentRun(ctx);
 
         // 1. beforeRequest hooks（按 order 升序）
         List<AgentHook> sorted = new ArrayList<>(hooks);
         sorted.sort(Comparator.comparingInt(AgentHook::getOrder));
-        log.info("🔗 执行 {} 个 beforeRequest 钩子 (按order升序)", sorted.size());
-        for (AgentHook hook : sorted) {
-            log.debug("  └─ 执行钩子: {} (order={})", hook.getClass().getSimpleName(), hook.getOrder());
-            hook.beforeRequest(ctx);
+        if (sorted.isEmpty()) {
+            log.info("🔗 [beforeRequest] 无注册钩子，跳过");
+        } else {
+            log.info("🔗 [beforeRequest] 执行 {} 个钩子 (按order升序): {}",
+                    sorted.size(),
+                    sorted.stream().map(h -> h.getClass().getSimpleName() + "(order=" + h.getOrder() + ")").toList());
+            for (AgentHook hook : sorted) {
+                log.info("  ├─ {}(order={})", hook.getClass().getSimpleName(), hook.getOrder());
+                hook.beforeRequest(ctx);
+            }
         }
 
         // 如果 hook 修改了 userMessage 或 systemPrompt，重新构建 request
@@ -303,9 +309,18 @@ public class AgentInvocationHandler implements InvocationHandler {
         }
 
         // 3. afterResult hooks（按 order 降序）
-        log.info("🔚 执行 {} 个 afterResult 钩子 (按order降序)", sorted.size());
-        for (int i = sorted.size() - 1; i >= 0; i--) {
-            result = sorted.get(i).afterResult(result, ctx);
+        if (sorted.isEmpty()) {
+            log.info("🔚 [afterResult] 无注册钩子，跳过");
+        } else {
+            log.info("🔚 [afterResult] 执行 {} 个钩子 (按order降序): {}",
+                    sorted.size(),
+                    sorted.stream().map(h -> h.getClass().getSimpleName() + "(order=" + h.getOrder() + ")").toList());
+            for (int i = sorted.size() - 1; i >= 0; i--) {
+                AgentHook hook = sorted.get(i);
+                log.info("  ├─ {}(order={})", hook.getClass().getSimpleName(), hook.getOrder());
+                result = hook.afterResult(result, ctx);
+            }
+            log.info("  └─ afterResult完成 | 最终响应长度={}", result != null ? result.length() : 0);
         }
 
         // 4. agentEnd hook dispatch
@@ -325,6 +340,8 @@ public class AgentInvocationHandler implements InvocationHandler {
 
     private ToolExecutor buildToolExecutor(AgentContext ctx) {
         return (toolName, toolCallId, argumentsJson) -> {
+            log.info("🔨 [ToolExecutor] 开始执行工具: toolName={} toolCallId={} argsLen={}",
+                    toolName, toolCallId, argumentsJson != null ? argumentsJson.length() : 0);
             // beforeToolCall dispatch
             hookRegistry.dispatchBeforeToolCall(toolName, toolCallId, argumentsJson, ctx);
             try {
@@ -341,14 +358,16 @@ public class AgentInvocationHandler implements InvocationHandler {
                 String output;
                 if (result.isSuccess()) {
                     output = result.getResult() != null ? result.getResult() : "";
+                    log.info("✅ [ToolExecutor] 工具执行成功: toolName={} outputLen={}", toolName, output.length());
                 } else {
                     output = "Error: " + (result.getError() != null ? result.getError() : "unknown");
+                    log.warn("⚠️ [ToolExecutor] 工具执行失败: toolName={} error={}", toolName, result.getError());
                 }
                 // afterToolCall dispatch
                 hookRegistry.dispatchAfterToolCall(toolName, toolCallId, output, ctx);
                 return output;
             } catch (Exception e) {
-                log.error("❌ 工具执行失败: tool={} toolCallId={}", toolName, toolCallId, e);
+                log.error("❌ [ToolExecutor] 工具执行异常: toolName={} toolCallId={} error={}", toolName, toolCallId, e.getMessage(), e);
                 String errorOutput = "Error: " + e.getMessage();
                 // afterToolCall dispatch (even on error)
                 hookRegistry.dispatchAfterToolCall(toolName, toolCallId, errorOutput, ctx);
