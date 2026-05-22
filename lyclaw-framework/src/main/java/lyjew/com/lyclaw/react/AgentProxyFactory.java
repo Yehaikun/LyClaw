@@ -89,7 +89,7 @@ public class AgentProxyFactory {
         Agent ann = agentInterface.getAnnotation(Agent.class);
         ResolvedAgentConfig resolvedConfig = (configResolver != null && ann != null)
                 ? configResolver.resolve(ann)
-                : ResolvedAgentConfig.builder().build();
+                : ResolvedAgentConfig.fromAnnotation(ann);
 
         String systemPrompt = (defaultSystemPrompt != null) ? defaultSystemPrompt :
                 (ann != null && !ann.systemPromptOverride().isEmpty()) ? ann.systemPromptOverride() : null;

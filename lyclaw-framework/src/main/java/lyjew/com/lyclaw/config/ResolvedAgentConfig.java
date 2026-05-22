@@ -2,6 +2,9 @@ package lyjew.com.lyclaw.config;
 
 import java.util.*;
 
+import lyjew.com.lyclaw.annotation.Agent;
+import lyjew.com.lyclaw.annotation.Extension;
+
 /**
  * 完全解析的 Agent 配置 —— 3层深度合并的不可变输出。
  * 解析优先级: @Agent 注解 > lyclaw.agent.defaults.* > AgentSystemDefaults
@@ -97,6 +100,61 @@ public class ResolvedAgentConfig {
     public String getExtension(String key, String defaultValue) { return extensions.getOrDefault(key, defaultValue); }
 
     public static Builder builder() { return new Builder(); }
+
+    /**
+     * 从 @Agent 注解直接构建配置，无 YAML 层。
+     * 优先级: @Agent 注解 > AgentSystemDefaults 系统默认值。
+     * 用于非Spring环境（configResolver 不可用时）的降级路径。
+     */
+    public static ResolvedAgentConfig fromAnnotation(Agent ann) {
+        if (ann == null) return builder().build();
+        String agentId = !ann.id().isEmpty() ? ann.id() : decapitalize(ann.name());
+        return builder()
+            .agentId(agentId)
+            .agentName(!ann.name().isEmpty() ? ann.name() : agentId)
+            .description(ann.description())
+            .version(!ann.version().isEmpty() ? ann.version() : "1.0.0")
+            .defaultAgent(ann.defaultAgent())
+            .workspaceDir(ann.workspace())
+            .agentDir(!ann.agentDir().isEmpty() ? ann.agentDir() : agentId)
+            .systemPromptOverride(!ann.systemPromptOverride().isEmpty() ? ann.systemPromptOverride() : null)
+            .model(!ann.model().isEmpty() ? ann.model() : AgentSystemDefaults.MODEL)
+            .provider(!ann.provider().isEmpty() ? ann.provider() : AgentSystemDefaults.PROVIDER)
+            .fallbacks(List.of(ann.fallbacks()))
+            .thinkingDefault(!ann.thinkingDefault().isEmpty() ? ann.thinkingDefault() : AgentSystemDefaults.THINKING_DEFAULT)
+            .verboseDefault(!ann.verboseDefault().isEmpty() ? ann.verboseDefault() : AgentSystemDefaults.VERBOSE_DEFAULT)
+            .reasoningDefault(!ann.reasoningDefault().isEmpty() ? ann.reasoningDefault() : AgentSystemDefaults.REASONING_DEFAULT)
+            .fastModeDefault(ann.fastModeDefault())
+            .contextTokens(ann.contextTokens() != 0 ? ann.contextTokens() : AgentSystemDefaults.CONTEXT_TOKENS)
+            .contextInjection(!ann.contextInjection().isEmpty() ? ann.contextInjection() : AgentSystemDefaults.CONTEXT_INJECTION)
+            .bootstrapMaxChars(ann.bootstrapMaxChars() != 0 ? ann.bootstrapMaxChars() : AgentSystemDefaults.BOOTSTRAP_MAX_CHARS)
+            .bootstrapTotalMaxChars(ann.bootstrapTotalMaxChars() != 0 ? ann.bootstrapTotalMaxChars() : AgentSystemDefaults.BOOTSTRAP_TOTAL_MAX_CHARS)
+            .skills(List.of(ann.skills()))
+            .delegationMode(!ann.delegationMode().isEmpty() ? ann.delegationMode() : AgentSystemDefaults.DELEGATION_MODE)
+            .allowAgents(List.of(ann.allowAgents()))
+            .maxSpawnDepth(ann.maxSpawnDepth() != 0 ? ann.maxSpawnDepth() : AgentSystemDefaults.MAX_SPAWN_DEPTH)
+            .maxChildrenPerAgent(ann.maxChildrenPerAgent() != 0 ? ann.maxChildrenPerAgent() : AgentSystemDefaults.MAX_CHILDREN)
+            .sandbox(!ann.sandbox().isEmpty() ? ann.sandbox() : AgentSystemDefaults.SANDBOX)
+            .extensions(toExtensionMap(ann.extensions()))
+            .build();
+    }
+
+    private static Map<String, String> toExtensionMap(Extension[] extensions) {
+        if (extensions == null || extensions.length == 0) return Collections.emptyMap();
+        Map<String, String> map = new LinkedHashMap<>();
+        for (Extension ext : extensions) {
+            if (ext.key() != null && !ext.key().isEmpty()) {
+                map.put(ext.key(), ext.value());
+            }
+        }
+        return Collections.unmodifiableMap(map);
+    }
+
+    private static String decapitalize(String s) {
+        if (s == null || s.isEmpty()) return "";
+        if (s.length() == 1) return s.toLowerCase();
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+    }
 
     public static class Builder {
         private String agentId = "";
