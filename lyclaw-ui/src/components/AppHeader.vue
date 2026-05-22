@@ -124,7 +124,6 @@ async function handleSessionChange(sessionId: string | null) {
   }
   sessionStore.selectSession(sessionId)
   chatStore.setSessionId(sessionId)
-  chatStore.clearChat()
   try {
     const rawMessages = await fetchMessages(sessionStore.currentAgentId, sessionId)
     chatStore.setMessages(processRawMessages(rawMessages))

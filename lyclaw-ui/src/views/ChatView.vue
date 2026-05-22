@@ -72,6 +72,18 @@ const showThinking = ref(true)
 
 /** 判定"接近底部"的距离阈值（像素），在此范围内视为用户在底部 */
 const SCROLL_BOTTOM_THRESHOLD = 80
+/** 判定"接近顶部"的距离阈值（像素），在此范围内触发加载更早历史消息 */
+const SCROLL_TOP_THRESHOLD = 120
+/** 每次分页加载的消息条数 */
+const PAGE_SIZE = 50
+
+/** 是否正在加载更早的历史消息 */
+const isLoadingMore = ref(false)
+/** 是否还有更早的历史消息可加载（false表示已到顶） */
+const hasMoreMessages = ref(true)
+
+/** 加载更早历史消息时，从后端拉取的起始偏移量 */
+let oldestLoadedOffset = -1
 
 /**
  * 判断消息列表是否滚动到接近底部。
@@ -89,9 +101,84 @@ function isNearBottom(): boolean {
 /**
  * 消息列表滚动事件处理：检测用户是否手动上滚离开了底部。
  * 用户上滚后自动滚动暂停，直到新消息到达或用户手动滚回底部。
+ * 同时检测是否接近顶部，触发加载更早的历史消息。
  */
 function onMessageListScroll() {
   userScrolledUp.value = !isNearBottom()
+
+  // 接近顶部且还有更多消息时，自动加载更早的历史消息
+  if (messageListRef.value && messageListRef.value.scrollTop < SCROLL_TOP_THRESHOLD) {
+    loadMoreMessages()
+  }
+}
+
+/**
+ * 加载更早的历史消息（向上翻页）。
+ * 仅在没有正在加载、且确实还有更多消息时触发。
+ */
+async function loadMoreMessages() {
+  if (isLoadingMore.value || !hasMoreMessages.value) return
+  const sid = sessionStore.currentSessionId
+  if (!sid) return
+
+  isLoadingMore.value = true
+  const currentScrollHeight = messageListRef.value?.scrollHeight ?? 0
+
+  try {
+    const sess = sessionStore.sessions.find(s => s.sessionId === sid)
+    const total: number = sess?.messageCount ?? 0
+    const loaded = chatStore.messages.length
+
+    if (total > 0 && loaded >= total) {
+      hasMoreMessages.value = false
+      return
+    }
+
+    // 计算还需加载多少条：total=0（未知总量）时每次请求PAGE_SIZE条
+    const remaining = total > 0 ? Math.min(total - loaded, PAGE_SIZE) : PAGE_SIZE
+    if (remaining <= 0) {
+      hasMoreMessages.value = false
+      return
+    }
+
+    // offset=0 表示从第一条开始，limit=remaining
+    const rawMessages = await fetchMessages(sessionStore.currentAgentId, sid, 0, remaining)
+    if (rawMessages.length === 0) {
+      hasMoreMessages.value = false
+      return
+    }
+
+    const newMessages = processRawMessages(rawMessages)
+    // 去重：只添加当前列表中不存在的消息（通过toolCallId或content判断）
+    const existingKeys = new Set(
+      chatStore.messages.map(m => `${m.role}:${m.content?.slice(0, 80)}:${m.toolCallId || ''}`)
+    )
+    const trulyNew = newMessages.filter(
+      m => !existingKeys.has(`${m.role}:${m.content?.slice(0, 80)}:${m.toolCallId || ''}`)
+    )
+
+    if (trulyNew.length === 0) {
+      hasMoreMessages.value = false
+      return
+    }
+
+    chatStore.prependMessages(trulyNew)
+
+    // 恢复滚动位置，防止页面跳动
+    await nextTick()
+    if (messageListRef.value) {
+      messageListRef.value.scrollTop = messageListRef.value.scrollHeight - currentScrollHeight
+    }
+
+    // 如果加载到的条数少于请求数，说明已到顶
+    if (rawMessages.length < remaining) {
+      hasMoreMessages.value = false
+    }
+  } catch {
+    // 加载失败不阻塞
+  } finally {
+    isLoadingMore.value = false
+  }
 }
 
 /** 是否有任何消息（用户消息或助手回复） */
@@ -219,6 +306,18 @@ async function ensureSession() {
 }
 
 /**
+ * 检查是否还有更早的历史消息可以加载。
+ * 通过比较已加载的消息数与 session.messageCount 判断。
+ */
+function checkHasMore(sid: string) {
+  const sess = sessionStore.sessions.find(s => s.sessionId === sid)
+  const total = sess?.messageCount ?? 0
+  if (total > 0) {
+    hasMoreMessages.value = chatStore.messages.length < total
+  }
+}
+
+/**
  * 组件挂载生命周期：检测URL查询参数恢复会话或创建新会话。
  * - 有?session=xxx参数 → 加载指定会话的历史消息
  * - 无参数 → 调用ensureSession创建新会话
@@ -229,14 +328,20 @@ onMounted(async () => {
     sessionStore.selectSession(sessionId)
     chatStore.setSessionId(sessionId)
     fetchMessages(sessionStore.currentAgentId, sessionId)
-      .then(raw => chatStore.setMessages(processRawMessages(raw)))
+      .then(raw => {
+        chatStore.setMessages(processRawMessages(raw))
+        checkHasMore(sessionId)
+      })
       .catch(() => {})
   } else {
     await ensureSession()
     // 若 auto-select 选中了已有 session，加载其历史消息
     if (sessionStore.currentSessionId) {
       fetchMessages(sessionStore.currentAgentId, sessionStore.currentSessionId)
-        .then(raw => chatStore.setMessages(processRawMessages(raw)))
+        .then(raw => {
+          chatStore.setMessages(processRawMessages(raw))
+          checkHasMore(sessionStore.currentSessionId!)
+        })
         .catch(() => {})
     }
   }
@@ -251,10 +356,10 @@ watch(() => route.query.session, async (newId) => {
   if (newId && typeof newId === 'string' && newId !== sessionStore.currentSessionId) {
     sessionStore.selectSession(newId)
     chatStore.setSessionId(newId)
-    chatStore.clearChat()
     try {
       const rawMessages = await fetchMessages(sessionStore.currentAgentId, newId)
       chatStore.setMessages(processRawMessages(rawMessages))
+      checkHasMore(newId)
     } catch { /* session may be empty */ }
   }
 })
@@ -321,6 +426,33 @@ watch(
 )
 
 /**
+ * 监听消息列表变化：批量加载完成后检查是否还有更早消息。
+ * 仅在非流式输出时检查（流式输出时消息长度逐token增长，无需检查分页）。
+ */
+watch(
+  () => chatStore.messages.length,
+  (len, oldLen) => {
+    if (chatStore.isStreaming) return
+    // 仅在消息数量有显著变化时检查（批量加载，非逐条追加）
+    if (Math.abs(len - (oldLen ?? 0)) > 1) {
+      const sid = sessionStore.currentSessionId
+      if (sid) checkHasMore(sid)
+    }
+  },
+)
+
+/**
+ * 切换会话时重置分页加载状态，因为新会话可能有不同数量的历史消息。
+ */
+watch(
+  () => sessionStore.currentSessionId,
+  () => {
+    hasMoreMessages.value = true
+    isLoadingMore.value = false
+  },
+)
+
+/**
  * 监听流式文本更新：仅当用户接近底部时才跟随滚动。
  * 如果用户正在阅读历史消息（已上滚），流式更新不打扰当前阅读位置。
  */
@@ -357,6 +489,18 @@ watch(
     <div v-if="hasMessages || chatStore.isStreaming" class="chat-body">
       <div class="chat-main">
         <div ref="messageListRef" class="message-list" :style="messageListStyle" @scroll="onMessageListScroll">
+          <!-- 加载更早历史消息的指示器 -->
+          <div v-if="isLoadingMore" class="load-more-indicator">
+            <span class="loading-spinner-sm" />
+            <span>加载更早的消息...</span>
+          </div>
+
+          <!-- 已到顶：所有历史消息已加载完毕 -->
+          <Transition name="toast-fade">
+            <div v-if="!hasMoreMessages && !isLoadingMore && allMessages.length > 0" class="top-reached-banner">
+              已经到顶啦～
+            </div>
+          </Transition>
           <MessageBubble
             v-for="(msg, index) in allMessages"
             :key="index"
@@ -505,6 +649,51 @@ watch(
 
 .message-list :deep([data-msg-index]) {
   scroll-margin-top: 12px;
+}
+
+/* ---- 加载更早消息指示器 ---- */
+.load-more-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--color-muted);
+  font-size: var(--body-sm-size);
+}
+
+.loading-spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-hairline);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- 已到顶提示 ---- */
+.top-reached-banner {
+  text-align: center;
+  padding: 10px;
+  color: var(--color-muted-soft);
+  font-size: var(--caption-size);
+}
+
+.toast-fade-enter-active {
+  transition: opacity 0.4s ease;
+}
+
+.toast-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
 }
 
 .error-bar {

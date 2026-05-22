@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import lyjew.com.lyclaw.base.BaseDTO;
@@ -48,6 +49,7 @@ import lyjew.com.lyclaw.base.BaseDTO;
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ToolCall extends BaseDTO {
 
     /** 工具调用的唯一标识 ID */

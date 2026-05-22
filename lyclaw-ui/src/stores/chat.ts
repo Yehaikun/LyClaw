@@ -474,6 +474,11 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = msgs
   }
 
+  /** 将消息插入到列表开头（用于向上翻页加载更早的历史消息） */
+  function prependMessages(msgs: Message[]): void {
+    messages.value = [...msgs, ...messages.value]
+  }
+
   /**
    * 添加工具调用的结果消息到对话中。
    *
@@ -570,6 +575,7 @@ export const useChatStore = defineStore('chat', () => {
     setModel,
     setSessionId,
     setMessages,
+    prependMessages,
     addToolCallMessage,
     respondToApproval,
     setThinking,
