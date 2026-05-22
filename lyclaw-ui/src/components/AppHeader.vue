@@ -107,6 +107,17 @@ if (initialAgent && initialAgent !== agentStore.currentAgentId) {
 const isChatRoute = computed(() => route.path === '/chat')
 
 async function handleAgentChange(agentId: string) {
+  // 相同agent：重新拉取session列表，加载最新session（不清理消息不闪屏）
+  if (agentId === agentStore.currentAgentId) {
+    await sessionStore.fetchSessions()
+    const sorted = [...sessionStore.sessions].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )
+    if (sorted.length > 0) {
+      await handleSessionChange(sorted[0].sessionId)
+    }
+    return
+  }
   agentStore.selectAgent(agentId)
   await sessionStore.setAgentId(agentId)
   chatStore.clearChat()
