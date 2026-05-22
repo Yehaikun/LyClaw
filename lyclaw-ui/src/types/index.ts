@@ -103,6 +103,8 @@ export interface Message {
   toolCalls?: ToolCall[]
   /** 工具调用ID（仅tool角色消息有此字段，用于关联assistant的工具调用请求） */
   toolCallId?: string
+  /** 深度思考/推理内容（仅assistant消息有此字段，由reasoning模型生成） */
+  thinking?: string
 }
 
 /** Token使用统计：记录每次LLM调用的输入/输出Token消耗 */

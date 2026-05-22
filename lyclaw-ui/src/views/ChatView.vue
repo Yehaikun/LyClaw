@@ -197,11 +197,6 @@ const statusLabel = computed(() =>
   chatStore.toolStatus || '思考中...'
 )
 
-/** 深度思考面板标题：流式进行中显示"深度思考中..."，流式完毕后显示"深度思考完毕" */
-const thinkingHeader = computed(() =>
-  chatStore.isStreaming ? '🧠 深度思考中...' : '🧠 深度思考完毕'
-)
-
 /**
  * 流式输出中的临时消息对象：实时拼装当前累积的流式文本为Message格式。
  * 用于在消息列表底部显示实时更新的助手回复气泡。
@@ -491,7 +486,8 @@ watch(
     />
 
     <!-- 消息视图（有消息或流式输出中）：消息列表 + 右侧导航 -->
-    <div v-if="hasMessages || chatStore.isStreaming" class="chat-body">
+    <Transition name="session-fade" mode="out-in">
+      <div v-if="hasMessages || chatStore.isStreaming" :key="sessionStore.currentSessionId ?? undefined" class="chat-body">
       <div class="chat-main">
         <div ref="messageListRef" class="message-list" :style="messageListStyle" @scroll="onMessageListScroll">
           <!-- 加载更早历史消息的指示器 -->
@@ -545,10 +541,10 @@ watch(
             />
           </div>
 
-          <!-- 推理/思考指示器：Phase 2 thinking SSE 事件驱动，展示模型深度推理内容 -->
-          <div v-if="chatStore.thinkingText.length > 0" class="thinking-reasoning">
+          <!-- 推理/思考指示器：仅流式进行中显示，完毕后由 MessageBubble 渲染 -->
+          <div v-if="chatStore.isStreaming && chatStore.thinkingText.length > 0" class="thinking-reasoning">
             <div class="thinking-reasoning-header" @click="showThinking = !showThinking">
-              <span>{{ thinkingHeader }}</span>
+              <span>🧠 深度思考中...</span>
               <span class="toggle-arrow">{{ showThinking ? '▼' : '▶' }}</span>
             </div>
             <div v-if="showThinking" class="thinking-reasoning-content">
@@ -591,6 +587,7 @@ watch(
         />
       </Transition>
     </div>
+    </Transition>
 
     <!-- 工具审批对话框：AI请求执行非只读工具时弹出 -->
     <ToolApprovalDialog />
@@ -698,6 +695,17 @@ watch(
 
 .toast-fade-enter-from,
 .toast-fade-leave-to {
+  opacity: 0;
+}
+
+/* ---- Session切换淡入淡出动画 ---- */
+.session-fade-enter-active,
+.session-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.session-fade-enter-from,
+.session-fade-leave-to {
   opacity: 0;
 }
 

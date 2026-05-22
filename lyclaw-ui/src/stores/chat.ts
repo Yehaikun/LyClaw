@@ -163,15 +163,18 @@ export const useChatStore = defineStore('chat', () => {
         },
         // 流正常完成回调：将累积的流式文本固化为assistant消息
         () => {
-          if (currentStreamingText.value) {
+          const hasContent = currentStreamingText.value || thinkingText.value
+          if (hasContent) {
             const assistantMsg: Message = {
               role: 'assistant',
               content: currentStreamingText.value,
               model: currentModel.value,
+              thinking: thinkingText.value || undefined,
             }
             messages.value.push(assistantMsg)
           }
           currentStreamingText.value = ''
+          thinkingText.value = ''
           subagentEvents.value = []
           toolStatus.value = ''
           liveToolCalls.value = []
@@ -181,19 +184,18 @@ export const useChatStore = defineStore('chat', () => {
         // 错误回调：保存已接收的部分内容，记录错误信息
         (err: Error) => {
           // 即使出错，已接收的部分内容也作为assistant消息保留
-          if (currentStreamingText.value) {
+          const hasContent = currentStreamingText.value || thinkingText.value
+          if (hasContent) {
             const partialMsg: Message = {
               role: 'assistant',
               content: currentStreamingText.value,
               model: currentModel.value,
+              thinking: thinkingText.value || undefined,
             }
             messages.value.push(partialMsg)
           }
           currentStreamingText.value = ''
-          subagentEvents.value = []
-          liveToolCalls.value = []
-          pendingApproval.value = null
-          isStreaming.value = false
+          thinkingText.value = ''
           // 提取ApiError中的traceId用于错误追踪
           if (err instanceof ApiError) {
             errorTraceId.value = (err as ApiError).traceId

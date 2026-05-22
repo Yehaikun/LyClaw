@@ -45,7 +45,7 @@
   - isStreaming: boolean — 当前消息是否正在流式输出中
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { Message } from '@/types'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import ToolCallCard from './ToolCallCard.vue'
@@ -67,6 +67,14 @@ const isUser = computed(() => props.message.role === 'user')
 const showStreamingCursor = computed(
   () => props.isStreaming && props.isLast && !isUser.value,
 )
+
+/** 思考框展开/折叠状态 */
+const showThinking = ref(false)
+
+/** 思考框标题 */
+const thinkingHeader = computed(() =>
+  props.isStreaming ? '🧠 深度思考中...' : '🧠 深度思考完毕'
+)
 </script>
 
 <template>
@@ -87,17 +95,27 @@ const showStreamingCursor = computed(
           </span>
         </div>
 
-        <div class="message-content">
-          <MarkdownRenderer :content="message.content" :is-streaming="isStreaming" />
-          <span v-if="showStreamingCursor" class="streaming-cursor">▊</span>
-        </div>
-
         <div v-if="message.toolCalls && message.toolCalls.length > 0" class="message-tool-calls">
           <ToolCallCard
             v-for="tc in message.toolCalls"
             :key="tc.toolCallId"
             :tool-call="tc"
           />
+        </div>
+
+        <div v-if="!isUser && message.thinking" class="message-thinking">
+          <div class="thinking-reasoning-header" @click="showThinking = !showThinking">
+            <span>{{ thinkingHeader }}</span>
+            <span class="toggle-arrow">{{ showThinking ? '▼' : '▶' }}</span>
+          </div>
+          <div v-if="showThinking" class="thinking-reasoning-body">
+            <pre>{{ message.thinking }}</pre>
+          </div>
+        </div>
+
+        <div class="message-content">
+          <MarkdownRenderer :content="message.content" :is-streaming="isStreaming" />
+          <span v-if="showStreamingCursor" class="streaming-cursor">▊</span>
         </div>
       </div>
     </div>
@@ -229,6 +247,51 @@ const showStreamingCursor = computed(
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+}
+
+/* ---- 深度思考框 ---- */
+.message-thinking {
+  margin-top: var(--spacing-sm);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--rounded-md);
+  overflow: hidden;
+}
+
+.thinking-reasoning-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--caption-size);
+  color: var(--color-muted);
+  background: var(--color-surface-soft);
+  transition: background var(--transition-fast);
+}
+
+.thinking-reasoning-header:hover {
+  background: var(--color-surface-card);
+}
+
+.toggle-arrow {
+  font-size: 0.625rem;
+}
+
+.thinking-reasoning-body {
+  padding: 8px 10px;
+  background: var(--color-canvas);
+  border-top: 1px solid var(--color-hairline);
+}
+
+.thinking-reasoning-body pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--body-sm-size);
+  line-height: 1.5;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ---- Mobile ---- */

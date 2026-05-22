@@ -12,6 +12,7 @@ export function mapRawToMessage(raw: Record<string, unknown>): Message {
     toolCalls: raw.toolCalls as Message['toolCalls'],
     toolCallId: raw.toolCallId as string | undefined,
     usage: raw.usage as Message['usage'],
+    thinking: raw.thinking as string | undefined,
   }
 }
 
