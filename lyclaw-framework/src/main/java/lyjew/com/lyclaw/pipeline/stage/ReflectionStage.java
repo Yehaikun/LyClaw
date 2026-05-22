@@ -39,7 +39,7 @@ public class ReflectionStage extends PipelineStageBase {
         List<Message> messages = ctx.getChatRequest() != null && ctx.getChatRequest().getMessages() != null
                 ? ctx.getChatRequest().getMessages() : List.of();
         session.setMessages(new ArrayList<>(messages));
-        ChatContext chatCtx = new ChatContext(ctx.getChatRequest(), session, null, List.of(), null, null, ctx.getTracing().getTraceId());
+        ChatContext chatCtx = new ChatContext(ctx.getChatRequest(), session, null, List.of(), null, null);
         chatCtx.setAttribute("memoryEntries", ctx.getAttribute("memoryEntries"));
         return chatCtx;
     }

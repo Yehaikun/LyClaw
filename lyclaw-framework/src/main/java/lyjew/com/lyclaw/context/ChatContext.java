@@ -8,9 +8,7 @@ import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.ToolDefinition;
-import lyjew.com.lyclaw.tracing.TraceConstants;
 import lyjew.com.lyclaw.tracing.TraceContext;
-import org.slf4j.MDC;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -108,8 +106,7 @@ public class ChatContext {
         this.toolDefinitions = toolDefinitions;
         this.interceptorChain = interceptorChain;
         this.chatFacade = chatFacade;
-        String mdcTraceId = MDC.get(TraceConstants.MDC_TRACE_ID);
-        this.tracing = mdcTraceId != null ? new TraceContext(mdcTraceId) : new TraceContext();
+        this.tracing = new TraceContext();
     }
 
     /**
