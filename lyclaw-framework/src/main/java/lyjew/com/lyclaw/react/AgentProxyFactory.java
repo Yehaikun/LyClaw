@@ -100,9 +100,6 @@ public class AgentProxyFactory {
         String provider = (providerOverride != null && !providerOverride.isEmpty()) ? providerOverride :
                 (resolvedConfig.getProvider() != null && !resolvedConfig.getProvider().isEmpty()) ? resolvedConfig.getProvider() : null;
 
-        String agentId = resolvedConfig.getAgentId();
-        String agentName = resolvedConfig.getAgentName();
-
         AgentInvocationHandler handler = new AgentInvocationHandler(
                 chatFacade, reActEngine, toolRegistry, systemPrompt, model, provider,
                 hooks, stages, resolvedConfig);
