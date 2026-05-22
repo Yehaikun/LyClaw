@@ -201,6 +201,8 @@ public class DefaultReActEngine implements ReActEngine {
         // 状态: 0=buffering(思考), 1=relaying(纯文本), 2=tools_detected
         int[] state = {0};
         List<ModelResponse> buffer = new ArrayList<>();
+        StringBuilder contentCollector = new StringBuilder();
+        StringBuilder thinkingCollector = new StringBuilder();
 
         return model.stream(request)
                 .<ServerSentEvent<String>>handle((chunk, sink) -> {
@@ -226,7 +228,11 @@ public class DefaultReActEngine implements ReActEngine {
                             return;
                         }
                         if (hasContent) {
+                            contentCollector.append(chunk.getContent());
                             sink.next(sseEvent("message", chunk.getContent()));
+                        }
+                        if (hasThinking) {
+                            thinkingCollector.append(chunk.getThinking());
                         }
                         return;
                     }
@@ -240,6 +246,7 @@ public class DefaultReActEngine implements ReActEngine {
                     }
                     if (hasContent) {
                         state[0] = 1;
+                        contentCollector.append(chunk.getContent());
                         sink.next(sseEvent("message", chunk.getContent()));
                         return;
                     }
@@ -257,11 +264,29 @@ public class DefaultReActEngine implements ReActEngine {
                         return multiRoundReActFlux(chatFacade, request, toolExecutor, merged)
                                 .subscribeOn(Schedulers.boundedElastic());
                     }
+                    if (state[0] == 1) {
+                        // 真流式文本已逐token发出 → 写入消息历史
+                        String content = contentCollector.toString();
+                        String thinking = thinkingCollector.length() > 0 ? thinkingCollector.toString() : null;
+                        if (!content.isEmpty()) {
+                            request.getMessages().add(Message.builder()
+                                    .role("assistant")
+                                    .content(content)
+                                    .thinking(thinking)
+                                    .build());
+                        }
+                        return Flux.empty();
+                    }
                     if (state[0] == 0) {
-                        // 全程思考模式 → 合并返回
+                        // 全程思考模式 → 合并返回 + 写入消息历史
                         ModelResponse merged = model.mergeChunks(buffer);
                         String content = merged.getContent() != null ? merged.getContent() : "";
                         if (!content.isEmpty()) {
+                            request.getMessages().add(Message.builder()
+                                    .role("assistant")
+                                    .content(content)
+                                    .thinking(merged.getThinking() != null ? merged.getThinking() : "")
+                                    .build());
                             return Flux.just(sseEvent("message", content));
                         }
                     }

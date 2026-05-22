@@ -14,7 +14,9 @@ import lyjew.com.lyclaw.persistence.repository.SessionRepository;
 import lyjew.com.lyclaw.persistence.sqlite.SqliteConfig;
 import lyjew.com.lyclaw.persistence.sqlite.SqliteConnectionManager;
 import lyjew.com.lyclaw.persistence.sqlite.SqliteMigrationService;
+import lyjew.com.lyclaw.react.AgentHook;
 import lyjew.com.lyclaw.react.ReActMessageHook;
+import lyjew.com.lyclaw.web.session.SessionPersistenceHook;
 import lyjew.com.lyclaw.web.session.AgentCleanupService;
 import lyjew.com.lyclaw.web.session.SessionManager;
 import org.springframework.beans.factory.annotation.Value;
@@ -106,6 +108,16 @@ public class StorageAutoConfiguration {
     @Bean
     public ReActMessageHook persistenceHook(SessionManager sessionManager) {
         return sessionManager::onMessage;
+    }
+
+    /**
+     * 注册SessionPersistenceHook为AgentHook Bean。
+     * Spring自动注入到AgentProxyFactory的hooks列表，
+     * 确保每个@Agent方法的调用都有对应的Session绑定和消息持久化。
+     */
+    @Bean
+    public AgentHook sessionPersistenceHook(SessionManager sessionManager) {
+        return new SessionPersistenceHook(sessionManager);
     }
 
     @Bean

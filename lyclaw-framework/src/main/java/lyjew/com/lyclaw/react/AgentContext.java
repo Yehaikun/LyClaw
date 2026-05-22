@@ -86,6 +86,8 @@ public class AgentContext {
     private final Map<String, Object> runMetadataMap = new java.util.concurrent.ConcurrentHashMap<>();
     /** 类型化运行元数据（子代理层级、模型解析、归档等） */
     private final RunMetadata runMetadata = new RunMetadata();
+    /** 当前绑定的Session对象——SessionPersistenceHook设置 */
+    private lyjew.com.lyclaw.model.Session session;
 
     /**
      * 构造 AgentContext。
@@ -288,6 +290,11 @@ public class AgentContext {
     public boolean removeActiveSubagent(String agentId) { return this.runMetadata.getActiveSubagentIds().remove(agentId); }
     public java.util.Set<String> getActiveSubagentIds() { return Collections.unmodifiableSet(this.runMetadata.getActiveSubagentIds()); }
     public int getActiveSubagentCount() { return this.runMetadata.getActiveSubagentIds().size(); }
+
+    // ========== Session 绑定 ==========
+
+    public lyjew.com.lyclaw.model.Session getSession() { return session; }
+    public void setSession(lyjew.com.lyclaw.model.Session session) { this.session = session; }
 
     // ========== 生命周期：检查点 ==========
 

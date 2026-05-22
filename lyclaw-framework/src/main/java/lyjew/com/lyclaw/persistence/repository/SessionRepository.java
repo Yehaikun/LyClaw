@@ -48,6 +48,8 @@ public class SessionRepository {
         firstLine.put("type", "session_created");
         firstLine.put("sessionId", session.getSessionId());
         firstLine.put("agentId", session.getAgentId());
+        firstLine.put("name", session.getName() != null ? session.getName() : "");
+        firstLine.put("model", session.getModel() != null ? session.getModel() : "");
         firstLine.put("parentSessionId", session.getParentSessionId());
         firstLine.put("parentAgentId", session.getParentAgentId());
         firstLine.put("timestamp", now);

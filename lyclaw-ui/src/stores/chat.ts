@@ -34,7 +34,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Message, ChatRequest, ChatResult, ToolCall } from '@/types'
-import { postChat, postChatStream, createSession } from '@/api/chat'
+import { postChat, postChatStream } from '@/api/chat'
 import { useSessionStore } from '@/stores/session'
 import { post, ApiError } from '@/api/client'
 
@@ -125,30 +125,16 @@ export const useChatStore = defineStore('chat', () => {
    * @param text 用户输入的文本内容
    * @param sessionId 可选的会话ID，不传则使用当前活跃会话
    */
-  async function sendMessage(text: string, sessionId?: string): Promise<void> {
+  async function sendMessage(text: string, sessionId?: string | null): Promise<void> {
     if (!text.trim()) return
 
     const userMsg: Message = { role: 'user', content: text }
     messages.value.push(userMsg)
     error.value = null
 
-    // 确保会话存在，不存在则自动创建
-    const targetSessionId = sessionId || currentSessionId.value
-    let activeSessionId: string | null = targetSessionId
-
-    if (!activeSessionId) {
-      try {
-        const sessionStore = useSessionStore()
-        const session = await createSession(sessionStore.currentAgentId)
-        activeSessionId = session.sessionId
-        currentSessionId.value = activeSessionId
-        sessionStore.currentSessionId = activeSessionId
-      } catch (err) {
-        error.value = `Failed to create session: ${(err as Error).message}`
-        errorTraceId.value = undefined
-        return
-      }
-    }
+    // 会话由后端管理：首次消息不传sessionId，后端创建并通过session_created事件告知前端
+    const targetSessionId = sessionId ?? currentSessionId.value
+    const activeSessionId: string | undefined = targetSessionId || undefined
 
     const request: ChatRequest = {
       sessionId: activeSessionId,
@@ -165,7 +151,9 @@ export const useChatStore = defineStore('chat', () => {
     subagentEvents.value = []
 
     try {
+      const agentId = useSessionStore().currentAgentId
       await postChatStream(
+        agentId,
         request,
         // 流式数据块回调：每收到一段文本就追加到currentStreamingText
         (chunk: string) => {
@@ -290,8 +278,33 @@ export const useChatStore = defineStore('chat', () => {
         (text: string) => {
           setThinking(text)
         },
-        // 通用事件回调：捕获未特定处理的 SSE 事件（subagent_spawned、subagent_ended 等）
+        // 通用事件回调：捕获未特定处理的 SSE 事件（session_created、subagent_spawned 等）
         (event: string, data: string) => {
+          if (event === 'session_created') {
+            try {
+              const info = JSON.parse(data)
+              if (info.sessionId) {
+                currentSessionId.value = info.sessionId
+                const ss = useSessionStore()
+                ss.currentSessionId = info.sessionId
+                // 如果是新会话，追加到session列表
+                if (info.isNew && !ss.sessions.find(s => s.sessionId === info.sessionId)) {
+                  ss.sessions.unshift({
+                    sessionId: info.sessionId,
+                    name: 'Chat ' + new Date().toLocaleDateString(),
+                    agentId: info.agentId || ss.currentAgentId,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    messageCount: 0,
+                    toolCallCount: 0,
+                    totalTokens: 0,
+                    compactionCount: 0,
+                    firstMsgPreview: '',
+                  } as any)
+                }
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
           addSubagentEvent(event, data)
         },
       )
@@ -316,7 +329,7 @@ export const useChatStore = defineStore('chat', () => {
    */
   async function sendMessageNonStreaming(request: ChatRequest): Promise<void> {
     try {
-      const result: ChatResult = await postChat({
+      const result: ChatResult = await postChat(useSessionStore().currentAgentId, {
         ...request,
         stream: false,
       })
@@ -453,7 +466,7 @@ export const useChatStore = defineStore('chat', () => {
    *
    * @param id 会话唯一标识
    */
-  function setSessionId(id: string): void {
+  function setSessionId(id: string | null): void {
     currentSessionId.value = id
   }
 

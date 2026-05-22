@@ -9,6 +9,7 @@ import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.web.agent.ChatAgent;
 import lyjew.com.lyclaw.web.session.SessionManager;
+import lyjew.com.lyclaw.react.SessionRequestContext;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -34,9 +35,28 @@ public class ChatController {
     public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest request,
                                                      @Parameter(description = "可选的Agent ID") @RequestParam(required = false) String agentId) {
         String resolvedAgentId = agentId != null ? agentId : "chat";
+        boolean isNewSession = request.getSessionId() == null || request.getSessionId().isEmpty();
         Session session = resolveSession(request, resolvedAgentId);
         String userMessage = request.getLastUserMessage();
-        return chatAgent.chatStream(userMessage);
+
+        // 首条SSE事件：告知前端sessionId（新会话和已有会话都发，前端统一处理）
+        String sessionJson = String.format(
+                "{\"sessionId\":\"%s\",\"agentId\":\"%s\",\"isNew\":%s}",
+                session.getSessionId(), resolvedAgentId, isNewSession);
+        ServerSentEvent<String> sessionEvent = ServerSentEvent.<String>builder()
+                .event("session_created")
+                .data(sessionJson)
+                .build();
+
+        SessionRequestContext.set(session.getSessionId(), resolvedAgentId);
+        try {
+            return Flux.just(sessionEvent)
+                    .concatWith(chatAgent.chatStream(userMessage))
+                    .doFinally(signalType -> SessionRequestContext.clear());
+        } catch (Exception e) {
+            SessionRequestContext.clear();
+            throw e;
+        }
     }
 
     @Operation(summary = "同步聊天", description = "发送消息并返回完整AI响应（非流式）")
@@ -46,9 +66,17 @@ public class ChatController {
         String resolvedAgentId = agentId != null ? agentId : "chat";
         Session session = resolveSession(request, resolvedAgentId);
         String userMessage = request.getLastUserMessage();
-        return Mono.fromCallable(() -> chatAgent.chat(userMessage))
+        String sessionId = session.getSessionId();
+        return Mono.fromCallable(() -> {
+                    SessionRequestContext.set(sessionId, resolvedAgentId);
+                    try {
+                        return chatAgent.chat(userMessage);
+                    } finally {
+                        SessionRequestContext.clear();
+                    }
+                })
                 .subscribeOn(Schedulers.boundedElastic())
-                .map(reply -> Map.of("content", reply, "sessionId", session.getSessionId()));
+                .map(reply -> Map.of("content", reply, "sessionId", sessionId));
     }
 
     @Operation(summary = "创建会话", description = "创建Agent的新聊天会话并返回会话信息")

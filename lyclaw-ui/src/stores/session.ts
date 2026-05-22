@@ -121,8 +121,8 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  /** 选择指定会话作为当前活跃会话 */
-  function selectSession(id: string): void {
+  /** 选择指定会话作为当前活跃会话，传null清空选择 */
+  function selectSession(id: string | null): void {
     currentSessionId.value = id
   }
 

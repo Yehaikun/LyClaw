@@ -16,6 +16,7 @@ import type { ChatRequest, ChatResult, Session } from '../types'
  * 发起流式聊天请求，通过SSE协议实时接收LLM生成的文本块。
  */
 export function postChatStream(
+  agentId: string,
   req: ChatRequest,
   onChunk: (text: string) => void,
   onDone: () => void,
@@ -26,14 +27,16 @@ export function postChatStream(
   onThinking?: (text: string) => void,
   onEvent?: (event: string, data: string) => void,
 ): Promise<void> {
-  return postSSE('/api/chat/stream', req, onChunk, onDone, onError, onStatus, onToolCall, onApprovalRequired, onThinking, onEvent)
+  const url = `/api/chat/stream?agentId=${encodeURIComponent(agentId)}`
+  return postSSE(url, req, onChunk, onDone, onError, onStatus, onToolCall, onApprovalRequired, onThinking, onEvent)
 }
 
 /**
  * 发起非流式聊天请求，一次性获取LLM的完整回复。
  */
-export function postChat(req: ChatRequest): Promise<ChatResult> {
-  return post<ChatResult>('/api/chat', req)
+export function postChat(agentId: string, req: ChatRequest): Promise<ChatResult> {
+  const url = `/api/chat?agentId=${encodeURIComponent(agentId)}`
+  return post<ChatResult>(url, req)
 }
 
 /**

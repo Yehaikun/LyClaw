@@ -2,6 +2,7 @@ package lyjew.com.lyclaw.persistence.jsonl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,10 +12,14 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 
 /**
- * JSONL写入默认实现——使用Jackson序列化，Files.writeString逐行追加。
+ * JSON数组格式会话文件写入器。
  *
- * 每次appendLine调用自动创建父目录（如果不存在），以CREATE+APPEND模式打开文件。
- * Files.writeString内部已确保原子性和磁盘同步，因此flush为空操作。
+ * 文件格式：标准JSON数组 [\n{...},\n{...},\n{...}\n]，与OpenClaw格式兼容。
+ * 每个会话文件是一个合法的JSON数组，元素按时间顺序追加。
+ *
+ * 写入策略：
+ * - 首次写入：创建文件，写入 [\n<json>\n]
+ * - 后续追加：RandomAccessFile seek到末尾-2位置，写入 ,\n<json>\n]
  */
 public class DefaultJsonlWriter implements JsonlWriter {
 
@@ -28,18 +33,26 @@ public class DefaultJsonlWriter implements JsonlWriter {
     public void appendLine(String filePath, Map<String, Object> fields) {
         try {
             Path path = Paths.get(filePath);
-            // 确保父目录存在（首次创建会话时目录可能不存在）
             Files.createDirectories(path.getParent());
-            String line = objectMapper.writeValueAsString(fields) + "\n";
-            Files.writeString(path, line, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            String json = objectMapper.writeValueAsString(fields);
+
+            if (!Files.exists(path) || Files.size(path) == 0) {
+                String content = "[\n" + json + "\n]";
+                Files.writeString(path, content, StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            } else {
+                try (RandomAccessFile raf = new RandomAccessFile(path.toFile(), "rw")) {
+                    raf.seek(raf.length() - 2);
+                    raf.write((",\n" + json + "\n]").getBytes(StandardCharsets.UTF_8));
+                }
+            }
         } catch (IOException e) {
-            throw new UncheckedIOException("JSONL写入失败: " + filePath, e);
+            throw new UncheckedIOException("JSON数组写入失败: " + filePath, e);
         }
     }
 
     @Override
     public void flush(String filePath) {
-        // Files.writeString 每次调用即刷盘，无需额外flush
+        // RandomAccessFile每次写入即刷盘
     }
 }

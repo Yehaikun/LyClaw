@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ChevronDown, Plus } from 'lucide-vue-next'
+import { ChevronDown, Plus, Trash2 } from 'lucide-vue-next'
 import type { Session } from '@/types'
 
 const props = defineProps<{
@@ -10,6 +10,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string | null): void
+  (e: 'delete-session', sessionId: string): void
 }>()
 
 const isOpen = ref(false)
@@ -24,6 +25,13 @@ const currentLabel = computed(() => {
 function select(sessionId: string | null) {
   emit('update:modelValue', sessionId)
   isOpen.value = false
+}
+
+function onDelete(e: Event, sessionId: string) {
+  e.stopPropagation()
+  if (confirm('Delete this session and all its messages?')) {
+    emit('delete-session', sessionId)
+  }
 }
 
 function toggleOpen() {
@@ -60,12 +68,15 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
       <button
         v-for="session in sessions"
         :key="session.sessionId"
-        class="dropdown-option"
+        class="dropdown-option session-option"
         :class="{ active: session.sessionId === modelValue }"
         type="button"
         @click="select(session.sessionId)"
       >
-        {{ session.name || 'Untitled' }}
+        <span class="session-name">{{ session.name || 'Untitled' }}</span>
+        <span class="btn-delete" title="Delete session" @click="onDelete($event, session.sessionId)">
+          <Trash2 :size="13" />
+        </span>
       </button>
     </div>
   </div>
@@ -156,6 +167,38 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 .dropdown-option:hover {
   background: var(--color-surface-soft);
+}
+
+.session-option {
+  justify-content: space-between;
+}
+
+.session-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.btn-delete {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--rounded-sm);
+  color: var(--color-muted);
+  flex-shrink: 0;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.session-option:hover .btn-delete {
+  display: flex;
+}
+
+.btn-delete:hover {
+  color: var(--color-danger, #e03131);
+  background: var(--color-surface-card);
 }
 
 .dropdown-option.active {

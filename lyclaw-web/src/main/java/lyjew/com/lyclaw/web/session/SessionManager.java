@@ -223,13 +223,27 @@ public class SessionManager implements SessionFactory {
                 .build();
     }
 
-    /** 删除会话——从缓存移除，删除JSONL文件和SQLite记录，关闭异步队列 */
+    /** 删除会话——直接从SQLite获取filePath，清理JSONL文件+SQLite记录+缓存+异步队列。
+     *  不依赖缓存命中，服务器重启后也能正确删除。 */
     public void deleteSession(String sessionId) {
-        Session session = activeSessions.remove(sessionId);
-        if (session != null && !session.isHeartbeatSession()) {
-            sessionRepository.delete(sessionId, session.getFilePath());
-            queueRegistry.remove(sessionId);
+        // 1. 从缓存移除（如果存在）
+        Session cached = activeSessions.remove(sessionId);
+        // 2. 从SQLite获取filePath——缓存只是加速，SQLite才是真相
+        String filePath;
+        if (cached != null && !cached.isHeartbeatSession()) {
+            filePath = cached.getFilePath();
+        } else {
+            List<Map<String, Object>> rows = sessionRepository.findBySessionId(sessionId);
+            if (rows.isEmpty()) {
+                log.warn("deleteSession: session {} 不存在", sessionId);
+                return;
+            }
+            filePath = (String) rows.get(0).get("file_path");
         }
+        // 3. 清理持久化数据和队列
+        sessionRepository.delete(sessionId, filePath);
+        queueRegistry.remove(sessionId);
+        log.debug("删除会话完成: sessionId={}", sessionId);
     }
 
     /** 获取所有活跃会话（供ContextPruningScheduler遍历） */

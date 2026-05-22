@@ -45,6 +45,7 @@
         :model-value="sessionStore.currentSessionId"
         :sessions="sessionStore.sessions"
         @update:model-value="handleSessionChange"
+        @delete-session="handleSessionDelete"
       />
     </div>
     <div class="header-right">
@@ -90,6 +91,13 @@ const settingsStore = useSettingsStore()
 const agentStore = useAgentStore()
 
 agentStore.fetchAgents().catch(() => {})
+const initialAgent = route.query.agent as string | undefined
+if (initialAgent && initialAgent !== agentStore.currentAgentId) {
+  agentStore.selectAgent(initialAgent)
+  sessionStore.setAgentId(initialAgent)
+} else {
+  sessionStore.fetchSessions().catch(() => {})
+}
 
 /** 是否在聊天页面：仅/chat路由下显示模型选择器和清空按钮 */
 const isChatRoute = computed(() => route.path === '/chat')
@@ -99,7 +107,7 @@ async function handleAgentChange(agentId: string) {
   await sessionStore.setAgentId(agentId)
   chatStore.clearChat()
   chatStore.setSessionId('')
-  router.push('/chat')
+  router.push({ path: '/chat', query: { agent: agentId } })
 }
 
 async function handleSessionChange(sessionId: string | null) {
@@ -107,7 +115,7 @@ async function handleSessionChange(sessionId: string | null) {
     chatStore.clearChat()
     chatStore.setSessionId('')
     sessionStore.selectSession('')
-    router.push('/chat')
+    router.push({ path: '/chat', query: { agent: route.query.agent } })
     return
   }
   sessionStore.selectSession(sessionId)
@@ -117,7 +125,19 @@ async function handleSessionChange(sessionId: string | null) {
     const rawMessages = await fetchMessages(sessionStore.currentAgentId, sessionId)
     chatStore.setMessages(rawMessages.map(mapRawToMessage))
   } catch { /* session may be empty */ }
-  router.replace({ query: { session: sessionId } })
+  router.replace({ query: { ...route.query, session: sessionId } })
+}
+
+async function handleSessionDelete(sessionId: string) {
+  const wasCurrent = sessionStore.currentSessionId === sessionId
+  await sessionStore.deleteSession(sessionId)
+  await sessionStore.fetchSessions()
+  if (wasCurrent) {
+    chatStore.clearChat()
+    chatStore.setSessionId('')
+    sessionStore.selectSession('')
+    router.push({ path: '/chat', query: { agent: route.query.agent } })
+  }
 }
 
 /**
@@ -133,7 +153,7 @@ function handleNewChat() {
   chatStore.clearChat()
   chatStore.setSessionId('')
   sessionStore.selectSession('')
-  router.push('/chat')
+  router.push({ path: '/chat', query: { agent: route.query.agent } })
 }
 
 /** 导航到设置页面 */

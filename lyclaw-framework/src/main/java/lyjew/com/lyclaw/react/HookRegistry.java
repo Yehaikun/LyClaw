@@ -161,8 +161,10 @@ public class HookRegistry {
     }
 
     public void dispatchModelCallEnded(AgentContext ctx) {
-        for (AgentHook hook : getHooks("modelCallEnded")) {
-            try { hook.modelCallEnded(ctx); } catch (Exception e) { log.warn("Hook modelCallEnded failed", e); }
+        List<AgentHook> hooks = getHooks("modelCallEnded");
+        log.debug("HookRegistry.dispatchModelCallEnded: 找到 {} 个 modelCallEnded 钩子", hooks.size());
+        for (AgentHook hook : hooks) {
+            try { hook.modelCallEnded(ctx); } catch (Exception e) { log.warn("Hook modelCallEnded failed: {}", e.getMessage(), e); }
         }
     }
 
@@ -195,8 +197,10 @@ public class HookRegistry {
     }
 
     public void dispatchBeforeAgentRun(AgentContext ctx) {
-        for (AgentHook hook : getHooks("beforeAgentRun")) {
-            try { hook.beforeAgentRun(ctx); } catch (Exception e) { log.warn("Hook beforeAgentRun failed", e); }
+        List<AgentHook> hooks = getHooks("beforeAgentRun");
+        log.debug("HookRegistry.dispatchBeforeAgentRun: 找到 {} 个 beforeAgentRun 钩子", hooks.size());
+        for (AgentHook hook : hooks) {
+            try { hook.beforeAgentRun(ctx); } catch (Exception e) { log.warn("Hook beforeAgentRun failed: {}", e.getMessage(), e); }
         }
     }
 

@@ -217,8 +217,13 @@ onMounted(() => {
   if (sessionId) {
     sessionStore.selectSession(sessionId)
     chatStore.setSessionId(sessionId)
+    // 从URL恢复会话时加载历史消息
+    fetchMessages(sessionStore.currentAgentId, sessionId)
+      .then(raw => chatStore.setMessages(raw.map(mapRawToMessage)))
+      .catch(() => {})
+  } else {
+    ensureSession()
   }
-  ensureSession()
 })
 
 /**

@@ -138,8 +138,18 @@ public class AgentInvocationHandler implements InvocationHandler {
                 systemPrompt != null ? systemPrompt.length() : 0);
 
         ChatRequest request = buildChatRequest(method, userMessage, systemPrompt);
-        String sessionId = request.getSessionId() != null
-                ? request.getSessionId() : UUID.randomUUID().toString().substring(0, 8);
+        // 优先从SessionRequestContext（ChatController设置）获取sessionId，
+        // 否则从ChatRequest获取，都没有则生成随机ID
+        String sessionId = SessionRequestContext.getSessionId();
+        if (sessionId == null || sessionId.isEmpty()) {
+            sessionId = request.getSessionId() != null
+                    ? request.getSessionId() : UUID.randomUUID().toString().substring(0, 8);
+        }
+        // 同步agentId
+        String httpAgentId = SessionRequestContext.getAgentId();
+        if (httpAgentId != null && !httpAgentId.isEmpty()) {
+            request.setAgentId(httpAgentId);
+        }
         log.info("🔑 会话ID={} | 流式={} | 模型={}", sessionId, request.isStream(),
                 request.getModel() != null ? request.getModel() : "自动");
 
@@ -242,10 +252,10 @@ public class AgentInvocationHandler implements InvocationHandler {
 
             if (returnType == Flux.class) {
                 Flux<org.springframework.http.codec.ServerSentEvent<String>> stageFlux = executeStages(ctx);
-                // 模型调用后 dispatch（Flux 场景在完成时触发）
+                // 模型调用后 dispatch（doFinally确保cancel/error时也持久化消息）
                 stageFlux = stageFlux
-                        .doOnComplete(() -> {
-                            log.info("✅ Stage管线流式执行完成");
+                        .doFinally(signalType -> {
+                            log.info("✅ Stage管线流式执行完成 (signal={})", signalType);
                             hookRegistry.dispatchModelCallEnded(ctx);
                         });
                 if (returnsSSE) {
