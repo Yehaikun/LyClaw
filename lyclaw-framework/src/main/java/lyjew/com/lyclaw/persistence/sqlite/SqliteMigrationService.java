@@ -89,11 +89,7 @@ public class SqliteMigrationService {
                     file_path           TEXT NOT NULL,
                     FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
                 )
-                ");
-            // 兼容旧库：若已有sessions表但无name列则添加
-            try {
-                stmt.execute("ALTER TABLE sessions ADD COLUMN name TEXT DEFAULT ''");
-            } catch (Exception e) { /* 列已存在时忽略 */ }
+                """);
 
             // ===== approvals 表 =====
             stmt.execute("""
