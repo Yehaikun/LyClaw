@@ -60,6 +60,16 @@ public class TraceWebFilter implements WebFilter {
         return chain.filter(exchange.mutate().request(mutatedRequest).build())
                 .contextWrite(ctx -> ctx.put(TraceConstants.MDC_TRACE_ID, traceId)
                                      .put(TraceConstants.MDC_SPAN_ID, spanId))
+                .doOnEach(signal -> {
+                    // 在每个信号到达时从 Reactor Context 恢复到 MDC。
+                    // 这是必需的，因为 Reactor Netty（WebClient）的 I/O 线程
+                    // 不经过 subscribeOn/publishOn，ThreadLocalAccessor 的
+                    // 自动 bridge 不会触发，必须手动恢复。
+                    signal.getContextView().getOrEmpty(TraceConstants.MDC_TRACE_ID)
+                            .ifPresent(v -> MDC.put(TraceConstants.MDC_TRACE_ID, (String) v));
+                    signal.getContextView().getOrEmpty(TraceConstants.MDC_SPAN_ID)
+                            .ifPresent(v -> MDC.put(TraceConstants.MDC_SPAN_ID, (String) v));
+                })
                 .doFinally(signalType -> {
                     // 请求结束后清理 MDC，防止内存泄露
                     MDC.remove(TraceConstants.MDC_TRACE_ID);
