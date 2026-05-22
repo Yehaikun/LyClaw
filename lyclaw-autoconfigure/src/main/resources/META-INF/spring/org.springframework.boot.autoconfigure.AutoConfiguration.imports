@@ -6,3 +6,4 @@ lyjew.com.lyclaw.autoconfigure.autoconfigure.ChatAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.ReActAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.ProcessorAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.AgentProxyAutoConfiguration
+lyjew.com.lyclaw.tracing.TraceAutoConfiguration

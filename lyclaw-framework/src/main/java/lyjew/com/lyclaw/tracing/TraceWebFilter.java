@@ -9,6 +9,7 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
+import reactor.util.context.Context;
 
 import java.util.UUID;
 
@@ -32,10 +33,10 @@ public class TraceWebFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         // 从请求头提取 traceId，若无则生成新的
-        String traceId = exchange.getRequest().getHeaders().getFirst(TraceConstants.HEADER_TRACE_ID);
-        if (traceId == null || traceId.isEmpty()) {
-            traceId = UUID.randomUUID().toString().replace("-", "");
-        }
+        String headerTraceId = exchange.getRequest().getHeaders().getFirst(TraceConstants.HEADER_TRACE_ID);
+        String traceId = (headerTraceId != null && !headerTraceId.isEmpty())
+                ? headerTraceId
+                : UUID.randomUUID().toString().replace("-", "");
 
         String parentSpanId = exchange.getRequest().getHeaders().getFirst(TraceConstants.HEADER_SPAN_ID);
         String spanId = UUID.randomUUID().toString().replace("-", "");
@@ -57,6 +58,8 @@ public class TraceWebFilter implements WebFilter {
                 .build();
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build())
+                .contextWrite(ctx -> ctx.put(TraceConstants.MDC_TRACE_ID, traceId)
+                                     .put(TraceConstants.MDC_SPAN_ID, spanId))
                 .doFinally(signalType -> {
                     // 请求结束后清理 MDC，防止内存泄露
                     MDC.remove(TraceConstants.MDC_TRACE_ID);
