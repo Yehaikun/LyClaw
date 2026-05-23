@@ -1,4 +1,5 @@
 {
+  "uid": "lyclaw-overview",
   "title": "LyClaw 日志监控",
   "tags": ["lyclaw", "logs"],
   "refresh": "30s",
@@ -7,25 +8,27 @@
     "list": [
       {
         "name": "level",
-        "type": "query",
+        "type": "custom",
         "label": "日志级别",
-        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-        "query": "label_values(detected_level)",
+        "current": { "text": "All", "value": ["$__all"] },
         "multi": true,
         "includeAll": true,
         "allValue": ".+",
-        "current": { "text": "All", "value": ["$__all"] }
+        "options": [
+          { "selected": true, "text": "All", "value": "$__all" },
+          { "selected": false, "text": "ERROR", "value": "error" },
+          { "selected": false, "text": "WARN", "value": "warn" },
+          { "selected": false, "text": "INFO", "value": "info" },
+          { "selected": false, "text": "DEBUG", "value": "debug" },
+          { "selected": false, "text": "TRACE", "value": "trace" }
+        ]
       },
       {
         "name": "logger",
-        "type": "query",
+        "type": "textbox",
         "label": "类名过滤",
-        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-        "query": "label_values({job=\"lyclaw\"} | json | logger_name!=\"\", logger_name)",
-        "multi": false,
-        "includeAll": true,
-        "allValue": ".+",
-        "current": { "text": "All", "value": "$__all" }
+        "current": { "text": "", "value": "" },
+        "default_value": ".+"
       }
     ]
   },
