@@ -407,11 +407,6 @@ lyclaw:
       # 上下文使用率超过此阈值时触发中途压缩（0.0~1.0）
       threshold: 0.9
 
-    # ── 记忆刷新（MemoryFlush） ──────────
-    memory-flush:
-      # 压缩前是否将累积记忆刷新到 MemoryStore
-      enabled: false
-
     # 压缩后注入的系统提示章节（重新锚定 Agent 行为）
     post-compaction-sections:
       - "Session Startup"
