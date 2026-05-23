@@ -17,12 +17,14 @@
     <springProfile name="!json">
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE_JSON"/>
         </root>
     </springProfile>
 
     <springProfile name="json">
         <root level="INFO">
             <appender-ref ref="CONSOLE_JSON"/>
+            <appender-ref ref="FILE_JSON"/>
         </root>
     </springProfile>
 </configuration>

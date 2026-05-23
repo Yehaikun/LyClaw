@@ -1,10 +1,23 @@
 <included>
-    <!-- JSON 结构化日志共享配置，由各模块 logback-spring.xml 按需引入。
-         激活方式：spring.profiles.active=json 或 SPRING_PROFILES_ACTIVE=json -->
+    <!-- JSON 结构化日志共享配置，由各模块 logback-spring.xml 引入。
+         CONSOLE_JSON — 控制台 JSON 输出（json profile 激活时使用）
+         FILE_JSON    — 滚动文件 JSON 输出（始终激活，对接日志采集 agent） -->
 
     <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <!-- 时间戳格式：ISO-8601 -->
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</timestampPattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/lyclaw.json</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/lyclaw.%d{yyyy-MM-dd}.%i.json.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</timestampPattern>
         </encoder>
     </appender>
