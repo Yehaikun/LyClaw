@@ -5,7 +5,6 @@ import lyjew.com.lyclaw.chat.ChatModel;
 import lyjew.com.lyclaw.config.PlanProperties;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.AgentResult;
-import lyjew.com.lyclaw.memory.MemoryEntry;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
@@ -238,17 +237,7 @@ public class HybridPlanner implements TaskPlanner {
             prompt.append("You are a task planner. Decompose the following user intent into a DAG of subtasks.\n\n");
             prompt.append("User intent: ").append(intent).append("\n\n");
 
-            // 注入记忆上下文
-            if (context != null && context.getAttribute("memoryEntries") instanceof List<?> mems) {
-                List<MemoryEntry> entries = (List<MemoryEntry>) mems;
-                if (!entries.isEmpty()) {
-                    prompt.append("Relevant memories:\n");
-                    for (MemoryEntry e : entries) {
-                        prompt.append("- ").append(e.getSummary() != null ? e.getSummary() : e.getContent()).append("\n");
-                    }
-                    prompt.append("\n");
-                }
-            }
+            // TODO: 记忆系统重新设计后恢复记忆上下文注入
 
             prompt.append("Output a JSON array of task nodes. Each node: {\"type\":\"ANALYZE|PLAN|EXECUTE|VERIFY\","
                     + "\"description\":\"...\",\"dependencies\":[\"nodeId\"]}.\n");
