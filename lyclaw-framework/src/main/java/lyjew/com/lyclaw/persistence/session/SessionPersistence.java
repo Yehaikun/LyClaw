@@ -7,7 +7,6 @@ import lyjew.com.lyclaw.persistence.PersistenceDecision;
  * 会话持久化策略接口，定义会话数据的写入评估逻辑。
  *
  * <p>该接口的实现类负责评估当前会话是否应该被持久化到存储中。
- * 与 {@link lyjew.com.lyclaw.persistence.memory.MemoryPersistence} 类似，
  * 会话持久化也采用「写前评估」模式，根据对话轮次和距上次写入的时间间隔
  * 来决定写入策略。</p>
  *

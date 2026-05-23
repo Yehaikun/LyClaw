@@ -5,7 +5,7 @@ import java.util.Map;
 /**
  * 向量搜索单条结果，包含匹配 ID、相似度分数、内容和元数据。
  *
- * <p>不可变对象，通常由 {@link VectorStore#search} 返回。</p>
+ * <p>不可变对象，表示一条向量搜索匹配结果。</p>
  */
 public class SearchResult {
 

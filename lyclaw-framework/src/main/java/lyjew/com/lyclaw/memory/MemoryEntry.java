@@ -63,7 +63,7 @@ public class MemoryEntry {
      * 计算综合相关性分数（加权融合）。
      *
      * 将重要性、访问热度、时间衰减和常数偏置线性加权，
-     * 用于 {@link lyjew.com.lyclaw.memory.retriever.FusionRanker} 的多路融合排序。
+     * 用于多路融合排序。
      *
      * @param alpha 重要性权重，默认约 0.45
      * @param beta  访问频次权重，默认约 0.20

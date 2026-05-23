@@ -9,7 +9,7 @@ import lyjew.com.lyclaw.model.Session;
  * 这是框架层的SPI接口，不依赖任何存储实现。实现类可以是：
  * - 持久化钩子（SessionManager）
  * - 指标采集钩子（MetricsCollector）
- * - 日志审计钩子（AuditLogger）
+ * - 日志审计钩子
  * - Phase 3 压缩触发检查钩子（CompactionTrigger）
  *
  * 所有钩子按注册顺序同步调用。每个钩子实现必须快速返回（O(1)内存操作），
