@@ -224,7 +224,7 @@ public class DefaultReActEngine implements ReActEngine {
                         if (hasToolCalls) {
                             state[0] = 2;
                             buffer.add(chunk);
-                            log.warn("[WARN] [ReAct流式] 工具调用在文本流式传输后出现（异常情况）");
+                            log.info("[ReAct流式] 模型先输出文本，后调用工具");
                             return;
                         }
                         if (hasContent) {

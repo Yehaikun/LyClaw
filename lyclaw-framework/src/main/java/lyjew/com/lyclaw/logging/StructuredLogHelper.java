@@ -24,15 +24,14 @@ public final class StructuredLogHelper {
     private StructuredLogHelper() { /* 工具类 */ }
 
     /**
-     * 构建日志基础字段映射，自动从 MDC 注入追踪信息。
+     * 构建日志基础字段映射。
      *
-     * @return 包含 timestamp、traceId、spanId、service 的 LinkedHashMap
+     * <p>traceId/spanId/service 由 logback pattern (%X{traceId}) 和 LogstashEncoder
+     * (自动包含 MDC) 负责输出，此处不再重复写入，避免同一条日志里 traceId 出现两次。
      */
     private static Map<String, Object> base() {
         Map<String, Object> log = new LinkedHashMap<>();
         log.put("timestamp", Instant.now().toString());
-        log.put("traceId", MDC.get(TraceConstants.MDC_TRACE_ID));
-        log.put("spanId", MDC.get(TraceConstants.MDC_SPAN_ID));
         log.put("service", MDC.get(TraceConstants.MDC_SERVICE));
         return log;
     }

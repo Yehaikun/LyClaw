@@ -52,7 +52,6 @@ public abstract class PipelineStageBase implements ReactivePipelineStage {
             entry.put("level", level);
             entry.put("event", event);
             entry.put("stage", stage);
-            entry.put("traceId", traceId);
             entry.put("message", message);
             if (durationMs != null) {
                 entry.put("durationMs", durationMs);
