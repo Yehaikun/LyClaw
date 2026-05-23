@@ -22,6 +22,7 @@ start_loki() {
         return
     fi
     echo -n "[loki] starting... "
+    env NO_PROXY=localhost,127.0.0.1,.local no_proxy=localhost,127.0.0.1,.local \
     nohup "$LOKI_BIN" -config.file="$LOKI_CONFIG" > "$DATA_DIR/loki.log" 2>&1 &
     echo $! > "$LOKI_PID_FILE"
     sleep 2

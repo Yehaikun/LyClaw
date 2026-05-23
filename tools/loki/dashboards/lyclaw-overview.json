@@ -1,0 +1,125 @@
+{
+  "title": "LyClaw 日志监控",
+  "tags": ["lyclaw", "logs"],
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "日志量（按级别）",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "sum by (detected_level) (count_over_time({job=\"lyclaw\"} | json [$__auto]))",
+          "legendFormat": "{{detected_level}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 15, "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [ { "id": "color", "value": { "fixedColor": "dark-red", "mode": "fixed" } } ] },
+          { "matcher": { "id": "byName", "options": "warn" }, "properties": [ { "id": "color", "value": { "fixedColor": "dark-orange", "mode": "fixed" } } ] },
+          { "matcher": { "id": "byName", "options": "info" }, "properties": [ { "id": "color", "value": { "fixedColor": "dark-green", "mode": "fixed" } } ] },
+          { "matcher": { "id": "byName", "options": "debug" }, "properties": [ { "id": "color", "value": { "fixedColor": "dark-blue", "mode": "fixed" } } ] },
+          { "matcher": { "id": "byName", "options": "trace" }, "properties": [ { "id": "color", "value": { "fixedColor": "dark-purple", "mode": "fixed" } } ] }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "title": "错误率",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "sum(count_over_time({job=\"lyclaw\"} | json | detected_level=\"error\" [$__auto]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 10 }
+          ]},
+          "mappings": [],
+          "unit": "short"
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "value" },
+      "description": "时间窗口内 ERROR 级别日志数量"
+    },
+    {
+      "id": 3,
+      "title": "日志级别分布",
+      "type": "piechart",
+      "gridPos": { "x": 16, "y": 4, "w": 8, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "sum by (detected_level) (count_over_time({job=\"lyclaw\"} | json [$__auto]))",
+          "legendFormat": "{{detected_level}}"
+        }
+      ],
+      "options": { "displayLabels": ["percent"], "pieType": "donut" }
+    },
+    {
+      "id": 4,
+      "title": "WARN / ERROR 最近日志",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "{job=\"lyclaw\"} | json | detected_level=~\"warn|error\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Top 日志产生类",
+      "type": "barchart",
+      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "topk(10, sum by (logger_name) (count_over_time({job=\"lyclaw\"} | json | logger_name!=\"\" [$__auto])))",
+          "legendFormat": "{{logger_name}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 80 } } },
+      "options": { "orientation": "horizontal", "xField": "Value", "colorMode": "palette-classic" }
+    },
+    {
+      "id": 6,
+      "title": "请求量趋势（30s窗口）",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "sum(count_over_time({job=\"lyclaw\"} [$__auto]))",
+          "legendFormat": "total lines"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 } } }
+    }
+  ],
+  "schemaVersion": 38
+}

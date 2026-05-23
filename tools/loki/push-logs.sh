@@ -69,7 +69,7 @@ while true; do
             last_flush=$(date +%s)
             break
         fi
-    done < <(tail -n0 -F "$logfile" 2>/dev/null)
+    done < <(cat "$logfile" 2>/dev/null; tail -n0 -F "$logfile" 2>/dev/null)
 
     # tail 进程可能因文件轮转而退出，推掉余量然后重连
     push_batch
