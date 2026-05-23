@@ -1,6 +1,5 @@
 package lyjew.com.lyclaw.context;
 
-import lyjew.com.lyclaw.memory.MemoryContent;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
@@ -20,15 +19,14 @@ import java.util.List;
 public interface ContextBuilder {
 
     /**
-     * 根据会话、记忆和工具定义构建上下文消息列表。
-     * 消息列表中通常包含系统提示词、历史对话轮次以及记忆注入的内容。
+     * 根据会话和工具定义构建上下文消息列表。
+     * TODO: 记忆系统重新设计后恢复 MemoryContent 参数
      *
      * @param session          当前会话，包含历史消息
-     * @param memory           持久化记忆内容，可注入为系统消息
      * @param toolDefinitions  可用工具定义列表，用于告知模型可调用的工具
      * @return 发送给 AI 模型的消息列表
      */
-    List<Message> buildContext(Session session, MemoryContent memory,
+    List<Message> buildContext(Session session,
                                List<ToolDefinition> toolDefinitions);
 
     /**

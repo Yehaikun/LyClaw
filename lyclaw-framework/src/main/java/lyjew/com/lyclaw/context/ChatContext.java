@@ -3,7 +3,6 @@ package lyjew.com.lyclaw.context;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.dto.ChatResult;
 import lyjew.com.lyclaw.interceptor.InterceptorChain;
-import lyjew.com.lyclaw.memory.MemoryContent;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
@@ -31,9 +30,7 @@ import java.util.Map;
  *   <li><b>Session（会话）</b>：当前对话的持久化会话对象，携带会话 ID、会话级别的
  *       消息历史、会话元数据等。构造时将其消息列表复制到 messages 字段中供处理流程使用，
  *       流程结束后更新后的消息列表可回写到 Session</li>
- *   <li><b>MemoryContent（记忆内容）</b>：从持久化记忆存储中检索出的当前相关记忆。
- *       上下文构建器在请求处理早期将相关的记忆内容注入，后续的提示词构建阶段会将其
- *       格式化后拼接到发送给 AI 模型的系统消息中，实现跨会话的记忆持久化</li>
+ *   <li><b>Memory（记忆）</b>：TODO: 记忆系统待重新设计，届时注入相关记忆内容</li>
  *   <li><b>Messages（消息列表）</b>：本次对话的完整消息历史，从 Session 复制而来，
  *       允许在流程中动态追加新的消息（包括助手回复、工具调用消息、系统消息等）</li>
  *   <li><b>ToolDefinitions（工具定义列表）</b>：当前对话中可用的工具定义。AI 模型
@@ -59,7 +56,7 @@ import java.util.Map;
  *
  * @see lyjew.com.lyclaw.model.ChatRequest
  * @see lyjew.com.lyclaw.chat.ChatFacade
- * @see lyjew.com.lyclaw.memory.MemoryContent
+ * TODO: 记忆系统重新设计后恢复 @see lyjew.com.lyclaw.memory.MemoryContent
  * @see lyjew.com.lyclaw.tracing.TraceContext
  */
 public class ChatContext {
@@ -68,8 +65,7 @@ public class ChatContext {
     private final ChatRequest request;
     /** 当前会话对象，携带会话 ID、消息历史等持久化数据 */
     private Session session;
-    /** 持久化记忆内容，用于跨会话的信息保留 */
-    private final MemoryContent memory;
+    /** TODO: 记忆系统重新设计后恢复 MemoryContent 字段 */
     /** 本次对话的消息列表，从会话复制而来，允许在流程中追加新消息 */
     private final List<Message> messages;
     /** 当前可用的工具定义列表 */
@@ -90,18 +86,16 @@ public class ChatContext {
      *
      * @param request          聊天请求
      * @param session          当前会话
-     * @param memory           记忆内容
      * @param toolDefinitions  可用工具列表
      * @param interceptorChain 拦截器链
      * @param chatFacade       聊天门面
      */
     public ChatContext(ChatRequest request, Session session,
-                       MemoryContent memory, List<ToolDefinition> toolDefinitions,
+                       List<ToolDefinition> toolDefinitions,
                        InterceptorChain interceptorChain,
                        ChatFacade chatFacade) {
         this.request = request;
         this.session = session;
-        this.memory = memory;
         this.messages = new ArrayList<>(session.getMessages());
         this.toolDefinitions = toolDefinitions;
         this.interceptorChain = interceptorChain;
@@ -114,19 +108,17 @@ public class ChatContext {
      *
      * @param request          聊天请求
      * @param session          当前会话
-     * @param memory           记忆内容
      * @param toolDefinitions  可用工具列表
      * @param interceptorChain 拦截器链
      * @param chatFacade       聊天门面
      * @param traceId          指定的追踪 ID，用于关联日志
      */
     public ChatContext(ChatRequest request, Session session,
-                       MemoryContent memory, List<ToolDefinition> toolDefinitions,
+                       List<ToolDefinition> toolDefinitions,
                        InterceptorChain interceptorChain,
                        ChatFacade chatFacade, String traceId) {
         this.request = request;
         this.session = session;
-        this.memory = memory;
         this.messages = new ArrayList<>(session.getMessages());
         this.toolDefinitions = toolDefinitions;
         this.interceptorChain = interceptorChain;
@@ -140,7 +132,7 @@ public class ChatContext {
 
     public void setSession(Session session) { this.session = session; }
 
-    public MemoryContent getMemory() { return memory; }
+    // TODO: 记忆系统重新设计后恢复 getMemory()
 
     public List<Message> getMessages() { return messages; }
 

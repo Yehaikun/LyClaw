@@ -68,6 +68,6 @@ public class SecurityCheckHook implements AgentHook {
         List<Message> messages = ctx.getChatRequest() != null
                 ? ctx.getChatRequest().getMessages() : List.of();
         session.setMessages(new java.util.ArrayList<>(messages));
-        return new ChatContext(ctx.getChatRequest(), session, null, List.of(), null, null);
+        return new ChatContext(ctx.getChatRequest(), session, List.of(), null, null);
     }
 }

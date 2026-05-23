@@ -317,9 +317,9 @@ public class PlanController {
     /** 从 PlanRequest 构建 ChatContext 上下文对象。 */
     private ChatContext buildContext(PlanRequest request) {
         Session session = Session.builder().sessionId(request.getSessionId()).build();
-        MemoryContent memory = new MemoryContent("", "", false, List.of(), 0.0);
+        // TODO: 记忆系统重新设计后恢复 MemoryContent 注入
         ChatRequest chatRequest = ChatRequest.builder()
                 .sessionId(request.getSessionId()).messages(new ArrayList<>()).build();
-        return new ChatContext(chatRequest, session, memory, new ArrayList<>(), interceptorChain, chatFacade);
+        return new ChatContext(chatRequest, session, new ArrayList<>(), interceptorChain, chatFacade);
     }
 }

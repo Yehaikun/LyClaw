@@ -40,7 +40,7 @@ class ReflexionLoopTest {
         loop = new ReflexionLoop(engine, planner, 2, 0.7);
         Session session = new Session();
         session.setSessionId("test-session");
-        context = new ChatContext(ChatRequest.builder().build(), session, null, List.of(), null, null);
+        context = new ChatContext(ChatRequest.builder().build(), session, List.of(), null, null);
     }
 
     @Test

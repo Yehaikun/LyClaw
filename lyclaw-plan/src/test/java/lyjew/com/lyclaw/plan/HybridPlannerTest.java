@@ -100,7 +100,7 @@ class HybridPlannerTest {
                 lyjew.com.lyclaw.model.Message.user(userMessage)));
         return new ChatContext(
                 ChatRequest.builder().messages(session.getMessages()).build(),
-                session, null,
+                session,
                 List.of(), null, null);
     }
 }
