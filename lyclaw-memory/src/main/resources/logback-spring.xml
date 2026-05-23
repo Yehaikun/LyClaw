@@ -3,16 +3,13 @@
     <include optional="true" resource="logback-json-base.xml"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
         <encoder>
             <pattern>%d{yyyy年MM月dd日 HH时mm分ss秒 SSS毫秒} [%X{traceId}] %-5level [%thread] %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-
-    <logger name="lyjew.com.lyclaw.memory" level="DEBUG"/>
-
-    <logger name="org.springframework" level="WARN"/>
-    <logger name="reactor.netty" level="WARN"/>
-    <logger name="io.netty" level="WARN"/>
 
     <springProfile name="!json">
         <root level="INFO">

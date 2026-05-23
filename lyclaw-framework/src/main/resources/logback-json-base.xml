@@ -1,24 +1,33 @@
 <included>
     <!-- JSON 结构化日志共享配置，由各模块 logback-spring.xml 引入。
-         CONSOLE_JSON — 控制台 JSON 输出（json profile 激活时使用）
-         FILE_JSON    — 滚动文件 JSON 输出（始终激活，对接日志采集 agent） -->
+         CONSOLE_JSON — 控制台 JSON 输出（json profile 激活时使用，INFO+）
+         FILE_JSON    — 滚动文件 JSON 输出（始终激活，TRACE+ 全量，对接日志采集 agent） -->
 
     <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</timestampPattern>
+            <timestampPattern>yyyy-MM-dd-HH:mm:ss.SSS</timestampPattern>
         </encoder>
     </appender>
 
     <appender name="FILE_JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>logs/lyclaw.json</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>logs/lyclaw.%d{yyyy-MM-dd}.%i.json.gz</fileNamePattern>
-            <maxFileSize>50MB</maxFileSize>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/%d{yyyy-MM-dd}.jsonl.gz</fileNamePattern>
             <maxHistory>30</maxHistory>
             <totalSizeCap>5GB</totalSizeCap>
         </rollingPolicy>
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</timestampPattern>
+            <timestampPattern>yyyy-MM-dd-HH:mm:ss.SSS</timestampPattern>
         </encoder>
     </appender>
+
+    <!-- 应用全量日志（TRACE+）写入 FILE_JSON；控制台由各模块 CONSOLE appender 的 ThresholdFilter 限制为 INFO+ -->
+    <logger name="lyjew.com.lyclaw" level="TRACE"/>
+
+    <!-- 第三方框架保持安静 -->
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="reactor.netty" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
 </included>
