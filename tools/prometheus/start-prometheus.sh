@@ -16,12 +16,12 @@ echo "[prometheus] Starting Prometheus..."
 nohup "$PROM_DIR/prometheus" \
     --config.file="$CONFIG" \
     --storage.tsdb.path="$DATA_DIR" \
-    --web.listen-address=":9090" \
+    --web.listen-address=":9091" \
     > "$PROM_DIR/prometheus.log" 2>&1 &
 
 sleep 2
 if pgrep -f "prometheus.*prometheus.yml" > /dev/null; then
-    echo "[prometheus] Prometheus started successfully on :9090"
+    echo "[prometheus] Prometheus started successfully on :9091"
     echo "[prometheus] Scraping http://localhost:8082/actuator/prometheus every 15s"
 else
     echo "[prometheus] WARNING: Prometheus may have failed to start. Check $PROM_DIR/prometheus.log"
