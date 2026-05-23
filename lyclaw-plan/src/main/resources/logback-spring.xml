@@ -13,9 +13,11 @@
     <logger name="reactor.netty" level="WARN"/>
     <logger name="io.netty" level="WARN"/>
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
+    <springProfile name="!json">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
 
     <springProfile name="json">
         <root level="INFO">

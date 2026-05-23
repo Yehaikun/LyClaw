@@ -82,6 +82,11 @@
             <artifactId>spring-webflux</artifactId>
             <scope>provided</scope>
         </dependency>
+        <!-- JSON结构化日志: logback appender, 输出 traceId/spanId 等字段 -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

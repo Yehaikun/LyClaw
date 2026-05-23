@@ -49,6 +49,7 @@
         <reactor.version>3.6.8</reactor.version>
         <sqlite-jdbc.version>3.49.1.0</sqlite-jdbc.version>
         <lombok.version>1.18.36</lombok.version>
+        <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
 
     </properties>
 
@@ -112,6 +113,13 @@
                 <groupId>io.micrometer</groupId>
                 <artifactId>micrometer-core</artifactId>
                 <version>1.14.5</version>
+            </dependency>
+
+            <!-- JSON 结构化日志 -->
+            <dependency>
+                <groupId>net.logstash.logback</groupId>
+                <artifactId>logstash-logback-encoder</artifactId>
+                <version>${logstash-logback-encoder.version}</version>
             </dependency>
 
             <!-- 第三方依赖版本锁定 -->
