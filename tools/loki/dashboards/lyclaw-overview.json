@@ -3,17 +3,58 @@
   "tags": ["lyclaw", "logs"],
   "refresh": "30s",
   "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "level",
+        "type": "query",
+        "label": "日志级别",
+        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+        "query": "label_values(detected_level)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": { "text": "All", "value": ["$__all"] }
+      },
+      {
+        "name": "logger",
+        "type": "query",
+        "label": "类名过滤",
+        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+        "query": "label_values({job=\"lyclaw\"} | json | logger_name!=\"\", logger_name)",
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "ErrorSpike",
+        "iconColor": "dark-red",
+        "enable": true,
+        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+        "expr": "sum(count_over_time({job=\"lyclaw\"} | json | detected_level=\"error\" [5m])) > 3",
+        "step": "1m",
+        "tagKeys": "detected_level",
+        "titleFormat": "⚠ 错误尖峰 — 过去5分钟出现 {{.Value}} 条错误",
+        "textFormat": "点击查看详情"
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
-      "title": "日志量（按级别）",
+      "title": "日志量（按级别）$level $logger",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 0, "w": 16, "h": 8 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-          "expr": "sum by (detected_level) (count_over_time({job=\"lyclaw\"} | json [$__auto]))",
+          "expr": "sum by (detected_level) (count_over_time({job=\"lyclaw\"} | json | detected_level=~\"$level\" | logger_name=~\"$logger\" [$__auto]))",
           "legendFormat": "{{detected_level}}"
         }
       ],
@@ -30,14 +71,14 @@
     },
     {
       "id": 2,
-      "title": "错误率",
+      "title": "错误率$level",
       "type": "stat",
-      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 4 },
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-          "expr": "sum(count_over_time({job=\"lyclaw\"} | json | detected_level=\"error\" [$__auto]))"
+          "expr": "sum(count_over_time({job=\"lyclaw\"} | json | detected_level=\"error\" | logger_name=~\"$logger\" [$__auto]))"
         }
       ],
       "fieldConfig": {
@@ -47,12 +88,35 @@
             { "color": "yellow", "value": 1 },
             { "color": "red", "value": 10 }
           ]},
-          "mappings": [],
           "unit": "short"
         }
       },
       "options": { "colorMode": "background", "graphMode": "area", "textMode": "value" },
       "description": "时间窗口内 ERROR 级别日志数量"
+    },
+    {
+      "id": 7,
+      "title": "WARN 数",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "sum(count_over_time({job=\"lyclaw\"} | json | detected_level=\"warn\" | logger_name=~\"$logger\" [$__auto]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 10 },
+            { "color": "orange", "value": 50 }
+          ]},
+          "unit": "short"
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" }
     },
     {
       "id": 3,
@@ -63,7 +127,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-          "expr": "sum by (detected_level) (count_over_time({job=\"lyclaw\"} | json [$__auto]))",
+          "expr": "sum by (detected_level) (count_over_time({job=\"lyclaw\"} | json | logger_name=~\"$logger\" [$__auto]))",
           "legendFormat": "{{detected_level}}"
         }
       ],
@@ -71,14 +135,14 @@
     },
     {
       "id": 4,
-      "title": "WARN / ERROR 最近日志",
+      "title": "WARN / ERROR 最近日志$level$logger",
       "type": "logs",
-      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 10 },
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 9 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-          "expr": "{job=\"lyclaw\"} | json | detected_level=~\"warn|error\""
+          "expr": "{job=\"lyclaw\"} | json | detected_level=~\"warn|error\" | logger_name=~\"$logger\""
         }
       ],
       "options": {
@@ -93,12 +157,12 @@
       "id": 5,
       "title": "Top 日志产生类",
       "type": "barchart",
-      "gridPos": { "x": 0, "y": 18, "w": 12, "h": 6 },
+      "gridPos": { "x": 0, "y": 17, "w": 12, "h": 6 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-          "expr": "topk(10, sum by (logger_name) (count_over_time({job=\"lyclaw\"} | json | logger_name!=\"\" [$__auto])))",
+          "expr": "topk(10, sum by (logger_name) (count_over_time({job=\"lyclaw\"} | json | logger_name!=\"\" | detected_level=~\"$level\" [$__auto])))",
           "legendFormat": "{{logger_name}}"
         }
       ],
@@ -107,18 +171,228 @@
     },
     {
       "id": 6,
-      "title": "请求量趋势（30s窗口）",
+      "title": "请求量趋势（30s窗口）$level",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 18, "w": 12, "h": 6 },
+      "gridPos": { "x": 12, "y": 17, "w": 12, "h": 6 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-          "expr": "sum(count_over_time({job=\"lyclaw\"} [$__auto]))",
+          "expr": "sum(count_over_time({job=\"lyclaw\"} | json | detected_level=~\"$level\" | logger_name=~\"$logger\" [$__auto]))",
           "legendFormat": "total lines"
         }
       ],
       "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 } } }
+    },
+    {
+      "id": 8,
+      "title": "日志模式（高频重复模板）",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 23, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+          "expr": "sum by (pattern) (count_over_time({job=\"lyclaw\"} | json | logger_name=~\"$logger\" | line_format \"{{.message}}\" | pattern `<txt>` [$__auto]))",
+          "legendFormat": "{{pattern}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [ { "id": "custom.width", "value": 100 } ] }
+        ]
+      },
+      "description": "Loki 自动检测的高频日志模板，快速发现异常模式"
+    },
+    {
+      "id": 9,
+      "title": "JVM 堆内存",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 30, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "jvm_memory_used_bytes{area=\"heap\"}",
+          "legendFormat": "堆已用"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "jvm_memory_max_bytes{area=\"heap\"}",
+          "legendFormat": "堆最大"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "jvm_memory_used_bytes{area=\"nonheap\"}",
+          "legendFormat": "非堆已用"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "bytes"
+        }
+      },
+      "description": "JVM 堆和非堆内存使用情况"
+    },
+    {
+      "id": 10,
+      "title": "JVM GC 暂停时间",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 30, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "rate(jvm_gc_pause_seconds_sum[1m]) / rate(jvm_gc_pause_seconds_count[1m])",
+          "legendFormat": "{{action}} ({{cause}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "s"
+        }
+      },
+      "description": "GC 暂停时间速率，过高说明内存压力大"
+    },
+    {
+      "id": 11,
+      "title": "HTTP 请求速率",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 36, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "rate(http_server_requests_seconds_count[1m])",
+          "legendFormat": "{{method}} {{uri}} ({{status}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "reqps"
+        }
+      },
+      "description": "HTTP 请求速率 (QPS)"
+    },
+    {
+      "id": 12,
+      "title": "HTTP 请求延迟 (P95)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 36, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[1m]))",
+          "legendFormat": "P95 {{uri}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "s"
+        }
+      },
+      "description": "HTTP 请求 P95 延迟"
+    },
+    {
+      "id": 13,
+      "title": "JVM 线程",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 42, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "jvm_threads_live_threads",
+          "legendFormat": "活跃线程"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "jvm_threads_daemon_threads",
+          "legendFormat": "守护线程"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 15, "lineWidth": 2 } }
+      },
+      "description": "JVM 活跃和守护线程数"
+    },
+    {
+      "id": 14,
+      "title": "CPU 使用率",
+      "type": "gauge",
+      "gridPos": { "x": 12, "y": 42, "w": 4, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "system_cpu_usage * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 50 },
+            { "color": "red", "value": 80 }
+          ]}
+        }
+      },
+      "options": { "orientation": "auto", "showThresholdLabels": true, "showThresholdMarkers": true },
+      "description": "JVM 进程 CPU 使用率"
+    },
+    {
+      "id": 15,
+      "title": "应用运行时间",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 42, "w": 4, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "process_uptime_seconds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" },
+      "description": "应用进程运行时间（秒）"
+    },
+    {
+      "id": 16,
+      "title": "系统负载",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 42, "w": 4, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus-lyclaw" },
+          "expr": "system_load_average_1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 4 }
+          ]}
+        }
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value" },
+      "description": "系统 1 分钟平均负载"
     }
   ],
   "schemaVersion": 38

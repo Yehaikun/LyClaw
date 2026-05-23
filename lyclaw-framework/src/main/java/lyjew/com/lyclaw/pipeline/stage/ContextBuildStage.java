@@ -33,7 +33,7 @@ public class ContextBuildStage extends PipelineStageBase {
     @Override
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
         if (ctx.isTerminated()) {
-            log.info("⏭️ [上下文构建] 管线已终止，跳过");
+            log.info("[上下文构建] 管线已终止，跳过");
             return Flux.empty();
         }
 
@@ -48,11 +48,11 @@ public class ContextBuildStage extends PipelineStageBase {
                 log.info("\n\n========== [阶段 0] 上下文构建 [CONTEXT_BUILD] ==========");
                 log.info(logJson("INFO", "stage_start", "CONTEXT_BUILD", traceId,
                         "开始加载会话并检索记忆", null));
-                log.info("📋 [上下文构建] 开始加载会话 | sessionId={}", ctx.getSessionId());
+                log.info("[上下文构建] 开始加载会话 | sessionId={}", ctx.getSessionId());
                 events.add(sseEvent("context_build_start", "正在加载会话并检索记忆"));
 
                 long memCallStart = System.currentTimeMillis();
-                log.info("🧠 [上下文构建] 开始检索记忆 | queryText长度={} | topK=10",
+                log.info("[上下文构建] 开始检索记忆 | queryText长度={} | topK=10",
                         ctx.getUserMessage() != null ? ctx.getUserMessage().length() : 0);
                 MemoryQuery memoryQuery = MemoryQuery.builder()
                         .queryText(ctx.getUserMessage())
@@ -68,7 +68,7 @@ public class ContextBuildStage extends PipelineStageBase {
 
                 log.info(logJson("INFO", "memory_call", "CONTEXT_BUILD", traceId,
                         "记忆检索完成: " + memoryHits + " 条结果", memCallDuration));
-                log.info("🧠 [上下文构建] 记忆检索完成 | 命中={}条 | 耗时={}ms", memoryHits, memCallDuration);
+                log.info("[上下文构建] 记忆检索完成 | 命中={}条 | 耗时={}ms", memoryHits, memCallDuration);
                 events.add(sseEvent("context_build_complete",
                         "会话加载完成，检索到 " + memoryHits + " 条记忆"));
 
@@ -81,7 +81,7 @@ public class ContextBuildStage extends PipelineStageBase {
                 ctx.getTracing().endStage("CONTEXT_BUILD");
                 log.info(logJson("INFO", "stage_complete", "CONTEXT_BUILD", traceId,
                         "上下文构建完成", stageDuration));
-                log.info("✅ [上下文构建] 阶段完成 | 总耗时={}ms | 记忆条目={}",
+                log.info("[OK] [上下文构建] 阶段完成 | 总耗时={}ms | 记忆条目={}",
                         stageDuration, memoryHits);
 
                 if (metricsCollector != null) {
@@ -90,7 +90,7 @@ public class ContextBuildStage extends PipelineStageBase {
             } catch (Exception e) {
                 log.warn(logJson("WARN", "stage_error", "CONTEXT_BUILD", traceId,
                         "上下文构建失败，继续执行: " + e.getMessage(), null), e);
-                log.warn("⚠️ [上下文构建] 阶段异常（降级继续）| error={}", e.getMessage());
+                log.warn("[WARN] [上下文构建] 阶段异常（降级继续）| error={}", e.getMessage());
                 ctx.getCurrentStage().set("CONTEXT_BUILD");
                 events.add(sseEvent("context_build_complete", "上下文构建降级（记忆不可用）"));
             }

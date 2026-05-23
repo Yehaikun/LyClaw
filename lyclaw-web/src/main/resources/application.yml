@@ -11,6 +11,22 @@ server:
   port: 8082
 
 # ============================================================
+#   Actuator / Prometheus 指标暴露
+# ============================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoint:
+    prometheus:
+      enabled: true
+
+# ============================================================
 #   Swagger / OpenAPI 文档配置 (springdoc)
 # ============================================================
 springdoc:

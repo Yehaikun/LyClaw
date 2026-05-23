@@ -46,13 +46,13 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
         String toolName = toolCall.getName();
         String toolCallId = toolCall.getToolCallId();
         long pipelineStart = System.currentTimeMillis();
-        log.info("⚙️ [ToolPipeline] 开始执行 7步管线 | toolName={} toolCallId={}", toolName, toolCallId);
+        log.info("[ToolPipeline] 开始执行 7步管线 | toolName={} toolCallId={}", toolName, toolCallId);
 
         // Step 1: Resolve — 查找工具实例
         long t1 = System.currentTimeMillis();
         Tool tool = toolRegistry.get(toolName);
         if (tool == null) {
-            log.warn("❌ [ToolPipeline] Step1-Resolve失败: 工具未找到 toolName={}", toolName);
+            log.warn("[FAIL] [ToolPipeline] Step1-Resolve失败: 工具未找到 toolName={}", toolName);
             return "Error: tool not found: " + toolName;
         }
         log.info("  ├─ [Step1-Resolve] 工具查找完成 | 耗时={}ms | type={}",
@@ -61,7 +61,7 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
         // Step 2: Policy check — 策略检查（频率限制、黑白名单）
         long t2 = System.currentTimeMillis();
         if (toolCallPolicy != null && !toolCallPolicy.canExecute(toolName, null)) {
-            log.warn("⛔ [ToolPipeline] Step2-Policy拦截: toolName={}", toolName);
+            log.warn("[BLOCKED] [ToolPipeline] Step2-Policy拦截: toolName={}", toolName);
             return "Error: tool call blocked by policy: " + toolName;
         }
         log.info("  ├─ [Step2-Policy] 策略检查通过 | 耗时={}ms | policy={}",

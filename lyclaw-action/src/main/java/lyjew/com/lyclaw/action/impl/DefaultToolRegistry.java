@@ -44,7 +44,7 @@ public class DefaultToolRegistry implements ToolRegistry {
      * 工具由 {@code ToolAnnotationProcessor}（BeanPostProcessor）在后续阶段注册。
      */
     public DefaultToolRegistry() {
-        log.info("DefaultToolRegistry 初始化完成，未来会基于注解注册工具，请看这条日志下面注册工具的消息");
+        log.info("ToolRegistry 实例化完成，等待 BeanPostProcessor 阶段注册注解工具");
     }
 
     /**

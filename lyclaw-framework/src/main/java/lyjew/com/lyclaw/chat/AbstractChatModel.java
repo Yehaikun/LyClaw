@@ -121,10 +121,7 @@ public abstract class AbstractChatModel implements ChatModel {
                         signal.getContextView().getOrEmpty(TraceConstants.MDC_SPAN_ID)
                                 .ifPresent(v -> MDC.put(TraceConstants.MDC_SPAN_ID, (String) v));
                     })
-                    .map(raw -> {
-                        ModelResponse chunk = parseChunk(raw);
-                        return chunk;
-                    })
+                    .map(this::parseChunk)
                     .doOnComplete(() -> {
                         long total = System.currentTimeMillis() - t0;
                         log.info("  └─ [AbstractChatModel] 流式调用完成 | provider={} model={} 总耗时={}ms",

@@ -33,11 +33,11 @@ public class MetricsStage extends PipelineStageBase {
     @Override
     public Flux<ServerSentEvent<String>> execute(AgentContext ctx) {
         if (ctx.isTerminated()) {
-            log.info("⏭️ [指标采集] 管线已终止，跳过");
+            log.info("[指标采集] 管线已终止，跳过");
             return Flux.empty();
         }
         if (!ctx.isPipelineOk()) {
-            log.warn("⏭️ [指标采集] 管线状态异常(pipelineOk=false)，跳过");
+            log.warn("[指标采集] 管线状态异常(pipelineOk=false)，跳过");
             return Flux.empty();
         }
 
@@ -52,11 +52,11 @@ public class MetricsStage extends PipelineStageBase {
             long now = System.currentTimeMillis();
 
             log.info("\n\n========== [阶段 4] 指标采集 [METRICS] ==========");
-            log.info("📊 [指标采集] 开始 | sessionId={} | 任务数={} | 成功={} | 失败={} | 评分={}",
+            log.info("[指标采集] 开始 | sessionId={} | 任务数={} | 成功={} | 失败={} | 评分={}",
                     sessionId, taskCount, successCount, failCount, String.format("%.2f", score));
 
             try {
-                log.info("🧠 [指标采集] 摄入记忆...");
+                log.info("[指标采集] 摄入记忆...");
                 PerceptionData perception = PerceptionData.builder()
                         .role("assistant")
                         .content("编排完成 | 任务: " + taskCount
@@ -71,11 +71,11 @@ public class MetricsStage extends PipelineStageBase {
                         .build();
                 MemoryEntry entry = memorySystem.ingestPerception(sessionId, perception);
                 entry.setUserId("default");
-                log.info("✅ [指标采集] 记忆摄入完成");
+                log.info("[OK] [指标采集] 记忆摄入完成");
             } catch (Exception e) {
                 log.warn(logJson("WARN", "memory_ingest_failed", "METRICS", traceId,
                         "记忆摄入失败（非关键）: " + e.getMessage(), null), e);
-                log.warn("⚠️ [指标采集] 记忆摄入失败（非关键）| error={}", e.getMessage());
+                log.warn("[WARN] [指标采集] 记忆摄入失败（非关键）| error={}", e.getMessage());
             }
 
             if (metricsCollector != null) {
@@ -87,7 +87,7 @@ public class MetricsStage extends PipelineStageBase {
             ctx.getTracing().markEnd();
             log.info(logJson("INFO", "pipeline_complete", "ORCHESTRATION_TOTAL", traceId,
                     "编排完成: " + taskCount + " 个任务", totalDuration));
-            log.info("🏁 [指标采集] 管线全部完成 | 总耗时={}ms | 任务数={} | traceId={}",
+            log.info("[指标采集] 管线全部完成 | 总耗时={}ms | 任务数={} | traceId={}",
                     totalDuration, taskCount, traceId);
 
             if (metricsCollector != null) {

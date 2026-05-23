@@ -114,21 +114,21 @@ public class SubagentSpawner {
                                                Map<String, Object> options,
                                                AgentContext parentCtx) {
         long startTime = System.currentTimeMillis();
-        log.info("🤖 [子代理] 开始生成子代理 | targetAgentId={} | task长度={}", targetAgentId,
+        log.info("[子代理] 开始生成子代理 | targetAgentId={} | task长度={}", targetAgentId,
                 task != null ? task.length() : 0);
 
         if (targetAgentId == null || targetAgentId.isBlank()) {
-            log.warn("⚠️ [子代理] targetAgentId为空，拒绝生成");
+            log.warn("[WARN] [子代理] targetAgentId为空，拒绝生成");
             return Mono.just(SubagentResult.error("targetAgentId is required"));
         }
         if (task == null || task.isBlank()) {
-            log.warn("⚠️ [子代理] task为空，拒绝生成 | targetAgentId={}", targetAgentId);
+            log.warn("[WARN] [子代理] task为空，拒绝生成 | targetAgentId={}", targetAgentId);
             return Mono.just(SubagentResult.error("task is required for agent '" + targetAgentId + "'"));
         }
 
         SubagentConfig config = resolveSubagentConfig(parentCtx);
         Map<String, Object> opts = options != null ? options : Collections.emptyMap();
-        log.info("📋 [子代理] 配置解析完成 | 最大深度={} | 最大子代理数={} | 最大并发={} | 超时={}s",
+        log.info("[子代理] 配置解析完成 | 最大深度={} | 最大子代理数={} | 最大并发={} | 超时={}s",
                 config.getMaxSpawnDepth(), config.getMaxChildrenPerAgent(),
                 config.getMaxConcurrent(), config.getRunTimeoutSeconds());
 
@@ -141,10 +141,10 @@ public class SubagentSpawner {
                 String msg = String.format(
                         "Agent '%s' is not in the allowed agents list: %s",
                         targetAgentId, allowAgents);
-                log.warn("⛔ [子代理] 白名单拒绝: {}", msg);
+                log.warn("[BLOCKED] [子代理] 白名单拒绝: {}", msg);
                 return Mono.just(SubagentResult.rejected(targetAgentId, msg));
             }
-            log.info("✅ [子代理] 白名单校验通过 | targetAgentId={} | allowAgents={}", targetAgentId, allowAgents);
+            log.info("[OK] [子代理] 白名单校验通过 | targetAgentId={} | allowAgents={}", targetAgentId, allowAgents);
         }
 
         // --- Step 2b: Validate depth limit ---
@@ -155,10 +155,10 @@ public class SubagentSpawner {
             String msg = String.format(
                     "Max spawn depth exceeded: current=%d, max=%d, target='%s'",
                     currentDepth, maxDepth, targetAgentId);
-            log.warn("⛔ [子代理] 深度限制拒绝: {}", msg);
+            log.warn("[BLOCKED] [子代理] 深度限制拒绝: {}", msg);
             return Mono.just(SubagentResult.rejected(targetAgentId, msg));
         }
-        log.info("📏 [子代理] 深度校验通过 | 当前深度={}/{}", currentDepth, maxDepth);
+        log.info("[子代理] 深度校验通过 | 当前深度={}/{}", currentDepth, maxDepth);
 
         // --- Step 2c: Validate children limit ---
         int maxChildren = config.getMaxChildrenPerAgent() > 0
@@ -168,17 +168,17 @@ public class SubagentSpawner {
             String msg = String.format(
                     "Max children per agent reached: active=%d, max=%d, target='%s'",
                     activeChildren, maxChildren, targetAgentId);
-            log.warn("⛔ [子代理] 子代理数限制拒绝: {}", msg);
+            log.warn("[BLOCKED] [子代理] 子代理数限制拒绝: {}", msg);
             return Mono.just(SubagentResult.rejected(targetAgentId, msg));
         }
-        log.info("👥 [子代理] 子代理数校验通过 | 活跃子代理={}/{}", activeChildren, maxChildren);
+        log.info("[子代理] 子代理数校验通过 | 活跃子代理={}/{}", activeChildren, maxChildren);
 
         // --- Step 3: Create child session via SessionFactory ---
         String parentSessionId = parentCtx.getSessionId();
         String parentAgentId = parentCtx.getAgentId();
         String childModel = config.getModel();
         Session childSession = createChildSession(parentSessionId, parentAgentId, targetAgentId, childModel);
-        log.info("🔑 [子代理] 子会话已创建 | sessionId={}", childSession.getSessionId());
+        log.info("[子代理] 子会话已创建 | sessionId={}", childSession.getSessionId());
 
         parentCtx.addActiveSubagent(targetAgentId);
 
@@ -188,17 +188,17 @@ public class SubagentSpawner {
                         ? config.getMaxConcurrent() : 1, true));
 
         long timeoutSeconds = resolveRunTimeout(opts, config);
-        log.info("🔒 [子代理] 等待并发信号量... | 超时={}s", timeoutSeconds);
+        log.info("[子代理] 等待并发信号量... | 超时={}s", timeoutSeconds);
 
         return Mono.fromCallable(() -> {
                     boolean acquired = semaphore.tryAcquire(10, TimeUnit.SECONDS);
                     if (!acquired) {
-                        log.warn("⏰ [子代理] 获取并发槽位超时 | session={} agent={}", parentSessionId, targetAgentId);
+                        log.warn("[TIMEOUT] [子代理] 获取并发槽位超时 | session={} agent={}", parentSessionId, targetAgentId);
                         return SubagentResult.error(
                                 "Timed out waiting for concurrency slot (session: "
                                         + parentSessionId + ", agent: " + targetAgentId + ")");
                     }
-                    log.info("✅ [子代理] 并发信号量已获取");
+                    log.info("[OK] [子代理] 并发信号量已获取");
                     return SubagentResult.proceed(targetAgentId);
                 })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -207,11 +207,11 @@ public class SubagentSpawner {
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .onErrorResume(throwable -> {
                     if (throwable instanceof java.util.concurrent.TimeoutException) {
-                        log.warn("⏰ [子代理] 执行超时: agentId={} sessionId={} timeout={}s",
+                        log.warn("[TIMEOUT] [子代理] 执行超时: agentId={} sessionId={} timeout={}s",
                                 targetAgentId, childSession.getSessionId(), timeoutSeconds);
                         return Mono.just(SubagentResult.timeout(targetAgentId, timeoutSeconds));
                     }
-                    log.error("❌ [子代理] 执行失败: agentId={} sessionId={}",
+                    log.error("[FAIL] [子代理] 执行失败: agentId={} sessionId={}",
                             targetAgentId, childSession.getSessionId(), throwable);
                     return Mono.just(SubagentResult.error(
                             "Subagent execution failed: " + throwable.getMessage()));
@@ -219,7 +219,7 @@ public class SubagentSpawner {
                 .doFinally(signalType -> {
                     semaphore.release();
                     parentCtx.removeActiveSubagent(targetAgentId);
-                    log.info("🏁 [子代理] 清理完成 | agentId={} | 信号类型={}", targetAgentId, signalType);
+                    log.info("[子代理] 清理完成 | agentId={} | 信号类型={}", targetAgentId, signalType);
                 });
     }
 
@@ -358,16 +358,16 @@ public class SubagentSpawner {
                                               SubagentConfig config,
                                               AgentContext parentCtx) {
         long startTime = System.currentTimeMillis();
-        log.info("🚀 [子代理] 开始执行 | agentId={} | sessionId={}", targetAgentId, childSession.getSessionId());
+        log.info("[子代理] 开始执行 | agentId={} | sessionId={}", targetAgentId, childSession.getSessionId());
 
         return Mono.fromCallable(() -> {
-                    log.info("🏗️ [子代理] 构建子上下文...");
+                    log.info("[子代理] 构建子上下文...");
                     AgentContext childCtx = buildChildContext(
                             targetAgentId, task, childSession, config, parentCtx);
-                    log.info("✅ [子代理] 子上下文已构建 | 沙箱级别={} | 深度={}",
+                    log.info("[OK] [子代理] 子上下文已构建 | 沙箱级别={} | 深度={}",
                             childCtx.getSandboxLevel(), childCtx.getRunMetadata().getSubagentDepth());
 
-                    log.info("🪝 [子代理] 派发subagentSpawning钩子...");
+                    log.info("[子代理] 派发subagentSpawning钩子...");
                     dispatchSubagentSpawning(childCtx);
 
                     ToolExecutor toolExecutor = buildChildToolExecutor(childCtx);
@@ -376,14 +376,14 @@ public class SubagentSpawner {
                     for (AgentHook hook : sorted) {
                         toolExecutor = hook.wrapToolExecutor(toolExecutor, childCtx);
                     }
-                    log.info("🔧 [子代理] 工具执行器已构建 | 钩子包装数={}", sorted.size());
+                    log.info("[子代理] 工具执行器已构建 | 钩子包装数={}", sorted.size());
 
-                    log.info("🧠 [子代理] 启动ReAct引擎执行...");
+                    log.info("[子代理] 启动ReAct引擎执行...");
                     ChatRequest childRequest = childCtx.getChatRequest();
                     String output = reActEngine.execute(chatFacade, childRequest, toolExecutor);
 
                     long elapsed = System.currentTimeMillis() - startTime;
-                    log.info("✅ [子代理] ReAct引擎执行完成 | 耗时={}ms | 输出长度={}",
+                    log.info("[OK] [子代理] ReAct引擎执行完成 | 耗时={}ms | 输出长度={}",
                             elapsed, output != null ? output.length() : 0);
 
                     SubagentResult result = SubagentResult.success(
@@ -415,7 +415,7 @@ public class SubagentSpawner {
                 }
                 return "Error: " + (result.getError() != null ? result.getError() : "unknown");
             } catch (Exception e) {
-                log.error("❌ [子代理] 工具执行失败: tool={} toolCallId={}", toolName, toolCallId, e);
+                log.error("[FAIL] [子代理] 工具执行失败: tool={} toolCallId={}", toolName, toolCallId, e);
                 return "Error: " + e.getMessage();
             }
         };
@@ -496,7 +496,7 @@ public class SubagentSpawner {
                 try {
                     sh.subagentSpawning(childCtx);
                 } catch (Exception e) {
-                    log.warn("⚠️ [子代理] SubagentHook {} 在subagentSpawning中抛出异常 agentId={}",
+                    log.warn("[WARN] [子代理] SubagentHook {} 在subagentSpawning中抛出异常 agentId={}",
                             hook.getClass().getSimpleName(), childCtx.getAgentId(), e);
                 }
             }
@@ -509,7 +509,7 @@ public class SubagentSpawner {
                 try {
                     sh.subagentSpawned(childCtx, result);
                 } catch (Exception e) {
-                    log.warn("⚠️ [子代理] SubagentHook {} 在subagentSpawned中抛出异常 agentId={}",
+                    log.warn("[WARN] [子代理] SubagentHook {} 在subagentSpawned中抛出异常 agentId={}",
                             hook.getClass().getSimpleName(), childCtx.getAgentId(), e);
                 }
             }
@@ -522,7 +522,7 @@ public class SubagentSpawner {
                 try {
                     sh.subagentEnded(childCtx, result);
                 } catch (Exception e) {
-                    log.warn("⚠️ [子代理] SubagentHook {} 在subagentEnded中抛出异常 agentId={}",
+                    log.warn("[WARN] [子代理] SubagentHook {} 在subagentEnded中抛出异常 agentId={}",
                             hook.getClass().getSimpleName(), childCtx.getAgentId(), e);
                 }
             }

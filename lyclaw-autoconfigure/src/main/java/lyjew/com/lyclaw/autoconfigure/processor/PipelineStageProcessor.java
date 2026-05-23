@@ -77,11 +77,11 @@ public class PipelineStageProcessor implements BeanPostProcessor, SmartInitializ
                         beforeConstraints.put(key, before);
                     }
                 }
-                log.info("📌 注册管线阶段: {} (order={})",
+                log.info("注册管线阶段: {} (order={})",
                         reactiveStage.getStageName(), reactiveStage.getOrder());
             }
         } catch (Exception e) {
-            log.error("❌ 处理 @PipelineStage Bean '{}' 失败: {}", beanName, e.getMessage());
+            log.error("[FAIL] 处理 @PipelineStage Bean '{}' 失败: {}", beanName, e.getMessage());
         }
         return bean;
     }
