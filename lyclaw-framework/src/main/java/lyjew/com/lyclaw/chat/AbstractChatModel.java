@@ -6,7 +6,9 @@ import lyjew.com.lyclaw.model.ModelResponse;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
+import lyjew.com.lyclaw.tracing.TraceConstants;
 import reactor.core.publisher.Flux;
 
 /**
@@ -113,6 +115,12 @@ public abstract class AbstractChatModel implements ChatModel {
             log.info("  ├─ [Step3-Send] 发送HTTP流式请求 | baseUrl={}", baseUrl);
             long t3 = System.currentTimeMillis();
             return sendNativeRequest(nativeRequest)
+                    .doOnEach(signal -> {
+                        signal.getContextView().getOrEmpty(TraceConstants.MDC_TRACE_ID)
+                                .ifPresent(v -> MDC.put(TraceConstants.MDC_TRACE_ID, (String) v));
+                        signal.getContextView().getOrEmpty(TraceConstants.MDC_SPAN_ID)
+                                .ifPresent(v -> MDC.put(TraceConstants.MDC_SPAN_ID, (String) v));
+                    })
                     .map(raw -> {
                         ModelResponse chunk = parseChunk(raw);
                         return chunk;
