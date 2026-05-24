@@ -1,0 +1,76 @@
+你是一个多Agent系统架构研究员。请对多Agent编排系统设计方向进行广泛深入的调研，并将结果写入文件 /home/lyjew/Documents/Unicom/LyClaw/design/Agent编排协作调研报告-1.md（不少于1000行）。
+
+## 调研背景
+
+我正在开发LyClaw——一个Java+Spring Boot的AI Agent平台。当前技术栈：
+- 后端: Java 21 + Spring Boot 3.x + SQLite (JSONL存储会话)
+- 前端: Vue 3 + TypeScript + Pinia
+- Agent机制: @Agent注解 → JDK动态代理 → 5 Stage Pipeline → ReAct循环
+- 子Agent委派: DelegateToAgentToolProvider + SubagentSpawner（代码完成度95%）
+- 工具系统: ToolProvider SPI（Java原生工具扩展）
+- 记忆系统: 待重新设计（会加入RAG知识库）
+
+当前已完成子Agent模型和委派基础设施，准备进入Agent CRUD和编排雏形阶段。长远目标是：
+- 用户手动创建多种类型的Agent（代码审查员、测试生成器、文档写手…）
+- Agent之间可以委派子Agent协作完成任务
+- Agent能够自动生成临时/持久的子Agent
+- 子Agent拥有完整的上下文机制和独立记忆
+- 最终形成多Agent协作网络（"Agent社会"）
+
+## 调研方向（自由探索，不局限于以下方向）
+
+### 方向1: Harness AI Platform 的Agent编排设计
+
+Harness在2025年从CI/CD平台演进为Agent驱动的软件交付平台，其架构设计对多Agent编排有重要参考价值。请深入搜索和分析：
+- Harness Delegate的架构模式（轻量Worker，outbound-only通信，在用户基础设施执行）
+- 递归Agent执行流（Recursive Agentic Execution Flow）——Agent如何层层委派子任务
+- Knowledge Graph如何为Agent提供上下文感知
+- AI Agent Matrix——不同类型专业Agent（DevOps/SRE/Security/Testing/FinOps）如何协作
+- 任务编排层（Workflow Orchestration Layer）的设计
+- MCP Server集成模式
+- 这些设计对通用多Agent编排系统的启示
+
+### 方向2: 多Agent编排系统的设计模式
+
+广泛搜索业界多Agent系统的设计模式和最佳实践，不局限于特定框架：
+- 编排模型分类：Orchestrator-Worker、Peer-to-Peer、Hierarchical、Market-based、Blackboard等
+- 委托机制：显式工具调用 vs 对话协商 vs 声明式分配 vs 事件驱动
+- Agent生命周期管理：创建、初始化、执行、监控、回收
+- 上下文传递策略：全量继承 vs 选择性注入 vs 纯任务描述 vs 共享记忆池
+- 工具/能力可见性控制：基于角色、基于深度、基于信任等级
+- 并发与流控：多Agent并行执行的协调机制
+- 故障处理：超时、重试、降级、熔断在Agent编排中的应用
+- 状态持久化与崩溃恢复：编排状态的Checkpoint机制
+
+### 方向3: 业界Agent框架的编排能力
+
+搜索并分析以下维度的最新进展（2025-2026），自由探索任何你觉得有价值的框架或项目：
+- 生产级Agent编排框架的设计取舍
+- 研究型Agent框架的创新点
+- 低代码/可视化Agent编排工具的设计思路
+- 企业级Agent平台的架构模式
+- 开源项目中值得借鉴的Agent协作实现
+
+### 方向4: Agent自动生成与演进
+
+- Agent模板系统和动态生成机制
+- 临时Agent vs 持久Agent的生命周期设计
+- Agent能力的自动发现和注册
+- 基于历史表现的Agent优化和淘汰
+
+## 对LyClaw设计的启示
+
+基于你的调研发现，自由给出对LyClaw多Agent编排系统的设计建议：
+- 哪些设计模式最适合LyClaw的场景（Java后端 + 显式工具调用 + 5 Stage Pipeline）
+- 编排雏形阶段应该优先实现哪些能力
+- 哪些能力可以留到后期（记忆系统完成后、流式响应完善后）
+- 当前架构中的哪些设计可能需要调整以适应更好的编排
+
+## 输出要求
+
+- 不少于1000行
+- 自由组织文档结构，以调研发现的insight驱动，而非按任务罗列
+- 包含架构对比和设计模式的深度分析，不只是表面描述
+- 对LyClaw的具体建议要结合其技术栈特点（Java/Spring/动态代理/Pipeline）
+- 使用Markdown格式，中文为主，代码/术语保留英文
+- 标注信息来源（URL、项目名、论文标题等）
