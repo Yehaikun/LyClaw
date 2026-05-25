@@ -11,9 +11,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
+import lyjew.com.lyclaw.reflect.topology.TopologyEvent;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.task.TaskNode;
 import lyjew.com.lyclaw.tool.ToolRegistry;
@@ -88,6 +90,8 @@ public class AgentContext {
     private final RunMetadata runMetadata = new RunMetadata();
     /** 当前绑定的Session对象——SessionPersistenceHook设置 */
     private lyjew.com.lyclaw.model.Session session;
+    /** 反思拓扑事件消费者——ReflectionTopologyStage设置 */
+    private Consumer<TopologyEvent> topologyEventSink;
 
     /**
      * 构造 AgentContext。
@@ -442,4 +446,7 @@ public class AgentContext {
         ctx.setLifecycle(Lifecycle.PERSISTENT);
         return ctx;
     }
+
+    public Consumer<TopologyEvent> getTopologyEventSink() { return topologyEventSink; }
+    public void setTopologyEventSink(Consumer<TopologyEvent> sink) { this.topologyEventSink = sink; }
 }

@@ -7,6 +7,18 @@
 spring:
   application:
     name: lyclaw-web-service
+  mail:
+    host: smtp.163.com
+    port: 465
+    username: sterlingmon@163.com
+    password: ${MAIL_PASSWORD:JU4VC5jJLx6EvVLQ}
+    protocol: smtp
+    properties:
+      mail.smtp.ssl.enable: true
+      mail.smtp.auth: true
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
 server:
   port: 8082
 

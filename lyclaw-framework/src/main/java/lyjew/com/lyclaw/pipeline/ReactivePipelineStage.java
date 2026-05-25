@@ -34,4 +34,17 @@ public interface ReactivePipelineStage {
      * @return 阶段名称
      */
     String getStageName();
+
+    /**
+     * 判断此阶段是否支持指定的运行模式。
+     * @param profile 运行模式
+     * @return true 表示支持（默认）
+     */
+    default boolean supportsProfile(PipelineProfile profile) { return true; }
+
+    /**
+     * 判断此阶段是否为执行型阶段（影响管线流程选择）。
+     * @return true 表示是执行型阶段
+     */
+    default boolean isExecutionStage() { return false; }
 }
