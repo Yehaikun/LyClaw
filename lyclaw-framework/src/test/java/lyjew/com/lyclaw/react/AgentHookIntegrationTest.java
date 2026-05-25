@@ -277,7 +277,7 @@ class AgentHookIntegrationTest {
                     .thenReturn(ToolExecutionResult.success("文件写入成功", "write_file"));
 
             CompletableFuture<Boolean> approvalFuture = new CompletableFuture<>();
-            when(approvalStore.create(eq("call-approve"), anyString(), anyString(), anyString(), anyString())).thenReturn(approvalFuture);
+            when(approvalStore.create(eq("call-approve"), anyString(), any(), anyString(), anyString())).thenReturn(approvalFuture);
 
             AtomicReference<ToolExecutor> captured = new AtomicReference<>();
             when(reActEngine.execute(any(), any(ChatRequest.class), any())).thenAnswer(inv -> {
@@ -347,7 +347,7 @@ class AgentHookIntegrationTest {
             CompletableFuture<Boolean> timeoutFuture = new CompletableFuture<>();
             // 不 complete —— 等待 30s 超时太久了，让底层 executor 自己处理
             // 我们直接用 approve/deny 管理
-            when(approvalStore.create(eq("call-timeout"), anyString(), anyString(), anyString(), anyString())).thenReturn(timeoutFuture);
+            when(approvalStore.create(eq("call-timeout"), anyString(), any(), anyString(), anyString())).thenReturn(timeoutFuture);
 
             AtomicReference<ToolExecutor> captured = new AtomicReference<>();
             when(reActEngine.execute(any(), any(ChatRequest.class), any())).thenAnswer(inv -> {
@@ -398,7 +398,7 @@ class AgentHookIntegrationTest {
 
             // 3. 审批
             CompletableFuture<Boolean> approvalFuture = new CompletableFuture<>();
-            when(approvalStore.create(eq("call-full"), anyString(), anyString(), anyString(), anyString())).thenReturn(approvalFuture);
+            when(approvalStore.create(eq("call-full"), anyString(), any(), anyString(), anyString())).thenReturn(approvalFuture);
 
             AtomicReference<ToolExecutor> captured = new AtomicReference<>();
             when(reActEngine.execute(any(), any(ChatRequest.class), any())).thenAnswer(inv -> {
@@ -433,7 +433,7 @@ class AgentHookIntegrationTest {
             // 验证链路顺序
             verify(securityManager).approve(any(ChatContext.class), eq("EXECUTE_CHAT"));
             verify(toolSandbox).execute(eq(mockTool), any(), eq(SandboxLevel.SANDBOX));
-            verify(approvalStore).create(eq("call-full"), anyString(), anyString(), anyString(), anyString());        }
+            verify(approvalStore).create(eq("call-full"), anyString(), any(), anyString(), anyString());}
 
         @Test
         @DisplayName("空 Hook 链 → 行为不变（向后兼容）")

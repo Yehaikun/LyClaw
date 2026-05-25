@@ -112,15 +112,36 @@ public class ModelResponse {
             }
             String base = this.arguments;
             String frag = argsFragment;
-            // 去掉前一段末尾的 '}' 和当前片段的开头的 '{'，它们是 JSON 结构符号
-            // 注意：不使用 trim()，避免丢失字符串值内部的空格（如 "ls -d" 中的空格）
-            if (base.endsWith("}")) {
+            // 只在末尾 '}' 是 JSON 结构花括号（不在字符串值内）时才去除
+            // 避免删除字符串值中的字面花括号（例如 "echo }"）
+            if (base.endsWith("}") && !isInsideStringValue(base, base.length() - 1)) {
                 base = base.substring(0, base.length() - 1);
             }
-            if (frag.startsWith("{")) {
+            if (frag.startsWith("{") && !isInsideStringValue(frag, 0)) {
                 frag = frag.substring(1);
             }
             this.arguments = base + frag;
+        }
+
+        /**
+         * 判断指定位置是否位于 JSON 字符串值内部。
+         * 从字符串开头扫描，跟踪双引号状态（跳过转义引号）。
+         */
+        private static boolean isInsideStringValue(String s, int pos) {
+            boolean inString = false;
+            for (int i = 0; i < pos && i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (inString) {
+                    if (c == '\\') {
+                        i++; // 跳过转义字符
+                    } else if (c == '"') {
+                        inString = false;
+                    }
+                } else if (c == '"') {
+                    inString = true;
+                }
+            }
+            return inString;
         }
     }
 }

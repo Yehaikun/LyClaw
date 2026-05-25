@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -190,11 +191,13 @@ class DefaultToolRegistryTest {
         }
 
         @Test
-        void testExecuteThrowsOnMissing() {
+        void testExecuteReturnsFailureOnMissing() {
             registry = new DefaultToolRegistry(List.of());
             ToolCall call = ToolCall.builder().name("missing").arguments("{}").build();
 
-            assertThrows(IllegalArgumentException.class, () -> registry.execute(call, null));
+            ToolExecutionResult result = registry.execute(call, null);
+            assertFalse(result.isSuccess());
+            assertThat(result.getError()).contains("Tool not found: missing");
         }
     }
 
