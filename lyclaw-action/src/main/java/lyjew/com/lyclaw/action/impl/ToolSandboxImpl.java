@@ -2,7 +2,7 @@ package lyjew.com.lyclaw.action.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lyjew.com.lyclaw.action.tool.ToolSandbox;
+import lyjew.com.lyclaw.tool.sandbox.ToolSandbox;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.tool.Tool;

@@ -5,7 +5,6 @@ import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.ChatResult;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
-import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.react.ReActMessageHook;
 import lyjew.com.lyclaw.tool.ToolCallPolicy;
@@ -49,10 +48,10 @@ public class ToolCallLoop {
         beforeLoop(context);
 
         List<Message> messages = context.getRequest().getMessages();
-        Session session = context.getSession();
+        String sessionId = context.getSessionId();
 
         // 钩子点1: 用户消息（进入循环前已在messages中）
-        notifyHooks(session, findLastUserMessage(messages));
+        notifyHooks(sessionId, findLastUserMessage(messages));
 
         int round = 0;
         int maxRounds = toolCallPolicy.getMaxRounds();
@@ -72,7 +71,7 @@ public class ToolCallLoop {
                         .content(response.getContent() != null ? response.getContent() : "")
                         .build();
                 messages.add(assistantMsg);
-                notifyHooks(session, assistantMsg);  // 钩子点2: 最终assistant消息
+                notifyHooks(sessionId, assistantMsg);  // 钩子点2: 最终assistant消息
                 break;
             }
 
@@ -83,7 +82,7 @@ public class ToolCallLoop {
                     .toolCalls(calls)
                     .build();
             messages.add(assistantMsg);
-            notifyHooks(session, assistantMsg);  // 钩子点3: 含tool_calls的assistant消息
+            notifyHooks(sessionId, assistantMsg);  // 钩子点3: 含tool_calls的assistant消息
 
             boolean shouldAbort = false;
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
@@ -96,7 +95,7 @@ public class ToolCallLoop {
                             .content(result.isSuccess() ? result.getResult() : result.getError())
                             .build();
                     messages.add(toolMsg);
-                    notifyHooks(session, toolMsg);  // 钩子点4: 工具执行结果
+                    notifyHooks(sessionId, toolMsg);  // 钩子点4: 工具执行结果
 
                     log.debug("工具执行完成: tool={}, success={}", req.getName(), result.isSuccess());
                 } catch (Exception e) {
@@ -112,7 +111,7 @@ public class ToolCallLoop {
                             .content("Error: " + e.getMessage())
                             .build();
                     messages.add(errorMsg);
-                    notifyHooks(session, errorMsg);  // 钩子点4b: 工具异常结果
+                    notifyHooks(sessionId, errorMsg);  // 钩子点4b: 工具异常结果
 
                     if (action == ToolErrorAction.ABORT) {
                         context.setAttribute("error", e.getMessage());
@@ -148,10 +147,10 @@ public class ToolCallLoop {
      * 通知所有已注册的消息钩子。
      * 每个钩子必须快速返回（O(1)内存操作），耗时操作在钩子内部异步化。
      */
-    private void notifyHooks(Session session, Message message) {
-        if (session == null || message == null || messageHooks.isEmpty()) return;
+    private void notifyHooks(String sessionId, Message message) {
+        if (message == null || messageHooks.isEmpty()) return;
         for (ReActMessageHook hook : messageHooks) {
-            hook.onMessage(session, message);
+            hook.onMessage(sessionId, message);
         }
     }
 

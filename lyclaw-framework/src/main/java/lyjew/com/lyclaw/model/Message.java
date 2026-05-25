@@ -3,7 +3,6 @@ package lyjew.com.lyclaw.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import lyjew.com.lyclaw.base.BaseDTO;
 
 import java.util.List;
 
@@ -16,11 +15,11 @@ import java.util.List;
  * 使用 @JsonIgnoreProperties(ignoreUnknown = true) 来兼容模型返回的额外字段。
  */
 @Data
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode
 @SuperBuilder
 @NoArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class Message extends BaseDTO {
+public class Message {
 
     /** 消息角色：system、user、assistant 或 tool */
     private String role;

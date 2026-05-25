@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.enums;
 
-import lyjew.com.lyclaw.base.exception.LyClawException;
+import lyjew.com.lyclaw.exception.LyClawException;
 
 /**
  * 统一错误码枚举，覆盖系统、模型、存储、校验、会话五大分类。

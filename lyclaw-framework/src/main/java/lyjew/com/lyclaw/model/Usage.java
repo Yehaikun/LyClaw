@@ -1,7 +1,6 @@
 package lyjew.com.lyclaw.model;
 
 import lombok.*;
-import lyjew.com.lyclaw.base.BaseDTO;
 
 /**
  * 令牌使用统计模型，记录一次 AI 模型调用的令牌消耗情况。
@@ -11,10 +10,10 @@ import lyjew.com.lyclaw.base.BaseDTO;
  * 自动更新 totalTokens 以保持三者一致性。继承自 BaseDTO。
  */
 @Data
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode
 @NoArgsConstructor
 @AllArgsConstructor
-public class Usage extends BaseDTO {
+public class Usage {
 
     /** 提示词部分消耗的令牌数 */
     private int promptTokens;

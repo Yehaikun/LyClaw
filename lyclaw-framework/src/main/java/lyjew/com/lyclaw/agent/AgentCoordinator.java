@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.agent;
 
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.dto.AgentResult;
-import lyjew.com.lyclaw.event.Event;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -51,10 +50,4 @@ public interface AgentCoordinator {
      */
     List<AgentChannel> getChannels(String agentId);
 
-    /**
-     * 向所有已注册的代理广播系统事件。
-     *
-     * @param event 待广播的事件对象
-     */
-    void broadcast(Event event);
 }

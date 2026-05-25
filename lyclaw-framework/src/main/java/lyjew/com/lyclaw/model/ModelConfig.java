@@ -2,7 +2,6 @@ package lyjew.com.lyclaw.model;
 
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import lyjew.com.lyclaw.base.BaseDTO;
 
 /**
  * AI 模型配置模型，定义了一个可用 AI 模型的连接和认证信息。
@@ -12,11 +11,11 @@ import lyjew.com.lyclaw.base.BaseDTO;
  * 继承自 BaseDTO，使用 Lombok @Data/@SuperBuilder 自动生成访问方法。
  */
 @Data
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ModelConfig extends BaseDTO {
+public class ModelConfig {
 
     /** 配置名称，用于标识此模型配置 */
     private String name;

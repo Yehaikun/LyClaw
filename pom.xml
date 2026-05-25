@@ -21,14 +21,8 @@
         <module>lyclaw-framework</module>
         <module>lyclaw-autoconfigure</module>
 
-        <!-- L3 协议层 -->
-        <module>lyclaw-protocol</module>
-
         <!-- L4 四元核心层 -->
-        <module>lyclaw-plan</module>
-        <module>lyclaw-memory</module>
         <module>lyclaw-action</module>
-        <module>lyclaw-reflect</module>
 
         <!-- Starter（一站式依赖引入） -->
         <module>lyclaw-starter</module>
@@ -79,27 +73,7 @@
             </dependency>
             <dependency>
                 <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-protocol</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-plan</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-memory</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>lyjew.com</groupId>
                 <artifactId>lyclaw-action</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-reflect</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <!-- Micrometer (可观测性) -->

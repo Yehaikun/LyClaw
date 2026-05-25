@@ -293,48 +293,6 @@ lyclaw:
     timeout-ms: 300000
 
   # ╔══════════════════════════════════════════════════════════╗
-  # ║  lyclaw.storage  —  存储层配置  (StorageProperties)       ║
-  # ║  AutoConfiguration: StorageAutoConfiguration             ║
-  # ║  固定使用 SQLite + JSONL，不再支持后端切换                   ║
-  # ╚══════════════════════════════════════════════════════════╝
-  storage:
-    # 存储根目录（SQLite数据库 + JSONL文件均在此目录下）
-    # 目录结构: {base-path}/index/lyclaw.db
-    #          {base-path}/agents/{agentId}/sessions/{sessionId}.jsonl
-    # 默认: ${user.dir}/data/storage
-    base-path: /home/lyjew/Documents/Unicom/LyClaw/LyClaw
-
-    # ── 会话存储配置 ─────────────────────────────────
-    session:
-      # 分页/懒加载时每页消息条数
-      # 默认: 50
-      page-size: 50
-
-      # 生成的 sessionId 长度（UUID前N位）
-      # 默认: 8
-      id-length: 8
-
-      # 首条用户消息预览最大字符数
-      # 默认: 100
-      preview-max-length: 100
-
-      # 异步写入队列容量（有界队列，防止OOM）
-      # 默认: 10000
-      write-queue-capacity: 10000
-
-      # JSONL写入失败最大重试次数
-      # 默认: 3
-      write-max-retries: 3
-
-      # 活跃会话缓存最大数量（LRU淘汰）
-      # 默认: 1000
-      cache-max-size: 1000
-
-      # 活跃会话缓存TTL（分钟），超时未访问自动淘汰
-      # 默认: 30
-      cache-ttl-minutes: 30
-
-  # ╔══════════════════════════════════════════════════════════╗
   # ║  lyclaw.extension  —  扩展注册配置  (ExtensionProperties) ║
   # ║  AutoConfiguration: ProcessorAutoConfiguration           ║
   # ╚══════════════════════════════════════════════════════════╝

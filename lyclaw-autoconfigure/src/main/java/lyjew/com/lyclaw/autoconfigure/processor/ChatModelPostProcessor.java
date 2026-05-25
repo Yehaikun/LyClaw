@@ -4,7 +4,7 @@ import lyjew.com.lyclaw.annotation.chat.CircuitBreaker;
 import lyjew.com.lyclaw.annotation.chat.Fallback;
 import lyjew.com.lyclaw.annotation.chat.ModelCapability;
 import lyjew.com.lyclaw.annotation.chat.RetryPolicy;
-import lyjew.com.lyclaw.base.exception.LyClawException;
+import lyjew.com.lyclaw.exception.LyClawException;
 import lyjew.com.lyclaw.chat.ChatModel;
 import lyjew.com.lyclaw.chat.ChatModelMetadata;
 import lyjew.com.lyclaw.chat.ChatModelRegistry;

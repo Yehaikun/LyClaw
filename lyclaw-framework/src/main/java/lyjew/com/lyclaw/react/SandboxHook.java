@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import lyjew.com.lyclaw.action.tool.ToolSandbox;
+import lyjew.com.lyclaw.tool.sandbox.ToolSandbox;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.tool.Tool;

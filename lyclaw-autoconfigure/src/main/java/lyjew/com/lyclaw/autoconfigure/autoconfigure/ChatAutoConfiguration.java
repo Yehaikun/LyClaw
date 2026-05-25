@@ -1,7 +1,6 @@
 package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.chat.*;
-import lyjew.com.lyclaw.config.PlanProperties;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -16,24 +15,6 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 public class ChatAutoConfiguration {
-
-    /**
-     * 注册 ChatProperties 配置属性 Bean，绑定 {@code lyclaw.chat} 前缀的配置项。
-     *
-     * <p>通过 {@code @ConfigurationProperties} 注解，Spring Boot 会自动将 application.yml
-     * 或 application.properties 中以 {@code lyclaw.chat} 为前缀的所有配置属性绑定到
-     * {@link ChatProperties} 对象的对应字段上，包括模型配置、协议类型、超时设置、重试策略等。
-     * 使用 {@code @ConditionalOnMissingBean} 确保用户可以通过声明自己的 ChatProperties Bean
-     * 来覆盖框架默认的配置绑定逻辑。</p>
-     *
-     * @return ChatProperties 实例，其字段值由 Spring Boot 从配置文件中自动填充
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    @ConfigurationProperties(prefix = "lyclaw.plan")
-    public PlanProperties planProperties() {
-        return new PlanProperties();
-    }
 
     @Bean
     @ConditionalOnMissingBean

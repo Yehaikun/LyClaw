@@ -4,7 +4,7 @@ import java.util.Map;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lyjew.com.lyclaw.react.ApprovalStore;
+import lyjew.com.lyclaw.react.DefaultReActEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,10 +18,10 @@ public class ApprovalController {
 
     private static final Logger log = LoggerFactory.getLogger(ApprovalController.class);
 
-    private final ApprovalStore approvalStore;
+    private final DefaultReActEngine reActEngine;
 
-    public ApprovalController(ApprovalStore approvalStore) {
-        this.approvalStore = approvalStore;
+    public ApprovalController(DefaultReActEngine reActEngine) {
+        this.reActEngine = reActEngine;
     }
 
     @Operation(summary = "审批响应", description = "前端确认或拒绝某个工具调用，body需包含toolCallId和approved字段")
@@ -36,12 +36,12 @@ public class ApprovalController {
 
         boolean ok;
         if (approved) {
-            ok = approvalStore.approve(toolCallId);
+            ok = reActEngine.approve(toolCallId);
         } else {
-            ok = approvalStore.deny(toolCallId);
+            ok = reActEngine.deny(toolCallId);
         }
         log.info("审批响应: toolCallId={} approved={} ok={} pendingCount={}",
-                toolCallId, approved, ok, approvalStore.pendingCount());
+                toolCallId, approved, ok, reActEngine.pendingCount());
 
         return Mono.just(Map.of("success", ok, "toolCallId", toolCallId));
     }

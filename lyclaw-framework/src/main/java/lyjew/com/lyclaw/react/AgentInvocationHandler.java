@@ -9,7 +9,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +35,7 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>解析注解 → 构建 AgentContext</li>
  *   <li>beforeRequest hooks（按 order 升序）</li>
- *   <li>Stage 管线（ContextBuild→SecurityCheck→PlanExecution→Respond→Metrics）</li>
+ *   <li>Stage 管线（ContextBuild→SecurityCheck→Respond→Metrics）</li>
  *   <li>afterResult hooks（按 order 降序）</li>
  * </ol>
  *
@@ -376,12 +375,9 @@ public class AgentInvocationHandler implements InvocationHandler {
         };
     }
 
-    private static final int MAX_REFLECTION_RETRIES = 2;
-    private static final double REFLECTION_RETRY_THRESHOLD = 0.6;
-
     /**
      * 流式执行 Stage 管线，返回 SSE 事件流。
-     * 包含 Plan→Execute→Reflect→Replan 闭环：ReflectionStage 评分低于阈值时自动重试。
+     * 按 order 升序串联所有阶段（无重试闭环）。
      */
     private Flux<org.springframework.http.codec.ServerSentEvent<String>> executeStages(AgentContext ctx) {
         if (stages.isEmpty()) {
@@ -389,71 +385,13 @@ public class AgentInvocationHandler implements InvocationHandler {
             return Flux.empty();
         }
 
-        int planIdx = indexOfStage("PlanExecution");
-        int reflectionIdx = indexOfStage("Reflection");
-
-        log.info("管线拓扑: planIdx={} reflectionIdx={} 总阶段数={}", planIdx, reflectionIdx, stages.size());
-
-        if (reflectionIdx < 0 || planIdx < 0) {
-            log.info("未检测到PlanExecution或Reflection阶段，使用简单串联模式（无重试）");
-            return simpleConcat(ctx);
-        }
-
-        log.info("启用反思重试闭环 | 最大重试次数={} | 重试阈值={}", MAX_REFLECTION_RETRIES, REFLECTION_RETRY_THRESHOLD);
-
-        List<Flux<org.springframework.http.codec.ServerSentEvent<String>>> allFluxes = new ArrayList<>();
-
-        // 前置阶段（ContextBuild → SecurityCheck）
-        log.info("执行前置阶段 (0 ~ {})...", planIdx - 1);
-        for (int i = 0; i < planIdx; i++) {
-            allFluxes.add(stages.get(i).execute(ctx));
-        }
-
-        // 可重试阶段块：PlanExecution → Respond → ReflectionStage
-        // 使用 repeat(condition) 实现重试（repeatWhen 在 Flux.concat 中会导致完成信号丢失）
-        AtomicInteger retries = new AtomicInteger(0);
-        Flux<org.springframework.http.codec.ServerSentEvent<String>> retryBlock = Flux.defer(() -> {
-            int attempt = retries.get() + 1;
-            log.info("执行可重试阶段块 (第{}次尝试)...", attempt);
-            List<Flux<org.springframework.http.codec.ServerSentEvent<String>>> innerList = new ArrayList<>();
-            for (int i = planIdx; i <= reflectionIdx; i++) {
-                innerList.add(stages.get(i).execute(ctx));
-            }
-            return Flux.concat(innerList);
-        }).repeat(() -> {
-            double score = ctx.getReflectScoreRef().get();
-            int failCount = ctx.getFailCount().get();
-            int attempt = retries.incrementAndGet();
-            if (score < REFLECTION_RETRY_THRESHOLD && failCount > 0
-                    && attempt <= MAX_REFLECTION_RETRIES) {
-                log.warn("反思评分={} < 阈值={} (失败数={}), 触发第{}次重试 (最多{}次)",
-                        String.format("%.2f", score), REFLECTION_RETRY_THRESHOLD,
-                        failCount, attempt, MAX_REFLECTION_RETRIES);
-                return true;
-            }
-            log.info("[OK] 反思评分={} 满足阈值，无需重试", String.format("%.2f", score));
-            return false;
-        });
-
-        allFluxes.add(retryBlock);
-
-        // MetricsStage 在重试块之后
-        int metricsIdx = indexOfStage("Metrics");
-        if (metricsIdx >= 0) {
-            log.info("添加指标采集阶段 (MetricsStage)");
-            allFluxes.add(stages.get(metricsIdx).execute(ctx));
-        }
-
-        return Flux.concat(allFluxes)
-                .doOnComplete(() -> {
-                    log.info("全部管线阶段执行完毕");
-                    hookRegistry.dispatchBeforeAgentFinalize(ctx);
-                });
+        log.info("串联执行 {} 个管线阶段（流式）", stages.size());
+        return simpleConcat(ctx);
     }
 
     /**
      * 阻塞执行 Stage 管线，收集最终响应文本。
-     * 包含 Plan→Execute→Reflect→Replan 闭环。
+     * 按 order 升序串联所有阶段（无重试闭环）。
      */
     private String executeStagesBlocking(AgentContext ctx) {
         if (stages.isEmpty()) {
@@ -461,79 +399,11 @@ public class AgentInvocationHandler implements InvocationHandler {
             return "";
         }
 
-        int planIdx = indexOfStage("PlanExecution");
-        int reflectionIdx = indexOfStage("Reflection");
-
-        if (reflectionIdx < 0 || planIdx < 0) {
-            log.info("未检测到PlanExecution或Reflection阶段，使用简单串联模式（阻塞，无重试）");
-            return simpleConcatBlocking(ctx);
-        }
-
-        log.info("启用反思重试闭环（阻塞模式）| 最大重试次数={}", MAX_REFLECTION_RETRIES);
-
-        StringBuilder finalResponse = new StringBuilder();
-        try {
-            // 前置阶段
-            log.info("执行前置阶段 (0 ~ {})...", planIdx - 1);
-            for (int i = 0; i < planIdx; i++) {
-                stages.get(i).execute(ctx).blockLast();
-            }
-
-            // 可重试阶段块
-            int retries = 0;
-            double score;
-            do {
-                log.info("执行可重试阶段块 (第{}次尝试)...", retries + 1);
-                for (int i = planIdx; i <= reflectionIdx; i++) {
-                    stages.get(i).execute(ctx)
-                            .doOnNext(event -> {
-                                if ("message".equals(event.event()) && event.data() != null) {
-                                    if (finalResponse.length() > 0) finalResponse.append("\n");
-                                    finalResponse.append(event.data());
-                                }
-                            })
-                            .blockLast();
-                }
-                score = ctx.getReflectScoreRef().get();
-                retries++;
-                if (score < REFLECTION_RETRY_THRESHOLD && ctx.getFailCount().get() > 0
-                        && retries < MAX_REFLECTION_RETRIES) {
-                    log.warn("反思评分={} < 阈值={}，触发第{}次重试", String.format("%.2f", score), REFLECTION_RETRY_THRESHOLD, retries);
-                }
-            } while (score < REFLECTION_RETRY_THRESHOLD && ctx.getFailCount().get() > 0
-                    && retries < MAX_REFLECTION_RETRIES);
-
-            ctx.setAttribute("finalResponse", finalResponse.toString());
-
-            // beforeAgentFinalize dispatch
-            hookRegistry.dispatchBeforeAgentFinalize(ctx);
-
-            // MetricsStage
-            int metricsIdx = indexOfStage("Metrics");
-            if (metricsIdx >= 0) {
-                log.info("执行指标采集阶段...");
-                stages.get(metricsIdx).execute(ctx).blockLast();
-            }
-        } catch (Exception e) {
-            log.error("[FAIL] Stage管线阻塞执行失败", e);
-            return "Error: " + e.getMessage();
-        }
-
-        log.info("[OK] 管线阻塞执行完成 | 最终响应长度={}", finalResponse.length());
-        String result = ctx.getAttribute("finalResponse");
-        return result != null ? result : finalResponse.toString();
+        log.info("串联执行 {} 个管线阶段（阻塞）", stages.size());
+        return simpleConcatBlocking(ctx);
     }
 
-    private int indexOfStage(String stageName) {
-        for (int i = 0; i < stages.size(); i++) {
-            if (stageName.equals(stages.get(i).getStageName())) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /** 无 ReflectionStage 时的简单串接（无重试） */
+    /** 简单串接所有阶段（流式） */
     private Flux<org.springframework.http.codec.ServerSentEvent<String>> simpleConcat(AgentContext ctx) {
         log.info("简单串联模式：按顺序执行 {} 个阶段（无重试闭环）", stages.size());
         Flux<org.springframework.http.codec.ServerSentEvent<String>> pipeline = stages.get(0).execute(ctx);

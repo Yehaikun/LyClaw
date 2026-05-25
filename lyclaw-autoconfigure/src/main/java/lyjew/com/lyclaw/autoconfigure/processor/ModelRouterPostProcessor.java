@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.autoconfigure.processor;
 
-import lyjew.com.lyclaw.base.exception.LyClawException;
+import lyjew.com.lyclaw.exception.LyClawException;
 import lyjew.com.lyclaw.chat.ChatModelRegistry;
 import lyjew.com.lyclaw.chat.FirstAvailableRouter;
 import lyjew.com.lyclaw.enums.ErrorCode;

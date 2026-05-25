@@ -3,7 +3,6 @@ package lyjew.com.lyclaw.model;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import lyjew.com.lyclaw.base.BaseDTO;
 
 /**
  * 工具调用模型（Tool Call），记录 AI 大模型发起的单次工具调用请求及其执行结果。
@@ -45,12 +44,12 @@ import lyjew.com.lyclaw.base.BaseDTO;
  * @see lyjew.com.lyclaw.tool.ToolExecutionResult
  */
 @Data
-@EqualsAndHashCode(callSuper = true)
+@EqualsAndHashCode
 @SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ToolCall extends BaseDTO {
+public class ToolCall {
 
     /** 工具调用的唯一标识 ID */
     private String toolCallId;

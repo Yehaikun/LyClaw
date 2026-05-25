@@ -49,19 +49,6 @@ public interface SecurityManager {
      */
     boolean checkPermission(String userId, String action);
 
-    /**
-     * 检查用户是否满足指定操作所需的权限级别。
-     * 默认实现委托给 {@link #checkPermission(String, String)}，
-     * 子类可重写以实现更细粒度的权限检查。
-     *
-     * @param userId        用户 ID
-     * @param action        操作名称
-     * @param requiredLevel 所需的权限级别
-     * @return true 表示用户满足该权限级别
-     */
-    default boolean checkPermission(String userId, String action, PermissionLevel requiredLevel) {
-        return checkPermission(userId, action);
-    }
 
     /**
      * 获取当前系统中所有已生效的安全策略列表。

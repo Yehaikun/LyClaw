@@ -192,8 +192,7 @@ public class OpenAiProtocolChatModel extends AbstractChatModel {
             if (msg.getToolCalls() != null && !msg.getToolCalls().isEmpty()) {
                 List<Map<String, Object>> toolCalls = new ArrayList<>();
                 for (ToolCall tc : msg.getToolCalls()) {
-                    String callId = tc.getToolCallId() != null ? tc.getToolCallId()
-                            : (tc.getId() != null ? tc.getId() : "");
+                    String callId = tc.getToolCallId() != null ? tc.getToolCallId() : "";
                     toolCalls.add(Map.of(
                             "id", callId,
                             "type", "function",

@@ -130,6 +130,8 @@ public class ChatContext {
 
     public Session getSession() { return session; }
 
+    public String getSessionId() { return session != null ? session.getSessionId() : null; }
+
     public void setSession(Session session) { this.session = session; }
 
     // TODO: 记忆系统重新设计后恢复 getMemory()

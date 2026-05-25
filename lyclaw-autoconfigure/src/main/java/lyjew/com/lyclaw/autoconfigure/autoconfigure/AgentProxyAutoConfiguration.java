@@ -9,7 +9,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.beans.factory.ObjectProvider;
 
 import lyjew.com.lyclaw.autoconfigure.processor.AgentInterfaceProcessor;
 import lyjew.com.lyclaw.autoconfigure.config.LyClawConfigurationProperties;
@@ -20,7 +19,6 @@ import lyjew.com.lyclaw.chat.catalog.ModelCatalog;
 import lyjew.com.lyclaw.chat.config.ModelResolutionService;
 import lyjew.com.lyclaw.config.AgentConfigResolver;
 import lyjew.com.lyclaw.config.AgentDefaultsConfig;
-import lyjew.com.lyclaw.persistence.SessionFactory;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.react.AgentHook;
 import lyjew.com.lyclaw.react.AgentProxyFactory;
@@ -159,14 +157,12 @@ public class AgentProxyAutoConfiguration {
             ReActEngine reActEngine,
             ToolRegistry toolRegistry,
             AgentConfigResolver configResolver,
-            ObjectProvider<SessionFactory> sessionFactoryProvider,
             List<ReactivePipelineStage> stages,
             List<AgentHook> hooks) {
-        SessionFactory sessionFactory = sessionFactoryProvider.getIfAvailable();
         List<AgentHook> hookList = hooks != null ? hooks : List.of();
         List<ReactivePipelineStage> pipelineStages = stages != null ? stages : List.of();
         return new SubagentSpawner(chatFacade, reActEngine, toolRegistry,
-                configResolver, sessionFactory, pipelineStages, hookList);
+                configResolver, pipelineStages, hookList);
     }
 
     /**

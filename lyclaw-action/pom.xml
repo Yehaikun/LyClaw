@@ -23,10 +23,6 @@
         </dependency>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-protocol</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>lyjew.com</groupId>
             <artifactId>lyclaw-autoconfigure</artifactId>
         </dependency>
         <dependency>

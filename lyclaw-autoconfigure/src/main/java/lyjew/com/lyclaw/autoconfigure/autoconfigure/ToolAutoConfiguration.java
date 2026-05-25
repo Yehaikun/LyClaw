@@ -2,7 +2,7 @@ package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.autoconfigure.facade.ConditionFilter;
 import lyjew.com.lyclaw.autoconfigure.processor.ToolAnnotationProcessor;
-import lyjew.com.lyclaw.config.ToolProperties;
+import lyjew.com.lyclaw.tool.ToolProperties;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;

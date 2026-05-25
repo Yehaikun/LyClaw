@@ -51,15 +51,16 @@ public class DefaultReActEngine implements ReActEngine {
     private static final int THINKING_BUDGET_MEDIUM = 4096;
     private static final int THINKING_BUDGET_HIGH = 16384;
 
-    private final ApprovalStore approvalStore;
     private final int maxToolRounds;
     private final long approvalTimeoutSeconds;
 
     /** 需要用户审批的工具名集合（通常是 readonly=false 的工具） */
     private final Set<String> approvalRequired = ConcurrentHashMap.newKeySet();
 
-    public DefaultReActEngine(ApprovalStore approvalStore, AgentProperties agentProperties) {
-        this.approvalStore = approvalStore;
+    /** 内存审批存储 — toolCallId → CompletableFuture */
+    private final ConcurrentHashMap<String, CompletableFuture<Boolean>> pendingApprovals = new ConcurrentHashMap<>();
+
+    public DefaultReActEngine(AgentProperties agentProperties) {
         this.maxToolRounds = agentProperties.getMaxToolRounds();
         this.approvalTimeoutSeconds = agentProperties.getApprovalStoreTimeoutSeconds();
     }
@@ -371,19 +372,25 @@ public class DefaultReActEngine implements ReActEngine {
                 });
     }
 
-    /** 审批流程：先创建 future 注册到 ApprovalStore → 发 tool_approval 事件 →
+    /** 审批流程：先创建 future 注册到内存审批表 → 发 tool_approval 事件 →
      *  发 tool_call executing 事件 → 等待用户响应 → 执行或拒绝 → 发 tool_call done 事件。
      *
-     *  <p>关键：future 必须在 Flux 返回之前创建，否则前端可能在 create() 之前就调用
+     *  <p>关键：future 必须在 Flux 返回之前创建，否则前端可能在 approve() 之前就调用
      *  approve()，导致匹配不到 pending future（竞态条件）。</p> */
     private Flux<ServerSentEvent<String>> emitApprovalFlow(
             ModelResponse.ToolCallRequest req, ToolExecutor toolExecutor,
             List<Message> messages, String toolArgs, String sessionId, String agentId) {
         // 必须在 Flux 返回前创建 future，消除竞态：保证前端 approve() 时 future 已就绪
-        CompletableFuture<Boolean> future = approvalStore.create(
-                req.getId(), sessionId, agentId, req.getName(), toolArgs);
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        pendingApprovals.put(req.getId(), future);
+        // 超时自动拒绝
+        CompletableFuture.delayedExecutor(approvalTimeoutSeconds, TimeUnit.SECONDS)
+                .execute(() -> {
+                    CompletableFuture<Boolean> f = pendingApprovals.remove(req.getId());
+                    if (f != null) f.complete(false);
+                });
         log.info("[ReAct流式] 创建审批请求: toolCallId={} | 待审批数={} | toolName={}",
-                req.getId(), approvalStore.pendingCount(), req.getName());
+                req.getId(), pendingApprovals.size(), req.getName());
 
         String approvalJson = toolApprovalEventJson(req.getId(), req.getName(), toolArgs);
         ServerSentEvent<String> approvalEvent = sseEvent("tool_approval", approvalJson);
@@ -628,5 +635,30 @@ public class DefaultReActEngine implements ReActEngine {
 
     private static ServerSentEvent<String> sseEvent(String event, String data) {
         return ServerSentEvent.<String>builder().event(event).data(data).build();
+    }
+
+    // ── 审批操作（供 ApprovalController 调用） ─────────────────────────
+
+    /** 用户允许工具执行 */
+    public boolean approve(String toolCallId) {
+        CompletableFuture<Boolean> future = pendingApprovals.remove(toolCallId);
+        if (future != null && !future.isDone()) {
+            return future.complete(true);
+        }
+        return false;
+    }
+
+    /** 用户拒绝工具执行 */
+    public boolean deny(String toolCallId) {
+        CompletableFuture<Boolean> future = pendingApprovals.remove(toolCallId);
+        if (future != null && !future.isDone()) {
+            return future.complete(false);
+        }
+        return false;
+    }
+
+    /** @return 当前待审批数量 */
+    public int pendingCount() {
+        return pendingApprovals.size();
     }
 }

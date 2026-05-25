@@ -11,13 +11,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
-import lyjew.com.lyclaw.reflect.topology.TopologyEvent;
 import lyjew.com.lyclaw.security.SandboxLevel;
-import lyjew.com.lyclaw.task.TaskNode;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import lyjew.com.lyclaw.tracing.TraceContext;
 
@@ -55,8 +52,6 @@ public class AgentContext {
     private final List<String> toolResults = new CopyOnWriteArrayList<>();
     private final AtomicInteger successCount = new AtomicInteger(0);
     private final AtomicInteger failCount = new AtomicInteger(0);
-    private final List<TaskNode> nodes = new CopyOnWriteArrayList<>();
-    private final AtomicReference<Double> reflectScoreRef = new AtomicReference<>(0.0);
     private final AtomicBoolean pipelineOk = new AtomicBoolean(false);
     private final AtomicLong respondStartMs = new AtomicLong();
     private final AtomicBoolean terminated = new AtomicBoolean(false);
@@ -88,11 +83,6 @@ public class AgentContext {
     private final Map<String, Object> runMetadataMap = new java.util.concurrent.ConcurrentHashMap<>();
     /** 类型化运行元数据（子代理层级、模型解析、归档等） */
     private final RunMetadata runMetadata = new RunMetadata();
-    /** 当前绑定的Session对象——SessionPersistenceHook设置 */
-    private lyjew.com.lyclaw.model.Session session;
-    /** 反思拓扑事件消费者——ReflectionTopologyStage设置 */
-    private Consumer<TopologyEvent> topologyEventSink;
-
     /**
      * 构造 AgentContext。
      */
@@ -153,11 +143,6 @@ public class AgentContext {
 
     public AtomicInteger getSuccessCount() { return successCount; }
     public AtomicInteger getFailCount() { return failCount; }
-
-    public List<TaskNode> getNodes() { return nodes; }
-    public void addNode(TaskNode node) { nodes.add(node); }
-
-    public AtomicReference<Double> getReflectScoreRef() { return reflectScoreRef; }
 
     public AtomicBoolean getPipelineOk() { return pipelineOk; }
     public boolean isPipelineOk() { return pipelineOk.get(); }
@@ -295,11 +280,6 @@ public class AgentContext {
     public java.util.Set<String> getActiveSubagentIds() { return Collections.unmodifiableSet(this.runMetadata.getActiveSubagentIds()); }
     public int getActiveSubagentCount() { return this.runMetadata.getActiveSubagentIds().size(); }
 
-    // ========== Session 绑定 ==========
-
-    public lyjew.com.lyclaw.model.Session getSession() { return session; }
-    public void setSession(lyjew.com.lyclaw.model.Session session) { this.session = session; }
-
     // ========== 生命周期：检查点 ==========
 
     /**
@@ -318,7 +298,6 @@ public class AgentContext {
         snapshot.put("failCount", failCount.get());
         snapshot.put("pipelineOk", pipelineOk.get());
         snapshot.put("terminated", terminated.get());
-        snapshot.put("reflectScore", reflectScoreRef.get());
         snapshot.put("toolResults", new ArrayList<>(toolResults));
         snapshot.put("tracing", Map.of("traceId", tracing.getTraceId()));
         // Phase 1 新增字段
@@ -368,9 +347,6 @@ public class AgentContext {
         }
         if (snapshot.get("terminated") != null) {
             this.terminated.set((Boolean) snapshot.get("terminated"));
-        }
-        if (snapshot.get("reflectScore") != null) {
-            this.reflectScoreRef.set(((Number) snapshot.get("reflectScore")).doubleValue());
         }
         if (snapshot.get("toolResults") instanceof List<?> list) {
             this.toolResults.clear();
@@ -447,6 +423,4 @@ public class AgentContext {
         return ctx;
     }
 
-    public Consumer<TopologyEvent> getTopologyEventSink() { return topologyEventSink; }
-    public void setTopologyEventSink(Consumer<TopologyEvent> sink) { this.topologyEventSink = sink; }
 }

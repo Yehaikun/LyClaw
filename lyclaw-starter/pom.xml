@@ -29,34 +29,10 @@
             <artifactId>lyclaw-autoconfigure</artifactId>
         </dependency>
 
-        <!-- 协议层 -->
-        <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-protocol</artifactId>
-        </dependency>
-
         <!-- 工具执行 -->
         <dependency>
             <groupId>lyjew.com</groupId>
             <artifactId>lyclaw-action</artifactId>
-        </dependency>
-
-        <!-- 记忆系统 -->
-        <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-memory</artifactId>
-        </dependency>
-
-        <!-- 反思/ReAct -->
-        <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-reflect</artifactId>
-        </dependency>
-
-        <!-- 任务规划 -->
-        <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-plan</artifactId>
         </dependency>
 
         <!-- Spring Boot 自动配置引擎（必需） -->

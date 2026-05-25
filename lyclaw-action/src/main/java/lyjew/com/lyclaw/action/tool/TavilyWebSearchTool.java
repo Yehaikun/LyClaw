@@ -4,7 +4,7 @@ package lyjew.com.lyclaw.action.tool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lyjew.com.lyclaw.annotation.tool.Tool;
-import lyjew.com.lyclaw.config.ToolProperties;
+import lyjew.com.lyclaw.tool.ToolProperties;
 import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;

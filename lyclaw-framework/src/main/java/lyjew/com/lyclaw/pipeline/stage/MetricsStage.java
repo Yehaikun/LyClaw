@@ -17,7 +17,7 @@ import java.util.Map;
  * TODO: 记忆系统重新设计后，在此阶段通过 MemorySystem.ingestPerception() 摄入记忆
  */
 @Slf4j
-@PipelineStage(name = "Metrics", after = ReflectionStage.class, group = "POSTPROCESSING")
+@PipelineStage(name = "Metrics", after = RespondStage.class, group = "POSTPROCESSING")
 public class MetricsStage extends PipelineStageBase {
 
     private final MetricsCollector metricsCollector;
@@ -43,7 +43,7 @@ public class MetricsStage extends PipelineStageBase {
             int successCount = ctx.getSuccessCount().get();
             int failCount = ctx.getFailCount().get();
             List<String> toolResults = ctx.getToolResults();
-            double score = ctx.getReflectScoreRef().get();
+            double score = 1.0;
             int taskCount = toolResults.size();
 
             log.info("\n\n========== [阶段 4] 指标采集 [METRICS] ==========");

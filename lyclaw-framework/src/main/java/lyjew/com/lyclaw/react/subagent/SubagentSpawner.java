@@ -17,7 +17,6 @@ import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.ToolDefinition;
-import lyjew.com.lyclaw.persistence.SessionFactory;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
 import lyjew.com.lyclaw.react.AgentContext;
 import lyjew.com.lyclaw.react.AgentHook;
@@ -41,7 +40,7 @@ import reactor.core.scheduler.Schedulers;
  * <ol>
  *   <li>Resolve the parent's {@link SubagentConfig} from context attributes</li>
  *   <li>Validate against whitelist, depth, and concurrency limits</li>
- *   <li>Create child session via {@link SessionFactory}</li>
+ *   <li>Create child session in-memory</li>
  *   <li>Acquire a per-parent-session concurrency semaphore</li>
  *   <li>Build an isolated child {@link AgentContext} with correct {@link RunMetadata}</li>
  *   <li>Dispatch {@link SubagentHook} lifecycle callbacks</li>
@@ -70,7 +69,6 @@ public class SubagentSpawner {
     private final ReActEngine reActEngine;
     private final ToolRegistry toolRegistry;
     private final AgentConfigResolver configResolver;
-    private final SessionFactory sessionFactory;
     private final List<ReactivePipelineStage> defaultStages;
     private final List<AgentHook> defaultHooks;
 
@@ -83,7 +81,6 @@ public class SubagentSpawner {
      * @param reActEngine    engine for running the ReAct reasoning loop
      * @param toolRegistry   registry for resolving tool definitions and executing tools
      * @param configResolver resolver for looking up agent configurations by ID
-     * @param sessionFactory factory for creating child agent sessions (via SessionManager in web layer)
      * @param defaultStages  the default pipeline stages applied to every subagent
      * @param defaultHooks   the default hooks applied to every subagent lifecycle
      */
@@ -91,14 +88,12 @@ public class SubagentSpawner {
                            ReActEngine reActEngine,
                            ToolRegistry toolRegistry,
                            AgentConfigResolver configResolver,
-                           SessionFactory sessionFactory,
                            List<ReactivePipelineStage> defaultStages,
                            List<AgentHook> defaultHooks) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
         this.configResolver = configResolver;
-        this.sessionFactory = sessionFactory;
         this.defaultStages = defaultStages != null
                 ? List.copyOf(defaultStages) : List.of();
         this.defaultHooks = defaultHooks != null
@@ -330,24 +325,15 @@ public class SubagentSpawner {
     // ========================================================================
 
     /**
-     * Creates a child session via {@link SessionFactory}.
-     * Falls back to a simple in-memory Session if no factory is available.
+     * Creates a child session in-memory.
      */
     private Session createChildSession(String parentSessionId, String parentAgentId,
                                         String childAgentId, String model) {
-        if (sessionFactory != null) {
-            return sessionFactory.createSubagentSession(parentSessionId, parentAgentId, childAgentId, model);
-        }
-        // Fallback: pure in-memory session (no persistence)
-        String fallbackId = parentSessionId + "/subagent/" + childAgentId + "/"
+        String sid = parentSessionId + "/subagent/" + childAgentId + "/"
                 + UUID.randomUUID().toString().substring(0, 8);
         return Session.builder()
-                .sessionId(fallbackId)
-                .agentId(childAgentId)
-                .parentSessionId(parentSessionId)
-                .parentAgentId(parentAgentId)
+                .sessionId(sid)
                 .model(model)
-                .heartbeatMode(false)
                 .messages(new ArrayList<>())
                 .build();
     }

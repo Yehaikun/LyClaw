@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.exception;
 
-import lyjew.com.lyclaw.base.exception.LyClawException;
+import lyjew.com.lyclaw.exception.LyClawException;
 import lyjew.com.lyclaw.enums.ErrorCode;
 
 /**

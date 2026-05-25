@@ -2,9 +2,8 @@ package lyjew.com.lyclaw.autoconfigure.actuator;
 
 import lyjew.com.lyclaw.chat.ChatProperties;
 import lyjew.com.lyclaw.config.AgentProperties;
-import lyjew.com.lyclaw.config.PipelineProperties;
-import lyjew.com.lyclaw.config.PlanProperties;
-import lyjew.com.lyclaw.config.ToolProperties;
+import lyjew.com.lyclaw.pipeline.PipelineProperties;
+import lyjew.com.lyclaw.tool.ToolProperties;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
@@ -28,9 +27,6 @@ public class LyClawConfigEndpoint {
 
     @Autowired(required = false)
     private AgentProperties agentProperties;
-
-    @Autowired(required = false)
-    private PlanProperties planProperties;
 
     @Autowired(required = false)
     private PipelineProperties pipelineProperties;
@@ -79,15 +75,6 @@ public class LyClawConfigEndpoint {
             agent.put("approvalTimeoutSeconds", agentProperties.getApprovalTimeoutSeconds());
             agent.put("timeoutMs", agentProperties.getTimeoutMs());
             result.put("agent", agent);
-        }
-
-        if (planProperties != null) {
-            Map<String, Object> plan = new LinkedHashMap<>();
-            plan.put("defaultTimeoutMs", planProperties.getDefaultTimeoutMs());
-            plan.put("maxNodes", planProperties.getMaxNodes());
-            plan.put("hybridConfidenceThreshold", planProperties.getHybridConfidenceThreshold());
-            plan.put("maxCycles", planProperties.getMaxCycles());
-            result.put("plan", plan);
         }
 
         if (pipelineProperties != null) {

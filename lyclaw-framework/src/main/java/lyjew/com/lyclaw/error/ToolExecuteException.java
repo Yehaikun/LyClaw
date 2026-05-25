@@ -1,6 +1,6 @@
 package lyjew.com.lyclaw.error;
 
-import lyjew.com.lyclaw.base.exception.LyClawException;
+import lyjew.com.lyclaw.exception.LyClawException;
 
 /**
  * 工具执行异常，当工具调用过程中发生错误时抛出。

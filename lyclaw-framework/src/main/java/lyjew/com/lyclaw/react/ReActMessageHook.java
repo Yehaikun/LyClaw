@@ -1,7 +1,6 @@
 package lyjew.com.lyclaw.react;
 
 import lyjew.com.lyclaw.model.Message;
-import lyjew.com.lyclaw.model.Session;
 
 /**
  * ReAct循环消息钩子——ToolCallLoop每产生一条新消息时回调。
@@ -21,8 +20,8 @@ public interface ReActMessageHook {
      * 当ReAct循环产生一条新消息时调用。
      * 此时消息已加入 ChatRequest.messages 列表，但尚未持久化。
      *
-     * @param session 当前会话（可能为null，如心跳会话或测试场景）
+     * @param sessionId 当前会话ID（可能为null）
      * @param message 刚产生的消息（role可能是user/assistant/tool）
      */
-    void onMessage(Session session, Message message);
+    void onMessage(String sessionId, Message message);
 }
