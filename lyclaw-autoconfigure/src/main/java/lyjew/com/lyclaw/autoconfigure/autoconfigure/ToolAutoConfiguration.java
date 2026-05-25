@@ -61,4 +61,24 @@ public class ToolAutoConfiguration {
     public ConditionFilter conditionFilter(Environment env) {
         return new ConditionFilter(env);
     }
+
+    /**
+     * DefaultToolRegistry 的条件配置。
+     * 仅当 lyclaw-action 模块在 classpath 上时生效。
+     * 使用反射避免与 lyclaw-action 的编译期循环依赖。
+     */
+    @org.springframework.context.annotation.Configuration
+    @ConditionalOnClass(name = "lyjew.com.lyclaw.action.impl.DefaultToolRegistry")
+    static class ToolRegistryConfiguration {
+        @Bean
+        @ConditionalOnMissingBean(ToolRegistry.class)
+        public ToolRegistry toolRegistry() {
+            try {
+                Class<?> clazz = Class.forName("lyjew.com.lyclaw.action.impl.DefaultToolRegistry");
+                return (ToolRegistry) clazz.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create DefaultToolRegistry", e);
+            }
+        }
+    }
 }

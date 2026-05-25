@@ -6,6 +6,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.context.EnvironmentAware;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.env.Environment;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 
 import lyjew.com.lyclaw.annotation.Agent;
@@ -30,26 +32,32 @@ import lyjew.com.lyclaw.react.AgentProxyFactory;
  * <p>独立的 classpath 扫描是必要的，因为 Spring 自身的组件扫描会跳过接口
  * （{@code isConcrete()} 返回 false），不会为其创建 BeanDefinition。
  */
-public class AgentInterfaceProcessor implements BeanFactoryPostProcessor {
+public class AgentInterfaceProcessor implements BeanFactoryPostProcessor, EnvironmentAware {
 
     private static final Logger log = LoggerFactory.getLogger(AgentInterfaceProcessor.class);
 
-    private final List<String> scanPackages;
+    private List<String> scanPackages;
+    private Environment environment;
 
-    /** 默认构造器：扫描框架自带包。使用 setter 或配置覆盖。 */
+    /** 默认构造器：包路径由 BFPP 阶段从 Environment 解析。 */
     public AgentInterfaceProcessor() {
-        this(List.of("lyjew.com.lyclaw"));
+        this.scanPackages = null;
     }
 
     /**
-     * 构造器注入扫描包列表。
+     * 构造器注入扫描包列表（直接指定，不使用 Environment）。
      *
      * @param scanPackages 要扫描 @Agent 接口的基础包路径
      */
     public AgentInterfaceProcessor(List<String> scanPackages) {
         this.scanPackages = scanPackages != null && !scanPackages.isEmpty()
                 ? List.copyOf(scanPackages)
-                : List.of("lyjew.com.lyclaw");
+                : null;
+    }
+
+    @Override
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
     }
 
     @Override
@@ -57,6 +65,18 @@ public class AgentInterfaceProcessor implements BeanFactoryPostProcessor {
             throws BeansException {
         DefaultListableBeanFactory registry = (DefaultListableBeanFactory) beanFactory;
         LazyBeanFactoryHolder.setBeanFactory(registry);
+
+        // 优先级：构造器参数 > Environment 配置 > 默认值
+        List<String> packages = this.scanPackages;
+        if (packages == null && environment != null) {
+            String raw = environment.getProperty("lyclaw.scan.base-packages");
+            if (raw != null && !raw.isBlank()) {
+                packages = List.of(raw.split("\\s*,\\s*"));
+            }
+        }
+        if (packages == null) {
+            packages = List.of("lyjew.com.lyclaw");
+        }
 
         ClassPathScanningCandidateComponentProvider scanner =
                 new ClassPathScanningCandidateComponentProvider(false) {
@@ -69,7 +89,7 @@ public class AgentInterfaceProcessor implements BeanFactoryPostProcessor {
         scanner.addIncludeFilter(new AnnotationTypeFilter(Agent.class));
         Set<String> scanned = new java.util.HashSet<>();
 
-        for (String basePackage : scanPackages) {
+        for (String basePackage : packages) {
             try {
                 for (var bd : scanner.findCandidateComponents(basePackage)) {
                     String className = bd.getBeanClassName();

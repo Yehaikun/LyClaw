@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.beans.factory.ObjectProvider;
 
 import lyjew.com.lyclaw.autoconfigure.processor.AgentInterfaceProcessor;
 import lyjew.com.lyclaw.autoconfigure.config.LyClawConfigurationProperties;
@@ -41,7 +42,7 @@ import lyjew.com.lyclaw.tool.ToolRegistry;
 @AutoConfiguration
 @AutoConfigureAfter({ChatAutoConfiguration.class, ReActAutoConfiguration.class, ToolAutoConfiguration.class})
 @ConditionalOnClass({ReActEngine.class, ToolRegistry.class, ChatFacade.class})
-@EnableConfigurationProperties(AgentDefaultsConfig.class)
+@EnableConfigurationProperties({AgentDefaultsConfig.class, LyClawConfigurationProperties.class})
 public class AgentProxyAutoConfiguration {
 
     @Bean
@@ -72,8 +73,8 @@ public class AgentProxyAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(AgentInterfaceProcessor.class)
-    public static AgentInterfaceProcessor agentInterfaceProcessor(LyClawConfigurationProperties lyClawConfig) {
-        return new AgentInterfaceProcessor(lyClawConfig.getScan().getBasePackages());
+    public static AgentInterfaceProcessor agentInterfaceProcessor() {
+        return new AgentInterfaceProcessor();
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -158,9 +159,10 @@ public class AgentProxyAutoConfiguration {
             ReActEngine reActEngine,
             ToolRegistry toolRegistry,
             AgentConfigResolver configResolver,
-            SessionFactory sessionFactory,
+            ObjectProvider<SessionFactory> sessionFactoryProvider,
             List<ReactivePipelineStage> stages,
             List<AgentHook> hooks) {
+        SessionFactory sessionFactory = sessionFactoryProvider.getIfAvailable();
         List<AgentHook> hookList = hooks != null ? hooks : List.of();
         List<ReactivePipelineStage> pipelineStages = stages != null ? stages : List.of();
         return new SubagentSpawner(chatFacade, reActEngine, toolRegistry,
