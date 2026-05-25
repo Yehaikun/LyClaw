@@ -1,5 +1,7 @@
 package lyjew.com.lyclaw.config;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -29,4 +31,11 @@ public interface AgentConfigSource {
 
     /** 配置源名称，用于日志和调试 */
     default String getSourceName() { return getClass().getSimpleName(); }
+
+    /**
+     * 列出此配置源支持的所有 agent 名称。
+     *
+     * @return agent 名称列表，无可用名称时返回空列表
+     */
+    default List<String> listAgentNames() { return Collections.emptyList(); }
 }

@@ -9,11 +9,11 @@
     <!-- 只有最终的启动模块才继承 spring-boot-starter-parent -->
 
     <groupId>lyjew.com</groupId>
-    <artifactId>LyClaw</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <artifactId>lyclaw-ai-framework</artifactId>
+    <version>1.0.0</version>
     <packaging>pom</packaging>  <!-- ← 关键：父工程打包方式为 pom -->
-    <name>LyClaw</name>
-    <description>LyClaw Multi-Module</description>
+    <name>lyclaw-ai-framework</name>
+    <description>LyClaw AI Framework Multi-Module</description>
 
     <!-- ========== 声明子模块 ========== -->
     <modules>
@@ -30,8 +30,8 @@
         <module>lyclaw-action</module>
         <module>lyclaw-reflect</module>
 
-        <!-- L6 Web 层（唯一部署单元，单体架构入口） -->
-        <module>lyclaw-web</module>
+        <!-- Starter（一站式依赖引入） -->
+        <module>lyclaw-starter</module>
     </modules>
 
     <!-- ========== properties 统一定义版本 ========== -->
@@ -102,12 +102,6 @@
                 <artifactId>lyclaw-reflect</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <dependency>
-                <groupId>lyjew.com</groupId>
-                <artifactId>lyclaw-web</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- Micrometer (可观测性) -->
             <dependency>
                 <groupId>io.micrometer</groupId>

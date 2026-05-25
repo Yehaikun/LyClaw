@@ -1,0 +1,552 @@
+{
+  "properties": [
+    {
+      "name": "lyclaw.tool.default-timeout-ms",
+      "type": "java.lang.Long",
+      "description": "每个工具调用的默认超时时间（毫秒）。",
+      "defaultValue": 30000
+    },
+    {
+      "name": "lyclaw.tool.max-output-length",
+      "type": "java.lang.Integer",
+      "description": "工具输出最大字符数，超出截断。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "lyclaw.tool.max-calls-per-tool",
+      "type": "java.lang.Integer",
+      "description": "每个会话中单个工具的最大调用次数。",
+      "defaultValue": 20
+    },
+    {
+      "name": "lyclaw.tool.max-retries",
+      "type": "java.lang.Integer",
+      "description": "工具调用失败的最大重试次数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "lyclaw.tool.max-rounds",
+      "type": "java.lang.Integer",
+      "description": "ReAct 循环中工具调用的最大轮数。",
+      "defaultValue": 10
+    },
+    {
+      "name": "lyclaw.tool.sandbox-level",
+      "type": "java.lang.String",
+      "description": "沙箱隔离级别：DIRECT（直接执行）、SANDBOX（沙箱）、PROCESS（进程级）。",
+      "defaultValue": "PROCESS"
+    },
+    {
+      "name": "lyclaw.tool.tavily-api-key",
+      "type": "java.lang.String",
+      "description": "Tavily 搜索引擎 API 密钥。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.pipeline.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用管线处理。",
+      "defaultValue": true
+    },
+    {
+      "name": "lyclaw.pipeline.timeout-ms",
+      "type": "java.lang.Long",
+      "description": "管线执行总超时时间（毫秒）。",
+      "defaultValue": 300000
+    },
+    {
+      "name": "lyclaw.plan.default-timeout-ms",
+      "type": "java.lang.Long",
+      "description": "计划生成的默认超时时间（毫秒）。",
+      "defaultValue": 30000
+    },
+    {
+      "name": "lyclaw.plan.simple-timeout-ms",
+      "type": "java.lang.Long",
+      "description": "简单单节点任务的超时时间（毫秒）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "lyclaw.plan.max-nodes",
+      "type": "java.lang.Integer",
+      "description": "计划中最大任务节点数，超过触发验证警告。",
+      "defaultValue": 50
+    },
+    {
+      "name": "lyclaw.plan.time-budget-ms",
+      "type": "java.lang.Long",
+      "description": "计划执行总时间预算（毫秒）。",
+      "defaultValue": 600000
+    },
+    {
+      "name": "lyclaw.plan.hybrid-confidence-threshold",
+      "type": "java.lang.Double",
+      "description": "混合规划器置信度阈值，低于此值则回退到 LLM。",
+      "defaultValue": 0.5
+    },
+    {
+      "name": "lyclaw.plan.max-cycles",
+      "type": "java.lang.Integer",
+      "description": "ReAct 规划器的最大循环次数。",
+      "defaultValue": 5
+    },
+    {
+      "name": "lyclaw.agent.default-mode",
+      "type": "java.lang.String",
+      "description": "默认交互模式：react、cot（思维链）或 hierarchical（层级）。",
+      "defaultValue": "react"
+    },
+    {
+      "name": "lyclaw.agent.max-tool-rounds",
+      "type": "java.lang.Integer",
+      "description": "每次 ReAct 循环的最大工具调用轮数。",
+      "defaultValue": 30
+    },
+    {
+      "name": "lyclaw.agent.approval-timeout-seconds",
+      "type": "java.lang.Integer",
+      "description": "工具审批 UI 交互超时（秒）。",
+      "defaultValue": 30
+    },
+    {
+      "name": "lyclaw.agent.approval-store-timeout-seconds",
+      "type": "java.lang.Integer",
+      "description": "审批存储条目的超时时间（秒）。",
+      "defaultValue": 60
+    },
+    {
+      "name": "lyclaw.agent.timeout-ms",
+      "type": "java.lang.Long",
+      "description": "每次 Agent 调用的总超时时间（毫秒）。",
+      "defaultValue": 300000
+    },
+    {
+      "name": "lyclaw.agent.defaults.model",
+      "type": "java.lang.String",
+      "description": "全局默认模型名称。",
+      "defaultValue": "deepseek-v4-flash"
+    },
+    {
+      "name": "lyclaw.agent.defaults.provider",
+      "type": "java.lang.String",
+      "description": "全局默认模型提供商。",
+      "defaultValue": "deepseek"
+    },
+    {
+      "name": "lyclaw.agent.defaults.fallbacks",
+      "type": "java.util.List<java.lang.String>",
+      "description": "全局模型降级链（provider:model 列表）。",
+      "defaultValue": []
+    },
+    {
+      "name": "lyclaw.agent.defaults.thinking-default",
+      "type": "java.lang.String",
+      "description": "默认思考模式：on、off 或 auto。",
+      "defaultValue": "off"
+    },
+    {
+      "name": "lyclaw.agent.defaults.verbose-default",
+      "type": "java.lang.String",
+      "description": "默认详细程度。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.agent.defaults.reasoning-default",
+      "type": "java.lang.String",
+      "description": "默认推理级别。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.agent.defaults.fast-mode-default",
+      "type": "java.lang.Boolean",
+      "description": "是否默认启用快速模式。",
+      "defaultValue": false
+    },
+    {
+      "name": "lyclaw.agent.defaults.context-injection",
+      "type": "java.lang.String",
+      "description": "上下文注入策略：always（总是注入）或 on-demand（按需）。",
+      "defaultValue": "always"
+    },
+    {
+      "name": "lyclaw.agent.defaults.bootstrap-max-chars",
+      "type": "java.lang.Integer",
+      "description": "单次引导上下文最大字符数。",
+      "defaultValue": 20000
+    },
+    {
+      "name": "lyclaw.agent.defaults.bootstrap-total-max-chars",
+      "type": "java.lang.Integer",
+      "description": "引导上下文总字符数上限。",
+      "defaultValue": 150000
+    },
+    {
+      "name": "lyclaw.agent.defaults.context-tokens",
+      "type": "java.lang.Integer",
+      "description": "预留上下文 token 数。",
+      "defaultValue": 0
+    },
+    {
+      "name": "lyclaw.agent.defaults.skills",
+      "type": "java.util.List<java.lang.String>",
+      "description": "全局启用的技能列表。",
+      "defaultValue": []
+    },
+    {
+      "name": "lyclaw.agent.defaults.sandbox",
+      "type": "java.lang.String",
+      "description": "全局沙箱模式：none、basic、strict。",
+      "defaultValue": "none"
+    },
+    {
+      "name": "lyclaw.agent.defaults.workspace",
+      "type": "java.lang.String",
+      "description": "Agent 工作目录。"
+    },
+    {
+      "name": "lyclaw.agent.defaults.delegation-mode",
+      "type": "java.lang.String",
+      "description": "委托模式：suggest（建议）、auto（自动）、manual（手动）。",
+      "defaultValue": "suggest"
+    },
+    {
+      "name": "lyclaw.agent.defaults.allow-agents",
+      "type": "java.util.List<java.lang.String>",
+      "description": "允许调用的子 Agent 白名单。",
+      "defaultValue": []
+    },
+    {
+      "name": "lyclaw.agent.defaults.max-spawn-depth",
+      "type": "java.lang.Integer",
+      "description": "子 Agent 最大生成深度。",
+      "defaultValue": 1
+    },
+    {
+      "name": "lyclaw.agent.defaults.max-children-per-agent",
+      "type": "java.lang.Integer",
+      "description": "每个 Agent 的最大子 Agent 数量。",
+      "defaultValue": 5
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-model",
+      "type": "java.lang.String",
+      "description": "子 Agent 使用的模型名称。"
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-thinking",
+      "type": "java.lang.String",
+      "description": "子 Agent 的思考模式。"
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用子 Agent 功能。",
+      "defaultValue": true
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-max-concurrent",
+      "type": "java.lang.Integer",
+      "description": "子 Agent 最大并发数。",
+      "defaultValue": 1
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-archive-after-minutes",
+      "type": "java.lang.Integer",
+      "description": "子 Agent 空闲后归档时间（分钟）。",
+      "defaultValue": 60
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-run-timeout-seconds",
+      "type": "java.lang.Integer",
+      "description": "子 Agent 运行超时（秒）。",
+      "defaultValue": 300
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-announce-timeout-ms",
+      "type": "java.lang.Integer",
+      "description": "子 Agent 广播超时（毫秒）。",
+      "defaultValue": 120000
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-require-agent-id",
+      "type": "java.lang.Boolean",
+      "description": "子 Agent 是否需要显式 Agent ID。",
+      "defaultValue": false
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-delegation-mode",
+      "type": "java.lang.String",
+      "description": "子 Agent 委托模式。",
+      "defaultValue": "suggest"
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-allow-agents",
+      "type": "java.lang.String",
+      "description": "子 Agent 允许调用的 Agent 列表（*表示全部）。",
+      "defaultValue": "*"
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-max-spawn-depth",
+      "type": "java.lang.Integer",
+      "description": "子 Agent 的最大生成深度。",
+      "defaultValue": 1
+    },
+    {
+      "name": "lyclaw.agent.defaults.subagent-max-children-per-agent",
+      "type": "java.lang.Integer",
+      "description": "每个子 Agent 的最大子级数量。",
+      "defaultValue": 5
+    },
+    {
+      "name": "lyclaw.agent.defaults.max-retry-attempts",
+      "type": "java.lang.Integer",
+      "description": "最大重试次数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "lyclaw.agent.defaults.retry-base-delay-ms",
+      "type": "java.lang.Long",
+      "description": "重试基础延迟（毫秒）。",
+      "defaultValue": 1000
+    },
+    {
+      "name": "lyclaw.agent.defaults.retry-backoff",
+      "type": "java.lang.String",
+      "description": "重试退避策略：exponential、fixed、linear。",
+      "defaultValue": "exponential"
+    },
+    {
+      "name": "lyclaw.agent.defaults.heartbeat-enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用心跳检测。",
+      "defaultValue": false
+    },
+    {
+      "name": "lyclaw.agent.defaults.heartbeat-interval-seconds",
+      "type": "java.lang.Long",
+      "description": "心跳检测间隔（秒）。",
+      "defaultValue": 60
+    },
+    {
+      "name": "lyclaw.agent.defaults.heartbeat-max-idle-seconds",
+      "type": "java.lang.Long",
+      "description": "最大空闲时间（秒），超时判定失活。",
+      "defaultValue": 300
+    },
+    {
+      "name": "lyclaw.agent.defaults.memory-get-max-chars",
+      "type": "java.lang.Integer",
+      "description": "记忆检索单次最大字符数。",
+      "defaultValue": 50000
+    },
+    {
+      "name": "lyclaw.agent.defaults.tool-result-max-chars",
+      "type": "java.lang.Integer",
+      "description": "工具结果单次最大字符数。",
+      "defaultValue": 80000
+    },
+    {
+      "name": "lyclaw.agent.defaults.tool-result-total-max-chars",
+      "type": "java.lang.Integer",
+      "description": "工具结果总字符数上限。",
+      "defaultValue": 200000
+    },
+    {
+      "name": "lyclaw.agent.defaults.image-model",
+      "type": "java.lang.String",
+      "description": "图片理解模型名称。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.agent.defaults.image-generation-model",
+      "type": "java.lang.String",
+      "description": "图片生成模型名称。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.agent.defaults.video-generation-model",
+      "type": "java.lang.String",
+      "description": "视频生成模型名称。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.agent.defaults.music-generation-model",
+      "type": "java.lang.String",
+      "description": "音乐生成模型名称。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.agent.defaults.pdf-model",
+      "type": "java.lang.String",
+      "description": "PDF 处理模型名称。",
+      "defaultValue": ""
+    },
+    {
+      "name": "lyclaw.agent.defaults.pdf-max-bytes-mb",
+      "type": "java.lang.Integer",
+      "description": "PDF 文件最大大小（MB）。",
+      "defaultValue": 10
+    },
+    {
+      "name": "lyclaw.agent.defaults.pdf-max-pages",
+      "type": "java.lang.Integer",
+      "description": "PDF 最大处理页数。",
+      "defaultValue": 20
+    },
+    {
+      "name": "lyclaw.agent.defaults.media-generation-auto-provider-fallback",
+      "type": "java.lang.Boolean",
+      "description": "媒体生成是否自动降级到其他 Provider。",
+      "defaultValue": true
+    },
+    {
+      "name": "lyclaw.agent.defaults.model-fallback-chain",
+      "type": "java.util.List<java.lang.String>",
+      "description": "模型降级链（provider:model 列表）。",
+      "defaultValue": []
+    },
+    {
+      "name": "lyclaw.chat.default-provider",
+      "type": "java.lang.String",
+      "description": "全局默认模型提供商。",
+      "defaultValue": "deepseek"
+    },
+    {
+      "name": "lyclaw.chat.default-model",
+      "type": "java.lang.String",
+      "description": "全局默认模型名称。",
+      "defaultValue": "deepseek-v4-flash"
+    },
+    {
+      "name": "lyclaw.chat.routing-enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用模型路由。",
+      "defaultValue": false
+    },
+    {
+      "name": "lyclaw.chat.models",
+      "type": "java.util.Map<java.lang.String, lyjew.com.lyclaw.chat.ChatProperties.ModelProperties>",
+      "description": "各 Provider 的模型配置。key 为模型标识，value 为模型参数。"
+    },
+    {
+      "name": "lyclaw.chat.fallback-chain",
+      "type": "java.util.List<java.lang.String>",
+      "description": "全局降级链（provider:model 列表）。",
+      "defaultValue": []
+    },
+    {
+      "name": "lyclaw.chat.circuit-breaker.failure-threshold",
+      "type": "java.lang.Integer",
+      "description": "熔断器触发阈值（连续失败次数）。",
+      "defaultValue": 5
+    },
+    {
+      "name": "lyclaw.chat.circuit-breaker.half-open-after-seconds",
+      "type": "java.lang.Long",
+      "description": "熔断器半开前等待时间（秒）。",
+      "defaultValue": 30
+    },
+    {
+      "name": "lyclaw.chat.circuit-breaker.half-open-max-requests",
+      "type": "java.lang.Integer",
+      "description": "半开状态下最大测试请求数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "lyclaw.chat.legacy",
+      "type": "java.lang.Boolean",
+      "description": "是否使用旧版配置格式（向后兼容）。",
+      "defaultValue": true
+    },
+    {
+      "name": "lyclaw.storage.base-path",
+      "type": "java.lang.String",
+      "description": "文件存储根目录（SQLite 数据库 + JSONL 文件均在此目录下）。",
+      "defaultValue": "data/storage"
+    },
+    {
+      "name": "lyclaw.storage.session.page-size",
+      "type": "java.lang.Integer",
+      "description": "懒加载/分页时每页消息条数。",
+      "defaultValue": 50
+    },
+    {
+      "name": "lyclaw.storage.session.id-length",
+      "type": "java.lang.Integer",
+      "description": "生成的 sessionId 长度（UUID 截取前 N 位）。",
+      "defaultValue": 8
+    },
+    {
+      "name": "lyclaw.storage.session.preview-max-length",
+      "type": "java.lang.Integer",
+      "description": "首条用户消息预览最大字符数。",
+      "defaultValue": 100
+    },
+    {
+      "name": "lyclaw.storage.session.write-queue-capacity",
+      "type": "java.lang.Integer",
+      "description": "异步写入队列容量（有界队列，超出时调用者线程阻塞写入）。",
+      "defaultValue": 10000
+    },
+    {
+      "name": "lyclaw.storage.session.write-max-retries",
+      "type": "java.lang.Integer",
+      "description": "JSONL 写入失败最大重试次数。",
+      "defaultValue": 3
+    },
+    {
+      "name": "lyclaw.storage.session.cache-max-size",
+      "type": "java.lang.Integer",
+      "description": "活跃会话缓存最大数量。",
+      "defaultValue": 1000
+    },
+    {
+      "name": "lyclaw.storage.session.cache-ttl-minutes",
+      "type": "java.lang.Integer",
+      "description": "活跃会话缓存 TTL（分钟），超时未访问自动淘汰。",
+      "defaultValue": 30
+    }
+  ],
+  "hints": [
+    {
+      "name": "lyclaw.tool.sandbox-level",
+      "values": [
+        { "value": "DIRECT", "description": "直接执行，不做沙箱限制。" },
+        { "value": "SANDBOX", "description": "沙箱模式，过滤危险工具。" },
+        { "value": "PROCESS", "description": "进程级隔离。" }
+      ]
+    },
+    {
+      "name": "lyclaw.agent.default-mode",
+      "values": [
+        { "value": "react", "description": "ReAct 推理-行动循环（默认）。" },
+        { "value": "cot", "description": "思维链（Chain-of-Thought）。" },
+        { "value": "hierarchical", "description": "层级式 Agent 协作。" }
+      ]
+    },
+    {
+      "name": "lyclaw.agent.defaults.sandbox",
+      "values": [
+        { "value": "none", "description": "不启用沙箱。" },
+        { "value": "basic", "description": "基础沙箱。" },
+        { "value": "strict", "description": "严格沙箱。" }
+      ]
+    },
+    {
+      "name": "lyclaw.agent.defaults.delegation-mode",
+      "values": [
+        { "value": "suggest", "description": "建议模式，由 LLM 自主决定。" },
+        { "value": "auto", "description": "自动委托。" },
+        { "value": "manual", "description": "手动审批后委托。" }
+      ]
+    },
+    {
+      "name": "lyclaw.agent.defaults.retry-backoff",
+      "values": [
+        { "value": "exponential", "description": "指数退避。" },
+        { "value": "fixed", "description": "固定延迟。" },
+        { "value": "linear", "description": "线性递增。" }
+      ]
+    }
+  ]
+}

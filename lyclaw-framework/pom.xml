@@ -7,8 +7,8 @@
 
     <parent>
         <groupId>lyjew.com</groupId>
-        <artifactId>LyClaw</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <artifactId>lyclaw-ai-framework</artifactId>
+        <version>1.0.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 

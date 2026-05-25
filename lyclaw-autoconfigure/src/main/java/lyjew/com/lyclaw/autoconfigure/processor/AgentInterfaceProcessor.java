@@ -1,5 +1,6 @@
 package lyjew.com.lyclaw.autoconfigure.processor;
 
+import java.util.List;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -33,7 +34,22 @@ public class AgentInterfaceProcessor implements BeanFactoryPostProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(AgentInterfaceProcessor.class);
 
+    private final List<String> scanPackages;
+
+    /** 默认构造器：扫描框架自带包。使用 setter 或配置覆盖。 */
     public AgentInterfaceProcessor() {
+        this(List.of("lyjew.com.lyclaw"));
+    }
+
+    /**
+     * 构造器注入扫描包列表。
+     *
+     * @param scanPackages 要扫描 @Agent 接口的基础包路径
+     */
+    public AgentInterfaceProcessor(List<String> scanPackages) {
+        this.scanPackages = scanPackages != null && !scanPackages.isEmpty()
+                ? List.copyOf(scanPackages)
+                : List.of("lyjew.com.lyclaw");
     }
 
     @Override
@@ -51,8 +67,6 @@ public class AgentInterfaceProcessor implements BeanFactoryPostProcessor {
                     }
                 };
         scanner.addIncludeFilter(new AnnotationTypeFilter(Agent.class));
-
-        String[] scanPackages = {"lyjew.com.lyclaw"};
         Set<String> scanned = new java.util.HashSet<>();
 
         for (String basePackage : scanPackages) {

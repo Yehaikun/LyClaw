@@ -6,7 +6,9 @@ import lyjew.com.lyclaw.config.AgentConfigSource;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -45,6 +47,20 @@ public class AnnotationAgentConfigSource implements AgentConfigSource, Applicati
             break;
         }
         return config;
+    }
+
+    @Override
+    public List<String> listAgentNames() {
+        if (applicationContext == null) return List.of();
+        List<String> names = new ArrayList<>();
+        Map<String, Object> agentBeans = applicationContext.getBeansWithAnnotation(Agent.class);
+        for (Object bean : agentBeans.values()) {
+            Agent ann = bean.getClass().getAnnotation(Agent.class);
+            if (ann == null) continue;
+            String name = ann.name().isEmpty() ? bean.getClass().getSimpleName() : ann.name();
+            if (!name.isEmpty()) names.add(name);
+        }
+        return names;
     }
 
     @Override public int getPriority() { return 50; }

@@ -1,0 +1,44 @@
+{
+  "properties": [
+    {
+      "name": "lyclaw.extension.filtering-enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用扩展注册过滤。禁用后所有发现的扩展候选者无条件注册。",
+      "defaultValue": true
+    },
+    {
+      "name": "lyclaw.extension.ordering-strategy",
+      "type": "java.lang.String",
+      "description": "扩展组件排序策略。topology（拓扑排序，按after/before约束）或 numeric（数值排序，按order值）。",
+      "defaultValue": "topology"
+    },
+    {
+      "name": "lyclaw.extension.fail-fast",
+      "type": "java.lang.Boolean",
+      "description": "扩展注册遇到异常时是否快速失败。false 表示跳过异常继续注册其余扩展。",
+      "defaultValue": false
+    },
+    {
+      "name": "lyclaw.agents",
+      "type": "java.util.Map<java.lang.String, lyjew.com.lyclaw.config.AgentDeclaration>",
+      "description": "声明式 Agent 定义。key 为 agent 名称，value 为 Agent 配置。",
+      "sourceType": "lyjew.com.lyclaw.autoconfigure.config.LyClawConfigurationProperties"
+    }
+  ],
+  "hints": [
+    {
+      "name": "lyclaw.extension.ordering-strategy",
+      "values": [
+        { "value": "topology", "description": "拓扑排序，根据 after/before 依赖关系自动推断顺序。" },
+        { "value": "numeric", "description": "数值排序，直接按 order 值排序。" }
+      ]
+    },
+    {
+      "name": "lyclaw.agents",
+      "values": [],
+      "providers": [
+        { "name": "handle-as", "parameters": { "target": "lyclaw.agents.<agent-name>" } }
+      ]
+    }
+  ]
+}

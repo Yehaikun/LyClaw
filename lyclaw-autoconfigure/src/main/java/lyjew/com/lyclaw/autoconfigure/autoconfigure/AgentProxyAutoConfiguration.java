@@ -11,6 +11,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import lyjew.com.lyclaw.autoconfigure.processor.AgentInterfaceProcessor;
+import lyjew.com.lyclaw.autoconfigure.config.LyClawConfigurationProperties;
+import lyjew.com.lyclaw.autoconfigure.config.YamlAgentConfigSource;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.chat.ChatModelRegistry;
 import lyjew.com.lyclaw.chat.catalog.ModelCatalog;
@@ -49,6 +51,12 @@ public class AgentProxyAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(YamlAgentConfigSource.class)
+    public YamlAgentConfigSource yamlAgentConfigSource(LyClawConfigurationProperties lyClawConfig) {
+        return new YamlAgentConfigSource(lyClawConfig.getAgents());
+    }
+
+    @Bean
     @ConditionalOnMissingBean(AgentProxyFactory.class)
     public AgentProxyFactory agentProxyFactory(ChatFacade chatFacade,
                                                 ReActEngine reActEngine,
@@ -64,8 +72,8 @@ public class AgentProxyAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(AgentInterfaceProcessor.class)
-    public static AgentInterfaceProcessor agentInterfaceProcessor() {
-        return new AgentInterfaceProcessor();
+    public static AgentInterfaceProcessor agentInterfaceProcessor(LyClawConfigurationProperties lyClawConfig) {
+        return new AgentInterfaceProcessor(lyClawConfig.getScan().getBasePackages());
     }
 
     // ══════════════════════════════════════════════════════════════

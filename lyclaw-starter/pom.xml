@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>lyjew.com</groupId>
+        <artifactId>lyclaw-ai-framework</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>lyclaw-starter</artifactId>
+    <packaging>jar</packaging>
+    <name>LyClaw AI Framework Starter</name>
+    <description>一站式依赖引入，只需引入此模块即可使用 LyClaw 的全部核心能力</description>
+
+    <dependencies>
+        <!-- 框架核心 -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-framework</artifactId>
+        </dependency>
+
+        <!-- 自动配置（Spring Boot 启动入口） -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- 协议层 -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-protocol</artifactId>
+        </dependency>
+
+        <!-- 工具执行 -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-action</artifactId>
+        </dependency>
+
+        <!-- 记忆系统 -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-memory</artifactId>
+        </dependency>
+
+        <!-- 反思/ReAct -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-reflect</artifactId>
+        </dependency>
+
+        <!-- 任务规划 -->
+        <dependency>
+            <groupId>lyjew.com</groupId>
+            <artifactId>lyclaw-plan</artifactId>
+        </dependency>
+
+        <!-- Spring Boot 自动配置引擎（必需） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>
