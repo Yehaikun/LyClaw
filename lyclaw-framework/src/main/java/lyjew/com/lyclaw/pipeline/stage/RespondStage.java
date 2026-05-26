@@ -245,20 +245,22 @@ public class RespondStage extends PipelineStageBase {
 
     private String buildFallbackResponse(int successCount, int failCount, List<String> toolResults) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Orchestration completed.\n");
-        sb.append("Tasks executed: ").append(successCount + failCount)
-                .append(" (success: ").append(successCount)
-                .append(", failed: ").append(failCount).append(")\n");
+        if (successCount == 0 && failCount > 0) {
+            sb.append("工具执行失败，请重试。\n");
+        } else if (successCount > 0) {
+            sb.append("Orchestration completed.\n");
+            sb.append("Tasks executed: ").append(successCount + failCount)
+                    .append(" (success: ").append(successCount)
+                    .append(", failed: ").append(failCount).append(")\n");
+        }
         if (!toolResults.isEmpty()) {
-            sb.append("\nResults summary:\n");
             for (int i = 0; i < Math.min(toolResults.size(), 5); i++) {
                 String result = toolResults.get(i);
-                sb.append("  [").append(i + 1).append("] ")
-                        .append(result.length() > 200 ? result.substring(0, 200) + "..." : result)
-                        .append("\n");
+                if (result != null && !result.isEmpty() && !result.startsWith("Error:")) continue;
+                sb.append("  [" + (i + 1) + "] " + (result != null ? result : "empty") + "\n");
             }
         }
-        return sb.toString();
+        return sb.toString().trim().isEmpty() ? "（无响应）" : sb.toString();
     }
 
     @Override
