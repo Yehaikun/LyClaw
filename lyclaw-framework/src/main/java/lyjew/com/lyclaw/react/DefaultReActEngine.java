@@ -662,69 +662,47 @@ public class DefaultReActEngine implements ReActEngine {
                 });
     }
 
-    /** 将 ModelResponse 的 toolCalls 转换为 Message 的 ToolCall 列表 */
-    private static final java.util.concurrent.atomic.AtomicLong toolCallIdCounter =
+    /**
+     * Simple counter for generating unique tool_call_id suffixes.
+     * Each call to toMessageToolCalls gets a unique suffix.
+     * The same suffix is used for ALL tool calls in a single batch.
+     */
+    private static final java.util.concurrent.atomic.AtomicLong toolIdCounter =
             new java.util.concurrent.atomic.AtomicLong(0);
 
     /**
-     * ThreadLocal counter for generating unique tool_call_id suffixes.
-     * Incremented per batch of tool calls to prevent DeepSeek API
-     * "Duplicate value for 'tool_call_id'" errors.
+     * Map: originalToolCallId → dedupedToolCallId for the current batch.
+     * Populated by toMessageToolCalls(), consumed by tool execution code.
+     * Uses static counter so values are unique across threads.
      */
-    private static final ThreadLocal<String> TOOL_CALL_BATCH =
-            ThreadLocal.withInitial(() -> "");
-
-    /**
-     * Mark the start of a new tool-call batch and return a unique suffix
-     * that will be appended to every tool_call_id in this batch.
-     * Callers must use the SAME suffix in both the assistant tool_calls
-     * array and the subsequent tool result messages.
-     */
-    private static String startToolCallBatch() {
-        String suffix = "_" + java.util.UUID.randomUUID().toString().substring(0, 8);
-        TOOL_CALL_BATCH.set(suffix);
-        return suffix;
-    }
-
-    /**
-     * Get the current batch suffix.
-     * Returns empty string if no batch is active (no dedup needed).
-     */
-    private static String currentToolCallSuffix() {
-        String s = TOOL_CALL_BATCH.get();
-        return s != null ? s : "";
-    }
-
-    /**
-     * End the current tool-call batch (clear ThreadLocal).
-     */
-    private static void endToolCallBatch() {
-        TOOL_CALL_BATCH.remove();
-    }
-
-    /** Dedup a single tool_call_id by appending the current batch suffix. */
-    private static String dedupToolCallId(String originalId) {
-        String suffix = currentToolCallSuffix();
-        if (suffix.isEmpty() || originalId == null) return originalId;
-        return originalId + suffix;
-    }
+    private static final ThreadLocal<java.util.Map<String, String>> TOOL_ID_MAP =
+            ThreadLocal.withInitial(java.util.HashMap::new);
 
     /** 将 LLM 返回的 ToolCalls 转为 Message ToolCalls，
      *  每个 ID 追加唯一后缀，防止 DeepSeek "Duplicate tool_call_id"。 */
     private List<ToolCall> toMessageToolCalls(ModelResponse response) {
         if (response.getToolCalls() == null) return List.of();
-        String suffix = currentToolCallSuffix();
-        if (suffix.isEmpty()) {
-            suffix = startToolCallBatch();
-        }
-        final String batchSuffix = suffix;
+        String suffix = "_r" + toolIdCounter.incrementAndGet();
+        java.util.Map<String, String> idMap = TOOL_ID_MAP.get();
+        idMap.clear();
         return response.getToolCalls().stream()
-                .<ToolCall>map(req -> ToolCall.builder()
-                        .toolCallId(req.getId() + batchSuffix)
-                        .name(req.getName())
-                        .arguments(req.getArguments())
-                        .build())
+                .<ToolCall>map(req -> {
+                    String deduped = req.getId() + suffix;
+                    idMap.put(req.getId(), deduped);
+                    return ToolCall.builder()
+                            .toolCallId(deduped)
+                            .name(req.getName())
+                            .arguments(req.getArguments())
+                            .build();
+                })
                 .toList();
+    }
+
+    /** Lookup the deduped ID for an original tool_call_id. */
+    private static String dedupToolCallId(String originalId) {
+        if (originalId == null) return null;
+        String deduped = TOOL_ID_MAP.get().get(originalId);
+        return deduped != null ? deduped : originalId;
     }
 
     /** 将文本按自然边界拆分为 SSE 事件，模拟流式输出。保留换行以保证 Markdown 渲染正确。 */

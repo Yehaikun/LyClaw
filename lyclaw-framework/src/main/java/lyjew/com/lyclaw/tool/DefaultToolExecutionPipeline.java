@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.react.AgentContext;
+import lyjew.com.lyclaw.model.ChatRequest;
 
 /**
  * 工具执行管线默认实现，7 步流程：
@@ -98,10 +99,19 @@ public class DefaultToolExecutionPipeline implements ToolExecutionPipeline {
         long t5 = System.currentTimeMillis();
         String result;
         try {
+            // 先尝试直接 execute（走静态注册表）
             ToolExecutionResult execResult = toolRegistry.execute(toolCall, null);
-            if (!execResult.isSuccess()) {
-                execResult = toolRegistry.executeByName(toolName, toolCallId,
-                        toolCall.getArguments(), ctx.getChatRequest());
+            // 若失败，尝试通过 executeByName 走 ToolProvider 路径
+            if (execResult == null || !execResult.isSuccess()) {
+                ChatRequest cr = ctx != null ? ctx.getChatRequest() : null;
+                ToolExecutionResult fallback = toolRegistry.executeByName(
+                        toolName, toolCallId, toolCall.getArguments(), cr);
+                if (fallback != null && fallback.isSuccess()) {
+                    execResult = fallback;
+                }
+            }
+            if (execResult == null) {
+                execResult = ToolExecutionResult.failure("工具执行未返回结果", toolName);
             }
             result = execResult.isSuccess()
                     ? (execResult.getResult() != null ? execResult.getResult() : "")
