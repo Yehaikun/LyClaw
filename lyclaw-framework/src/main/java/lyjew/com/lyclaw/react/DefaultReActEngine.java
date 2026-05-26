@@ -384,8 +384,7 @@ public class DefaultReActEngine implements ReActEngine {
                 .concatMap(req -> {
                     String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
                     if (approvalRequired.contains(req.getName())) {
-                        return emitApprovalFlow(req, toolExecutor, messages, toolArgs,
-                                request.getSessionId(), request.getAgentId(), suffix);
+                        return emitApprovalFlow(req, toolExecutor, messages, toolArgs, suffix);
                     }
                     String dedupedId = req.getId() + suffix;
                     log.info("[ReAct流式] 直接执行工具（无需审批）: {} | toolCallId={}", req.getName(), dedupedId);
@@ -441,8 +440,7 @@ public class DefaultReActEngine implements ReActEngine {
      *  approve()，导致匹配不到 pending future（竞态条件）。</p> */
     private Flux<ServerSentEvent<String>> emitApprovalFlow(
             ModelResponse.ToolCallRequest req, ToolExecutor toolExecutor,
-            List<Message> messages, String toolArgs, String sessionId, String agentId,
-            String suffix) {
+            List<Message> messages, String toolArgs, String suffix) {
         // 必须在 Flux 返回前创建 future，消除竞态：保证前端 approve() 时 future 已就绪
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         pendingApprovals.put(req.getId(), future);
