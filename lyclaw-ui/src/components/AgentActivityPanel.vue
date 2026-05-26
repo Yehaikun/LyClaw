@@ -83,6 +83,26 @@ function agentColor(agentId: string): string {
             <div class="progress-fill" :style="{ backgroundColor: agentColor(agent.agentId) }"></div>
           </div>
         </div>
+
+        <!-- Phase 4: 子 Agent 实时进度 -->
+        <div v-if="agent.status === 'running' && (agent.liveThinking || agent.liveToolCalls?.length || agent.liveOutput)" class="agent-live">
+          <div v-if="agent.liveThinking" class="live-thinking">
+            <pre class="live-thinking-text">{{ agent.liveThinking.substring(0, 300) }}{{ agent.liveThinking.length > 300 ? '...' : '' }}</pre>
+          </div>
+          <div v-if="agent.liveToolCalls?.length" class="live-tools">
+            <div v-for="tc in agent.liveToolCalls" :key="tc.name" class="live-tool-item">
+              <span class="live-tool-icon">🔧</span>
+              <span class="live-tool-name">{{ tc.name }}</span>
+              <span class="live-tool-status" :class="tc.status">
+                <Loader2 v-if="tc.status === 'executing'" :size="10" class="spin" /> {{ tc.status === 'executing' ? '执行中' : '✅' }}
+              </span>
+            </div>
+          </div>
+          <div v-if="agent.liveOutput" class="live-output-preview">
+            <span class="live-output-text">{{ agent.liveOutput.substring(0, 200) }}{{ agent.liveOutput.length > 200 ? '...' : '' }}</span>
+          </div>
+        </div>
+
         <div v-if="agent.status === 'failed' && agent.error" class="agent-error">
           {{ agent.error }}
         </div>
@@ -238,5 +258,62 @@ function agentColor(agentId: string): string {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Agent 实时进度 */
+.agent-live {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(108, 99, 255, 0.04);
+  border-radius: 6px;
+  border: 1px solid rgba(108, 99, 255, 0.1);
+}
+
+.live-thinking {
+  max-height: 60px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+
+.live-thinking-text {
+  font-size: 11px;
+  color: var(--color-muted, #888);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.live-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.live-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 4px;
+  background: rgba(255,255,255,0.5);
+  border-radius: 3px;
+}
+
+.live-tool-name { flex: 1; }
+.live-tool-status { font-size: 10px; display: flex; align-items: center; gap: 3px; }
+.live-tool-status.executing { color: var(--color-primary, #6C63FF); }
+.live-tool-status.done { color: #22c55e; }
+
+.live-output-preview {
+  margin-top: 2px;
+}
+
+.live-output-text {
+  font-size: 11px;
+  color: var(--color-body, #333);
+  line-height: 1.4;
+  opacity: 0.8;
 }
 </style>

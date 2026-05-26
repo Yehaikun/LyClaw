@@ -54,6 +54,10 @@ export interface AgentActivity {
   output?: string
   error?: string
   parentAgentId?: string
+  // Phase 4: 子 Agent 实时进度
+  liveThinking?: string
+  liveToolCalls?: Array<{ name: string; status: 'executing' | 'done' }>
+  liveOutput?: string
 }
 
 export interface SubagentMessage {
@@ -385,7 +389,49 @@ export const useChatStore = defineStore('chat', () => {
           }
           // 多 Agent 路由与协作事件处理
           handleMultiAgentEvent(event, data)
-          // 只显示 Agent 相关事件
+
+          // Phase 4: subagent_progress — 实时更新 Agent 活动面板
+          if (event === 'subagent_progress') {
+            try {
+              const info = JSON.parse(data)
+              const agentId = info.agentId || info.agentId
+              const subType = info.type || ''
+              const content = info.data || ''
+              if (agentId) {
+                // 确保 activeAgents 中有这个 agent
+                if (!activeAgents.value.has(agentId)) {
+                  const act: AgentActivity = {
+                    agentId, status: 'running', task: content.substring(0, 60),
+                    startedAt: Date.now(), liveThinking: '', liveToolCalls: [],
+                  }
+                  activeAgents.value.set(agentId, act)
+                  waitingForSubagent.value = true
+                }
+                const existing = activeAgents.value.get(agentId)
+                if (existing) {
+                  if (subType === 'thinking') {
+                    existing.liveThinking = (existing.liveThinking || '') + content
+                  } else if (subType === 'tool_call') {
+                    if (!existing.liveToolCalls) existing.liveToolCalls = []
+                    try {
+                      const tc = JSON.parse(content)
+                      if (tc.status === 'executing') {
+                        existing.liveToolCalls.push({ name: tc.name || 'tool', status: 'executing' })
+                      } else if (tc.status === 'done') {
+                        const t = existing.liveToolCalls.find(x => x.name === tc.name)
+                        if (t) t.status = 'done'
+                      }
+                    } catch { existing.liveToolCalls.push({ name: content.substring(0, 30), status: 'executing' }) }
+                  } else if (subType === 'message') {
+                    existing.liveOutput = (existing.liveOutput || '') + content
+                  }
+                  activeAgents.value = new Map(activeAgents.value)
+                }
+              }
+            } catch { /* ignore */ }
+          }
+
+          // 只显示 Agent 路由/协作事件徽章（不含 subagent_progress 避免刷屏）
           const agentEvents = ['routing_start','routing_decision','routing_fallback',
             'collaboration_start','task_decomposed','sub_task_start','sub_task_complete',
             'sub_task_fail','aggregation_complete','vote_round','consensus_reached',
