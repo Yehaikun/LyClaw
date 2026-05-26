@@ -74,7 +74,11 @@ public final class SseEventFactory {
     }
 
     public static ServerSentEvent<String> done(String status, Long durationMs) {
-        return createEvent(new DonePayload(status, durationMs));
+        return createEvent(new DonePayload(status, durationMs, null));
+    }
+
+    public static ServerSentEvent<String> done(String status, Long durationMs, Boolean fallback) {
+        return createEvent(new DonePayload(status, durationMs, fallback));
     }
 
     public static ServerSentEvent<String> metrics(long durationMs, int tasks, int toolCalls, int tokens) {

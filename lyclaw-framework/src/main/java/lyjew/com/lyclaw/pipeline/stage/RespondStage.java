@@ -11,6 +11,7 @@ import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.react.AgentContext;
 import lyjew.com.lyclaw.react.HookRegistry;
 import lyjew.com.lyclaw.react.ReActEngine;
+import lyjew.com.lyclaw.react.sse.SseEventFactory;
 import lyjew.com.lyclaw.react.ToolExecutor;
 import lyjew.com.lyclaw.security.SandboxLevel;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
@@ -117,7 +118,7 @@ public class RespondStage extends PipelineStageBase {
                         String fallback = buildFallbackResponse(sc, fc, toolResults);
                         return Flux.just(
                                 sseEvent("message", fallback),
-                                sseEvent("done", Map.of("status", "completed", "fallback", true))
+                                SseEventFactory.done("completed", null, true)
                         );
                     });
             return resultFlux;
