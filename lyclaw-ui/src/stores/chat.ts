@@ -45,6 +45,25 @@ interface PendingApproval {
   message: string
 }
 
+export interface AgentActivity {
+  agentId: string
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  task: string
+  startedAt: number
+  completedAt?: number
+  output?: string
+  error?: string
+  parentAgentId?: string
+}
+
+export interface SubagentMessage {
+  agentId: string
+  content: string
+  role: 'assistant' | 'tool'
+  status: 'running' | 'completed' | 'failed'
+  toolCalls?: ToolCall[]
+}
+
 export const useChatStore = defineStore('chat', () => {
   // ====================================================================
   // 状态（State）
@@ -52,6 +71,15 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 对话消息列表，包含user、assistant和tool三种角色的消息 */
   const messages = ref<Message[]>([])
+
+  /** 活跃 Agent 活动跟踪：并行运行的 Agent 状态 */
+  const activeAgents = ref<Map<string, AgentActivity>>(new Map())
+
+  /** 子 Agent 输出消息：按 agentId 分组的独立输出 */
+  const agentOutputs = ref<Map<string, SubagentMessage[]>>(new Map())
+
+  /** 是否正在等待子 Agent 结果（显示等待指示器） */
+  const waitingForSubagent = ref<boolean>(false)
   /** 流式输出过程中实时累积的文本，流结束后清空并固化为assistant消息 */
   const currentStreamingText = ref<string>('')
   /** 是否正在进行流式输出，用于控制UI状态（按钮切换、动画显示等） */
@@ -150,6 +178,9 @@ export const useChatStore = defineStore('chat', () => {
     pendingApproval.value = null
     thinkingText.value = ''
     subagentEvents.value = []
+    activeAgents.value = new Map()
+    agentOutputs.value = new Map()
+    waitingForSubagent.value = false
 
     try {
       const agentId = useSessionStore().currentAgentId
@@ -279,7 +310,7 @@ export const useChatStore = defineStore('chat', () => {
         (text: string) => {
           setThinking(text)
         },
-        // 通用事件回调：捕获未特定处理的 SSE 事件（session_created、subagent_spawned 等）
+        // 通用事件回调：捕获所有 SSE 事件，包括多 Agent 协作事件
         (event: string, data: string) => {
           if (event === 'session_created') {
             try {
@@ -288,7 +319,6 @@ export const useChatStore = defineStore('chat', () => {
                 currentSessionId.value = info.sessionId
                 const ss = useSessionStore()
                 ss.currentSessionId = info.sessionId
-                // 如果是新会话，追加到session列表
                 if (info.isNew && !ss.sessions.find(s => s.sessionId === info.sessionId)) {
                   ss.sessions.unshift({
                     sessionId: info.sessionId,
@@ -304,8 +334,10 @@ export const useChatStore = defineStore('chat', () => {
                   } as any)
                 }
               }
-            } catch { /* ignore malformed JSON */ }
+            } catch { /* ignore */ }
           }
+          // 多 Agent 路由与协作事件处理
+          handleMultiAgentEvent(event, data)
           addSubagentEvent(event, data)
         },
       )
@@ -397,6 +429,127 @@ export const useChatStore = defineStore('chat', () => {
    * @param event 事件类型（如 subagent_spawned、subagent_ended）
    * @param data 事件携带的JSON数据
    */
+  function handleMultiAgentEvent(event: string, data: string): void {
+    try {
+      const info = JSON.parse(data)
+      switch (event) {
+        case 'routing_start':
+          waitingForSubagent.value = true
+          break
+        case 'routing_decision':
+          waitingForSubagent.value = false
+          if (info.targetAgentId) {
+            const act: AgentActivity = {
+              agentId: info.targetAgentId,
+              status: 'running',
+              task: info.reason || '委派任务',
+              startedAt: Date.now(),
+            }
+            activeAgents.value.set(info.targetAgentId, act)
+            activeAgents.value = new Map(activeAgents.value)
+          }
+          break
+        case 'routing_fallback':
+          waitingForSubagent.value = false
+          break
+        case 'sub_task_start':
+          if (info.assignedAgent || info.description) {
+            const agentId = info.assignedAgent || info.agentId || 'unknown'
+            const act: AgentActivity = {
+              agentId,
+              status: 'running',
+              task: info.description || '子任务',
+              startedAt: Date.now(),
+              parentAgentId: info.parentAgentId,
+            }
+            activeAgents.value.set(agentId, act)
+            activeAgents.value = new Map(activeAgents.value)
+            waitingForSubagent.value = true
+          }
+          break
+        case 'sub_task_complete':
+          if (info.assignedAgent || info.agentId) {
+            const agentId = info.assignedAgent || info.agentId
+            const existing = activeAgents.value.get(agentId)
+            if (existing) {
+              existing.status = 'completed'
+              existing.completedAt = Date.now()
+              activeAgents.value = new Map(activeAgents.value)
+            }
+            // 添加子 Agent 输出到 agentOutputs
+            if (info.result || info.output) {
+              const output: SubagentMessage = {
+                agentId,
+                content: info.result || info.output || '',
+                role: 'assistant',
+                status: 'completed',
+              }
+              if (!agentOutputs.value.has(agentId)) {
+                agentOutputs.value.set(agentId, [])
+              }
+              agentOutputs.value.get(agentId)!.push(output)
+              agentOutputs.value = new Map(agentOutputs.value)
+            }
+          }
+          break
+        case 'sub_task_fail':
+          if (info.assignedAgent || info.agentId) {
+            const agentId = info.assignedAgent || info.agentId
+            const existing = activeAgents.value.get(agentId)
+            if (existing) {
+              existing.status = 'failed'
+              existing.error = info.error || '执行失败'
+              existing.completedAt = Date.now()
+              activeAgents.value = new Map(activeAgents.value)
+            }
+          }
+          break
+        case 'aggregation_complete':
+          waitingForSubagent.value = false
+          break
+        case 'tool_call':
+          // tool_call 事件中的子 Agent 信息
+          if (info.name === 'delegate_to_agent' && info.status === 'executing') {
+            try {
+              const args = JSON.parse(info.arguments || '{}')
+              if (args.agentId) {
+                const act: AgentActivity = {
+                  agentId: args.agentId,
+                  status: 'running',
+                  task: (args.task || '').substring(0, 100),
+                  startedAt: Date.now(),
+                }
+                activeAgents.value.set(args.agentId, act)
+                activeAgents.value = new Map(activeAgents.value)
+                waitingForSubagent.value = true
+              }
+            } catch { /* ignore */ }
+          }
+          if (info.name === 'delegate_to_agent' && info.status === 'done') {
+            try {
+              const args = JSON.parse(info.arguments || '{}')
+              if (args.agentId) {
+                const existing = activeAgents.value.get(args.agentId)
+                if (existing) {
+                  existing.status = 'completed'
+                  existing.completedAt = Date.now()
+                  existing.output = info.result || '完成'
+                  activeAgents.value = new Map(activeAgents.value)
+                }
+              }
+            } catch { /* ignore */ }
+          }
+          break
+        case 'collaboration_start':
+          waitingForSubagent.value = true
+          break
+        default:
+          // 其他事件忽略
+          break
+      }
+    } catch { /* ignore malformed JSON */ }
+  }
+
   function addSubagentEvent(event: string, data: string): void {
     subagentEvents.value.push({ event, data })
   }
@@ -415,6 +568,9 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     errorTraceId.value = undefined
     pendingApproval.value = null
+    activeAgents.value = new Map()
+    agentOutputs.value = new Map()
+    waitingForSubagent.value = false
   }
 
   /**
@@ -563,6 +719,9 @@ export const useChatStore = defineStore('chat', () => {
     pendingApproval,
     thinkingText,
     subagentEvents,
+    activeAgents,
+    agentOutputs,
+    waitingForSubagent,
     reflectionProgress,
     // 计算属性
     messageCount,

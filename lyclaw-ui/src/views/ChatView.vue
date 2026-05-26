@@ -50,6 +50,7 @@ import MessageBubble from '@/components/MessageBubble.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ToolCallCard from '@/components/ToolCallCard.vue'
 import ToolApprovalDialog from '@/components/ToolApprovalDialog.vue'
+import AgentActivityPanel from '@/components/AgentActivityPanel.vue'
 import TraceIdBadge from '@/components/TraceIdBadge.vue'
 import MessageNav from '@/components/MessageNav.vue'
 import type { NavItem } from '@/components/MessageNav.vue'
@@ -548,6 +549,41 @@ watch(
               :key="tc.toolCallId"
               :tool-call="tc"
             />
+          </div>
+
+          <!-- Agent 活动面板：显示并行运行的 Agent 状态 -->
+          <AgentActivityPanel />
+
+          <!-- 子 Agent 输出卡片：按 Agent 分组展示执行结果 -->
+          <div v-if="chatStore.agentOutputs.size > 0" class="agent-outputs">
+            <div
+              v-for="[agentId, outputs] in chatStore.agentOutputs"
+              :key="agentId"
+              class="agent-output-card"
+            >
+              <div class="agent-output-header">
+                <div class="agent-output-icon">{{ agentId.charAt(0).toUpperCase() }}</div>
+                <div class="agent-output-info">
+                  <span class="agent-output-name">{{ agentId }}</span>
+                  <span class="agent-output-status">✅ 已完成</span>
+                </div>
+              </div>
+              <div v-for="(out, oi) in outputs" :key="oi" class="agent-output-body">
+                <div v-if="out.content" class="agent-output-content">
+                  <div class="markdown-content">{{ out.content.substring(0, 500) }}{{ out.content.length > 500 ? '...' : '' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 等待子 Agent 指示器 -->
+          <div v-if="chatStore.waitingForSubagent" class="subagent-waiting">
+            <div class="waiting-dots">
+              <span class="waiting-dot"></span>
+              <span class="waiting-dot"></span>
+              <span class="waiting-dot"></span>
+            </div>
+            <span class="waiting-text">子 Agent 执行中...</span>
           </div>
 
           <!-- Agent 路由与协作事件：subagent_event SSE 事件驱动 -->
@@ -1082,6 +1118,113 @@ watch(
   background: var(--color-primary, #6C63FF);
   color: white;
   font-size: 10px;
+  font-weight: 500;
+}
+
+/* 子 Agent 输出卡片 */
+.agent-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 48px;
+}
+
+.agent-output-card {
+  border-radius: var(--rounded-md, 8px);
+  border: 1px solid var(--color-hairline, #e0e0e0);
+  background: var(--card-bg, #fff);
+  overflow: hidden;
+  animation: fadeIn 0.3s ease;
+}
+
+.agent-output-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border-bottom: 1px solid #dcfce7;
+}
+
+.agent-output-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: #22c55e;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-output-info {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.agent-output-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-output-status {
+  font-size: 10px;
+  color: #22c55e;
+  font-weight: 500;
+}
+
+.agent-output-body {
+  padding: 8px 12px;
+}
+
+.agent-output-content {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-body, #333);
+}
+
+.markdown-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 等待子 Agent 指示器 */
+.subagent-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 48px;
+}
+
+.waiting-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.waiting-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary, #6C63FF);
+  animation: dotBounce 1.4s ease-in-out infinite both;
+}
+
+.waiting-dot:nth-child(1) { animation-delay: -0.32s; }
+.waiting-dot:nth-child(2) { animation-delay: -0.16s; }
+.waiting-dot:nth-child(3) { animation-delay: 0s; }
+
+@keyframes dotBounce {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.waiting-text {
+  font-size: 12px;
+  color: var(--color-muted, #888);
   font-weight: 500;
 }
 </style>
