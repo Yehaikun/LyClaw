@@ -1,7 +1,11 @@
 package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
+import java.util.List;
+
 import lyjew.com.lyclaw.config.AgentProperties;
+import lyjew.com.lyclaw.react.AgentHook;
 import lyjew.com.lyclaw.react.DefaultReActEngine;
+import lyjew.com.lyclaw.react.HookRegistry;
 import lyjew.com.lyclaw.react.ReActEngine;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -28,5 +32,11 @@ public class ReActAutoConfiguration {
     @ConditionalOnMissingBean
     public DefaultReActEngine defaultReActEngine(AgentProperties agentProperties) {
         return new DefaultReActEngine(agentProperties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public HookRegistry hookRegistry(List<AgentHook> hooks) {
+        return new HookRegistry(hooks);
     }
 }

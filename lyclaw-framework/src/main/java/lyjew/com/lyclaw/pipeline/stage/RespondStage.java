@@ -9,6 +9,7 @@ import lyjew.com.lyclaw.chat.RoutingDecision;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.react.AgentContext;
+import lyjew.com.lyclaw.react.HookRegistry;
 import lyjew.com.lyclaw.react.ReActEngine;
 import lyjew.com.lyclaw.react.ToolExecutor;
 import lyjew.com.lyclaw.security.SandboxLevel;
@@ -30,15 +31,18 @@ public class RespondStage extends PipelineStageBase {
     private final ChatFacade chatFacade;
     private final ToolRegistry toolRegistry;
     private final ReActEngine reActEngine;
+    private final HookRegistry hookRegistry;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     public RespondStage(@org.springframework.lang.Nullable ChatFacade chatFacade,
                         ToolRegistry toolRegistry,
-                        @org.springframework.lang.Nullable ReActEngine reActEngine) {
+                        @org.springframework.lang.Nullable ReActEngine reActEngine,
+                        @org.springframework.lang.Nullable HookRegistry hookRegistry) {
         this.chatFacade = chatFacade;
         this.toolRegistry = toolRegistry;
         this.reActEngine = reActEngine;
+        this.hookRegistry = hookRegistry;
     }
 
     @Override
@@ -50,6 +54,11 @@ public class RespondStage extends PipelineStageBase {
         if (!ctx.isPipelineOk()) {
             log.warn("[响应生成] 管线状态异常(pipelineOk=false)，跳过");
             return Flux.empty();
+        }
+
+        // 分发 beforeRequest 钩子
+        if (hookRegistry != null) {
+            hookRegistry.dispatchBeforeRequest(ctx);
         }
 
         return Flux.defer(() -> {
@@ -94,8 +103,13 @@ public class RespondStage extends PipelineStageBase {
                 bodyFlux = Flux.just(sseEvent("message", fallback));
             }
 
-            return Flux.just(sseEvent("respond_start", "正在生成AI响应"))
+            Flux<ServerSentEvent<String>> resultFlux = Flux.just(sseEvent("respond_start", "正在生成AI响应"))
                     .concatWith(bodyFlux)
+                    .doFinally(signalType -> {
+                        if (hookRegistry != null) {
+                            hookRegistry.dispatchAgentEnd(ctx);
+                        }
+                    })
                     .onErrorResume(err -> {
                         log.error(logJson("ERROR", "stage_error", "RESPOND", traceId,
                                 "响应生成失败: " + err.getMessage(), null), err);
@@ -106,6 +120,7 @@ public class RespondStage extends PipelineStageBase {
                                 sseEvent("done", Map.of("status", "completed", "fallback", true))
                         );
                     });
+            return resultFlux;
         });
     }
 
@@ -130,6 +145,11 @@ public class RespondStage extends PipelineStageBase {
                 toolDefs.size(), toolDefs.stream().filter(def -> !def.isReadOnly()).count());
 
         ToolExecutor toolExecutor = (toolName, toolCallId, arguments) -> {
+            // 分发 beforeToolCall 钩子
+            if (hookRegistry != null) {
+                hookRegistry.dispatchBeforeToolCall(toolName, toolCallId, arguments, ctx);
+            }
+
             Map<String, Object> args;
             try {
                 if (arguments != null && !arguments.isEmpty()) {
@@ -145,6 +165,7 @@ public class RespondStage extends PipelineStageBase {
             SandboxLevel level = ctx.getSandboxLevel() != null ? ctx.getSandboxLevel() : SandboxLevel.DIRECT;
             log.debug("[响应生成] 执行工具: {} | toolCallId={} | 沙箱级别={}", toolName, toolCallId, level);
 
+            String resultStr;
             try {
                 ToolCall toolCall = ToolCall.builder()
                         .toolCallId(toolCallId).name(toolName).arguments(arguments).build();
@@ -164,12 +185,18 @@ public class RespondStage extends PipelineStageBase {
                 log.info("{} [响应生成] 工具执行完成: {} | 成功={} | 累计成功={} 失败={}",
                         result.isSuccess() ? "[OK]" : "[FAIL]", toolName, result.isSuccess(),
                         ctx.getSuccessCount().get(), ctx.getFailCount().get());
-                return result.isSuccess() ? result.getResult() : "Error: " + result.getError();
+                resultStr = result.isSuccess() ? result.getResult() : "Error: " + result.getError();
             } catch (Exception e) {
                 log.error("[FAIL] [响应生成] 工具执行异常: tool={} error={}", toolName, e.getMessage(), e);
                 ctx.getFailCount().incrementAndGet();
-                return "Tool error: " + e.getMessage();
+                resultStr = "Tool error: " + e.getMessage();
             }
+
+            // 分发 afterToolCall 钩子
+            if (hookRegistry != null) {
+                hookRegistry.dispatchAfterToolCall(toolName, toolCallId, resultStr, ctx);
+            }
+            return resultStr;
         };
 
         Set<String> approvalTools = toolDefs.stream()

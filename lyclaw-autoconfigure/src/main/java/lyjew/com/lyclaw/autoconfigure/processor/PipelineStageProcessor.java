@@ -124,35 +124,43 @@ public class PipelineStageProcessor implements BeanPostProcessor, SmartInitializ
     }
     /** @return 按声明顺序排序后的阶段列表 */
     public List<ReactivePipelineStage> getSortedStages() {
-        return TopologySort.sort(
-                new ArrayList<>(discoveredReactiveStages),
-                stage -> {
-                    // dependencyResolver: 返回 stage 的所有依赖项（必须在它之前执行的 stage）
-                    List<ReactivePipelineStage> deps = new ArrayList<>();
-                    String key = stageName(stage);
+        try {
+            return TopologySort.sort(
+                    new ArrayList<>(discoveredReactiveStages),
+                    this::resolveDependencies);
+        } catch (IllegalStateException e) {
+            log.warn("拓扑排序失败（循环依赖），回退到 getOrder() 数值排序: {}", e.getMessage());
+            List<ReactivePipelineStage> fallback = new ArrayList<>(discoveredReactiveStages);
+            fallback.sort(Comparator.comparingInt(ReactivePipelineStage::getOrder));
+            return fallback;
+        }
+    }
 
-                    // 1) after 约束：stage 声明了 after=X → X 必须在 stage 之前
-                    Class<?>[] after = afterConstraints.get(key);
-                    if (after != null) {
-                        for (Class<?> c : after) {
-                            ReactivePipelineStage dep = findByClass(c);
-                            if (dep != null) deps.add(dep);
-                        }
-                    }
+    /** 解析 stage 的依赖项（after/before 约束）。 */
+    private List<ReactivePipelineStage> resolveDependencies(ReactivePipelineStage stage) {
+        List<ReactivePipelineStage> deps = new ArrayList<>();
+        String key = stageName(stage);
 
-                    // 2) before 约束的反向：如果另一个 stage Y 声明 before=X（X=当前stage），
-                    //    说明 Y 必须在当前 stage 之前执行 → Y 是 dependency
-                    for (var entry : beforeConstraints.entrySet()) {
-                        for (Class<?> c : entry.getValue()) {
-                            if (c.isAssignableFrom(stage.getClass())) {
-                                ReactivePipelineStage dep = findByName(entry.getKey());
-                                if (dep != null) deps.add(dep);
-                            }
-                        }
-                    }
-                    return deps;
+        // 1) after 约束：stage 声明了 after=X → X 必须在 stage 之前
+        Class<?>[] after = afterConstraints.get(key);
+        if (after != null) {
+            for (Class<?> c : after) {
+                ReactivePipelineStage dep = findByClass(c);
+                if (dep != null) deps.add(dep);
+            }
+        }
+
+        // 2) before 约束的反向：如果另一个 stage Y 声明 before=X（X=当前stage），
+        //    说明 Y 必须在当前 stage 之前执行 → Y 是 dependency
+        for (var entry : beforeConstraints.entrySet()) {
+            for (Class<?> c : entry.getValue()) {
+                if (c.isAssignableFrom(stage.getClass())) {
+                    ReactivePipelineStage dep = findByName(entry.getKey());
+                    if (dep != null) deps.add(dep);
                 }
-        );
+            }
+        }
+        return deps;
     }
 
 

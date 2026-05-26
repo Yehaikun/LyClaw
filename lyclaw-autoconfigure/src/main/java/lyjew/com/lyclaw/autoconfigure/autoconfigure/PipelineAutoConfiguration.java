@@ -2,6 +2,8 @@ package lyjew.com.lyclaw.autoconfigure.autoconfigure;
 
 import lyjew.com.lyclaw.autoconfigure.facade.ExtensionFacade;
 import lyjew.com.lyclaw.autoconfigure.processor.PipelineStageProcessor;
+import java.util.List;
+
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.pipeline.PipelineProperties;
 import lyjew.com.lyclaw.infra.metrics.MetricsCollector;
@@ -9,8 +11,10 @@ import lyjew.com.lyclaw.pipeline.stage.ContextBuildStage;
 import lyjew.com.lyclaw.pipeline.stage.MetricsStage;
 import lyjew.com.lyclaw.pipeline.stage.RespondStage;
 import lyjew.com.lyclaw.pipeline.stage.SecurityCheckStage;
+import lyjew.com.lyclaw.react.HookRegistry;
 import lyjew.com.lyclaw.react.ReActEngine;
 import lyjew.com.lyclaw.filter.ContentFilter;
+import lyjew.com.lyclaw.security.PermissiveSecurityManager;
 import lyjew.com.lyclaw.security.SecurityManager;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
@@ -71,13 +75,19 @@ public class PipelineAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public SecurityManager securityManager() {
+        return new PermissiveSecurityManager();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public SecurityCheckStage securityCheckStage(
             ObjectProvider<SecurityManager> securityManager,
-            ObjectProvider<ContentFilter> contentFilter,
+            List<ContentFilter> contentFilters,
             ObjectProvider<MetricsCollector> metricsCollector) {
         return new SecurityCheckStage(
                 securityManager.getIfAvailable(),
-                contentFilter.getIfAvailable(),
+                contentFilters,
                 metricsCollector.getIfAvailable());
     }
 
@@ -86,11 +96,13 @@ public class PipelineAutoConfiguration {
     public RespondStage respondStage(
             ObjectProvider<ChatFacade> chatFacade,
             ToolRegistry toolRegistry,
-            ObjectProvider<ReActEngine> reActEngine) {
+            ObjectProvider<ReActEngine> reActEngine,
+            ObjectProvider<HookRegistry> hookRegistry) {
         return new RespondStage(
                 chatFacade.getIfAvailable(),
                 toolRegistry,
-                reActEngine.getIfAvailable());
+                reActEngine.getIfAvailable(),
+                hookRegistry.getIfAvailable());
     }
 
     @Bean

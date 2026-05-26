@@ -25,14 +25,14 @@ import java.util.Map;
 public class SecurityCheckStage extends PipelineStageBase {
 
     private final SecurityManager securityManager;
-    private final ContentFilter contentFilter;
+    private final List<ContentFilter> contentFilters;
     private final MetricsCollector metricsCollector;
 
     public SecurityCheckStage(@org.springframework.lang.Nullable SecurityManager securityManager,
-                               @org.springframework.lang.Nullable ContentFilter contentFilter,
+                               @org.springframework.lang.Nullable List<ContentFilter> contentFilters,
                                @org.springframework.lang.Nullable MetricsCollector metricsCollector) {
         this.securityManager = securityManager;
-        this.contentFilter = contentFilter;
+        this.contentFilters = contentFilters;
         this.metricsCollector = metricsCollector;
     }
 
@@ -93,24 +93,32 @@ public class SecurityCheckStage extends PipelineStageBase {
                     log.info("[安全检查] 无SecurityManager，跳过安全审批");
                 }
 
-                if (contentFilter != null) {
-                    log.info("[安全检查] 执行内容过滤 | 原始消息长度={}",
+                if (contentFilters != null && !contentFilters.isEmpty()) {
+                    log.info("[安全检查] 执行内容过滤 | 过滤器数量={} | 原始消息长度={}",
+                            contentFilters.size(),
                             ctx.getUserMessage() != null ? ctx.getUserMessage().length() : 0);
-                    FilterResult filterResult = contentFilter.filter(ctx.getUserMessage(), resolveChatContext(ctx));
-                    if (!filterResult.isPassed()) {
-                        String reason = filterResult.getReason();
-                        log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
-                                "内容过滤拦截: " + reason, null));
-                        log.warn("[BLOCKED] [安全检查] 内容过滤拦截 | reason={}", reason);
-                        ctx.getTracing().endStage("INTERCEPT");
-                        ctx.setTerminated(true);
-                        events.add(sseEvent("intercept_blocked", "内容过滤拦截: " + reason));
-                        events.add(sseEvent("done", Map.of("status", "blocked")));
-                        return Flux.fromIterable(events);
+                    String currentContent = ctx.getUserMessage();
+                    for (ContentFilter filter : contentFilters) {
+                        if (currentContent == null) break;
+                        log.info("[安全检查] 应用过滤器: {}", filter.getClass().getSimpleName());
+                        FilterResult filterResult = filter.filter(currentContent, resolveChatContext(ctx));
+                        if (!filterResult.isPassed()) {
+                            String reason = filterResult.getReason();
+                            log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
+                                    "内容过滤拦截(" + filter.getClass().getSimpleName() + "): " + reason, null));
+                            log.warn("[BLOCKED] [安全检查] 内容过滤拦截 | filter={} reason={}",
+                                    filter.getClass().getSimpleName(), reason);
+                            ctx.getTracing().endStage("INTERCEPT");
+                            ctx.setTerminated(true);
+                            events.add(sseEvent("intercept_blocked", "内容过滤拦截: " + reason));
+                            events.add(sseEvent("done", Map.of("status", "blocked")));
+                            return Flux.fromIterable(events);
+                        }
+                        currentContent = filterResult.getFilteredContent();
                     }
-                    ctx.setUserMessage(filterResult.getFilteredContent());
-                    log.info("[OK] [安全检查] 内容过滤通过 | 过滤后消息长度={}",
-                            filterResult.getFilteredContent() != null ? filterResult.getFilteredContent().length() : 0);
+                    ctx.setUserMessage(currentContent);
+                    log.info("[OK] [安全检查] 所有过滤器通过 | 过滤后消息长度={}",
+                            currentContent != null ? currentContent.length() : 0);
                 } else {
                     log.info("[安全检查] 无ContentFilter，跳过内容过滤");
                 }
