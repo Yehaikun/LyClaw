@@ -194,7 +194,7 @@ public class DefaultReActEngine implements ReActEngine {
                     round + 1, response.getToolCalls().size(),
                     response.getToolCalls().stream().map(ModelResponse.ToolCallRequest::getName).toList());
 
-            // 追加 assistant 消息（含工具调用列表，ID 已去重）
+            // 追加 assistant 消息（含工具调用列表）
             messages.add(Message.builder()
                     .role("assistant")
                     .content(response.getContent() != null ? response.getContent() : "")
@@ -202,20 +202,19 @@ public class DefaultReActEngine implements ReActEngine {
                     .toolCalls(toMessageToolCalls(response))
                     .build());
 
-            // 执行每个工具调用，追加 tool 消息（使用去重后的 ID）
+            // 执行每个工具调用，追加 tool 消息
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
-                String dedupedId = dedupToolCallId(req.getId());
-                log.info("[ReAct引擎] 执行工具: {} | toolCallId={} (deduped={})", req.getName(), req.getId(), dedupedId);
+                log.info("[ReAct引擎] 执行工具: {} | toolCallId={}", req.getName(), req.getId());
                 try {
                     String toolOutput = toolExecutor.execute(
-                            req.getName(), dedupedId,
+                            req.getName(), req.getId(),
                             req.getArguments() != null ? req.getArguments() : "{}");
-                    messages.add(Message.tool(dedupedId, toolOutput));
+                    messages.add(Message.tool(req.getId(), toolOutput));
                     log.info("[OK] [ReAct引擎] 工具执行完成: {} | 输出长度={}", req.getName(),
                             toolOutput != null ? toolOutput.length() : 0);
                 } catch (Exception e) {
                     log.error("[FAIL] [ReAct引擎] 工具执行异常: name={} error={}", req.getName(), e.getMessage(), e);
-                    messages.add(Message.tool(dedupedId, "工具错误: " + e.getMessage()));
+                    messages.add(Message.tool(req.getId(), "工具错误: " + e.getMessage()));
                 }
             }
         }
@@ -393,9 +392,8 @@ public class DefaultReActEngine implements ReActEngine {
                     log.info("ProgressBus CREATED | key={}", busKey);
 
                     // Flux.create: tool executors call the emitter from any thread
-                    String dedupedIdForBus = dedupToolCallId(req.getId());
                     Flux<ServerSentEvent<String>> progressFlux = Flux.<ServerSentEvent<String>>create(sink -> {
-                        registerEmitter(request.getSessionId(), dedupedIdForBus, ev -> {
+                        registerEmitter(request.getSessionId(), req.getId(), ev -> {
                             sink.next(ev);
                             log.info("PROGRESS_EVENT_FWD | key={} | event={}", busKey, ev.event());
                         });
@@ -407,18 +405,18 @@ public class DefaultReActEngine implements ReActEngine {
                         String output;
                         boolean success;
                         try {
-                            output = toolExecutor.execute(req.getName(), dedupedIdForBus, toolArgs);
+                            output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
                             success = true;
                         } catch (Exception e) {
                             log.error("[FAIL] [ReAct流式] 工具执行失败: name={}", req.getName(), e);
                             output = "工具错误: " + e.getMessage();
                             success = false;
                         }
-                        messages.add(Message.tool(dedupedIdForBus, output));
+                        messages.add(Message.tool(req.getId(), output));
                         log.info("{} [ReAct流式] 工具执行完成: {} | 成功={}",
                                 success ? "[OK]" : "[FAIL]", req.getName(), success);
                         return SseEventFactory.toolCallDone(
-                                dedupedIdForBus, req.getName(), req.getName() + " 完成",
+                                req.getId(), req.getName(), req.getName() + " 完成",
                                 toolArgs, output, success);
                     }).subscribeOn(Schedulers.boundedElastic());
 
@@ -662,47 +660,16 @@ public class DefaultReActEngine implements ReActEngine {
                 });
     }
 
-    /**
-     * Simple counter for generating unique tool_call_id suffixes.
-     * Each call to toMessageToolCalls gets a unique suffix.
-     * The same suffix is used for ALL tool calls in a single batch.
-     */
-    private static final java.util.concurrent.atomic.AtomicLong toolIdCounter =
-            new java.util.concurrent.atomic.AtomicLong(0);
-
-    /**
-     * Map: originalToolCallId → dedupedToolCallId for the current batch.
-     * Populated by toMessageToolCalls(), consumed by tool execution code.
-     * Uses static counter so values are unique across threads.
-     */
-    private static final ThreadLocal<java.util.Map<String, String>> TOOL_ID_MAP =
-            ThreadLocal.withInitial(java.util.HashMap::new);
-
-    /** 将 LLM 返回的 ToolCalls 转为 Message ToolCalls，
-     *  每个 ID 追加唯一后缀，防止 DeepSeek "Duplicate tool_call_id"。 */
+    /** 将 LLM 返回的 ToolCalls 转为 Message 的 ToolCall 列表。 */
     private List<ToolCall> toMessageToolCalls(ModelResponse response) {
         if (response.getToolCalls() == null) return List.of();
-        String suffix = "_r" + toolIdCounter.incrementAndGet();
-        java.util.Map<String, String> idMap = TOOL_ID_MAP.get();
-        idMap.clear();
         return response.getToolCalls().stream()
-                .<ToolCall>map(req -> {
-                    String deduped = req.getId() + suffix;
-                    idMap.put(req.getId(), deduped);
-                    return ToolCall.builder()
-                            .toolCallId(deduped)
-                            .name(req.getName())
-                            .arguments(req.getArguments())
-                            .build();
-                })
+                .<ToolCall>map(req -> ToolCall.builder()
+                        .toolCallId(req.getId())
+                        .name(req.getName())
+                        .arguments(req.getArguments())
+                        .build())
                 .toList();
-    }
-
-    /** Lookup the deduped ID for an original tool_call_id. */
-    private static String dedupToolCallId(String originalId) {
-        if (originalId == null) return null;
-        String deduped = TOOL_ID_MAP.get().get(originalId);
-        return deduped != null ? deduped : originalId;
     }
 
     /** 将文本按自然边界拆分为 SSE 事件，模拟流式输出。保留换行以保证 Markdown 渲染正确。 */
