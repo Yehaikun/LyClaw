@@ -199,12 +199,12 @@ public class DefaultReActEngine implements ReActEngine {
                     .role("assistant")
                     .content(response.getContent() != null ? response.getContent() : "")
                     .thinking(response.getThinking() != null ? response.getThinking() : "")
-                    .toolCalls(toMessageToolCalls(response))
+                    .toolCalls(toMessageToolCalls(response, request))
                     .build());
 
             // 执行每个工具调用，追加 tool 消息（使用去重后的 ID）
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
-                String actualId = req.getId();
+                String actualId = getDedupedId(request, req.getId());
                 log.info("[ReAct引擎] 执行工具: {} | toolCallId={}", req.getName(), actualId);
                 try {
                     String toolOutput = toolExecutor.execute(
@@ -363,7 +363,7 @@ public class DefaultReActEngine implements ReActEngine {
                 .role("assistant")
                 .content(content)
                 .thinking(firstResponse.getThinking() != null ? firstResponse.getThinking() : "")
-                .toolCalls(toMessageToolCalls(firstResponse))
+                .toolCalls(toMessageToolCalls(firstResponse, request))
                 .build());
 
         return textFlux
@@ -383,7 +383,7 @@ public class DefaultReActEngine implements ReActEngine {
                     String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
                     if (approvalRequired.contains(req.getName())) {
                         return emitApprovalFlow(req, toolExecutor, messages, toolArgs,
-                                request.getSessionId(), request.getAgentId());
+                                request.getSessionId(), request.getAgentId(), request);
                     }
                     log.info("[ReAct流式] 直接执行工具（无需审批）: {} | toolCallId={}", req.getName(), req.getId());
                     ServerSentEvent<String> execEvent = SseEventFactory.toolCallExecuting(
@@ -406,18 +406,18 @@ public class DefaultReActEngine implements ReActEngine {
                         String output;
                         boolean success;
                         try {
-                            output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                            output = toolExecutor.execute(req.getName(), getDedupedId(request, req.getId()), toolArgs);
                             success = true;
                         } catch (Exception e) {
                             log.error("[FAIL] [ReAct流式] 工具执行失败: name={}", req.getName(), e);
                             output = "工具错误: " + e.getMessage();
                             success = false;
                         }
-                        messages.add(Message.tool(req.getId(), output));
+                        messages.add(Message.tool(getDedupedId(request, req.getId()), output));
                         log.info("{} [ReAct流式] 工具执行完成: {} | 成功={}",
                                 success ? "[OK]" : "[FAIL]", req.getName(), success);
                         return SseEventFactory.toolCallDone(
-                                req.getId(), req.getName(), req.getName() + " 完成",
+                                getDedupedId(request, req.getId()), req.getName(), req.getName() + " 完成",
                                 toolArgs, output, success);
                     }).subscribeOn(Schedulers.boundedElastic());
 
@@ -438,7 +438,8 @@ public class DefaultReActEngine implements ReActEngine {
      *  approve()，导致匹配不到 pending future（竞态条件）。</p> */
     private Flux<ServerSentEvent<String>> emitApprovalFlow(
             ModelResponse.ToolCallRequest req, ToolExecutor toolExecutor,
-            List<Message> messages, String toolArgs, String sessionId, String agentId) {
+            List<Message> messages, String toolArgs, String sessionId, String agentId,
+            ChatRequest request) {
         // 必须在 Flux 返回前创建 future，消除竞态：保证前端 approve() 时 future 已就绪
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         pendingApprovals.put(req.getId(), future);
@@ -472,7 +473,7 @@ public class DefaultReActEngine implements ReActEngine {
             boolean success;
             if (approved) {
                 try {
-                    output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                    output = toolExecutor.execute(req.getName(), getDedupedId(request, req.getId()), toolArgs);
                     success = true;
                 } catch (Exception e) {
                     log.error("Tool execution failed: name={} error={}", req.getName(), e.getMessage(), e);
@@ -485,7 +486,7 @@ public class DefaultReActEngine implements ReActEngine {
             }
             messages.add(Message.tool(req.getId(), output));
             return SseEventFactory.toolCallDone(
-                    req.getId(), req.getName(), req.getName() + " 完成",
+                    getDedupedId(request, req.getId()), req.getName(), req.getName() + " 完成",
                     toolArgs, output, success);
         }).subscribeOn(Schedulers.boundedElastic());
 
@@ -583,7 +584,7 @@ public class DefaultReActEngine implements ReActEngine {
                                     .role("assistant")
                                     .content(textContent)
                                     .thinking(merged.getThinking() != null ? merged.getThinking() : "")
-                                    .toolCalls(toMessageToolCalls(merged))
+                                    .toolCalls(toMessageToolCalls(merged, request))
                                     .build());
 
                             return preTextFlux
