@@ -292,6 +292,53 @@ export const useChatStore = defineStore('chat', () => {
                 }],
               })
             }
+            // 检测 delegate_to_agent 工具调用 → 更新 Agent 活动面板
+            if (event.name === 'delegate_to_agent' && event.status === 'executing') {
+              try {
+                const args = JSON.parse(event.arguments || '{}')
+                if (args.agentId) {
+                  const act: AgentActivity = {
+                    agentId: args.agentId,
+                    status: 'running',
+                    task: (args.task || '').substring(0, 100),
+                    startedAt: Date.now(),
+                  }
+                  activeAgents.value.set(args.agentId, act)
+                  activeAgents.value = new Map(activeAgents.value)
+                  waitingForSubagent.value = true
+                }
+              } catch { /* ignore */ }
+            }
+            if (event.name === 'delegate_to_agent' && event.status === 'done') {
+              try {
+                const args = JSON.parse(event.arguments || '{}')
+                if (args.agentId) {
+                  const agentId = args.agentId
+                  const existing = activeAgents.value.get(agentId)
+                  if (existing) {
+                    existing.status = 'completed'
+                    existing.completedAt = Date.now()
+                    existing.output = event.result || '完成'
+                    activeAgents.value = new Map(activeAgents.value)
+                  }
+                  // 子 Agent 输出
+                  if (event.result) {
+                    const output: SubagentMessage = {
+                      agentId,
+                      content: event.result,
+                      role: 'assistant',
+                      status: 'completed',
+                    }
+                    if (!agentOutputs.value.has(agentId)) {
+                      agentOutputs.value.set(agentId, [])
+                    }
+                    agentOutputs.value.get(agentId)!.push(output)
+                    agentOutputs.value = new Map(agentOutputs.value)
+                    waitingForSubagent.value = false
+                  }
+                }
+              } catch { /* ignore */ }
+            }
           } catch { /* ignore malformed JSON */ }
         },
         // tool_approval 事件回调：非只读工具需要用户确认，弹出审批对话框
@@ -506,39 +553,6 @@ export const useChatStore = defineStore('chat', () => {
           break
         case 'aggregation_complete':
           waitingForSubagent.value = false
-          break
-        case 'tool_call':
-          // tool_call 事件中的子 Agent 信息
-          if (info.name === 'delegate_to_agent' && info.status === 'executing') {
-            try {
-              const args = JSON.parse(info.arguments || '{}')
-              if (args.agentId) {
-                const act: AgentActivity = {
-                  agentId: args.agentId,
-                  status: 'running',
-                  task: (args.task || '').substring(0, 100),
-                  startedAt: Date.now(),
-                }
-                activeAgents.value.set(args.agentId, act)
-                activeAgents.value = new Map(activeAgents.value)
-                waitingForSubagent.value = true
-              }
-            } catch { /* ignore */ }
-          }
-          if (info.name === 'delegate_to_agent' && info.status === 'done') {
-            try {
-              const args = JSON.parse(info.arguments || '{}')
-              if (args.agentId) {
-                const existing = activeAgents.value.get(args.agentId)
-                if (existing) {
-                  existing.status = 'completed'
-                  existing.completedAt = Date.now()
-                  existing.output = info.result || '完成'
-                  activeAgents.value = new Map(activeAgents.value)
-                }
-              }
-            } catch { /* ignore */ }
-          }
           break
         case 'collaboration_start':
           waitingForSubagent.value = true
