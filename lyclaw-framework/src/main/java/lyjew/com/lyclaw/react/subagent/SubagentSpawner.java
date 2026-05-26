@@ -274,8 +274,14 @@ public class SubagentSpawner {
         parentCtx.addActiveSubagent(targetAgentId);
 
         return Mono.fromCallable(() -> {
-                    if (!semaphore.tryAcquire(10, TimeUnit.SECONDS)) {
-                        throw new RuntimeException("Semaphore acquisition timeout");
+                    if (!semaphore.tryAcquire(30, TimeUnit.SECONDS)) {
+                        log.warn("[子代理] 信号量超时，尝试清理 | sessionId={} | permits={}",
+                                parentSessionId, semaphore.availablePermits());
+                        semaphore.drainPermits();
+                        semaphore.release(2);
+                        if (!semaphore.tryAcquire(10, TimeUnit.SECONDS)) {
+                            throw new RuntimeException("Semaphore acquisition timeout after drain");
+                        }
                     }
                     return runSubagentStreaming(targetAgentId, task, childSession,
                             config, parentCtx, progressEmitter);
