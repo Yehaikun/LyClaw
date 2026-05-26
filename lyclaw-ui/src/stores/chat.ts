@@ -385,7 +385,12 @@ export const useChatStore = defineStore('chat', () => {
           }
           // 多 Agent 路由与协作事件处理
           handleMultiAgentEvent(event, data)
-          addSubagentEvent(event, data)
+          // 只显示 Agent 相关事件
+          const agentEvents = ['routing_start','routing_decision','routing_fallback',
+            'collaboration_start','task_decomposed','sub_task_start','sub_task_complete',
+            'sub_task_fail','aggregation_complete','vote_round','consensus_reached',
+            'consensus_failed','subagent_spawned','subagent_ended']
+          if (agentEvents.includes(event)) addSubagentEvent(event, data)
         },
       )
     } catch (err) {
