@@ -1,5 +1,8 @@
 package lyjew.com.lyclaw.autoconfigure.binding;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
@@ -36,6 +39,7 @@ import java.util.Map;
  * 明确的参数名称信息，帮助开发者快速定位问题参数。</p>
  */
 public class ParameterBindingDescriptor {
+    private static final Logger log = LoggerFactory.getLogger(ParameterBindingDescriptor.class);
 
     private final Method method;
     private final List<ParamInfo> params;
@@ -168,8 +172,8 @@ public class ParameterBindingDescriptor {
                         break;
                     }
                 }
-            } catch (Exception ignored) {
-                // Fallback to reflection-derived defaults
+            } catch (Exception e) {
+                log.debug("Failed to read @Param annotation on {}: {}", p.getName(), e.getMessage());
             }
 
             this.name = n;

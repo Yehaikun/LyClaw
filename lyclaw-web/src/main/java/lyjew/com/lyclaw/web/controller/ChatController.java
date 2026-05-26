@@ -51,9 +51,13 @@ public class ChatController {
         try {
             return Flux.just(sessionEvent)
                     .concatWith(chatAgent.chatStream(userMessage))
-                    .doFinally(signalType -> SessionRequestContext.clear());
+                    .doFinally(signalType -> {
+                        SessionRequestContext.clear();
+                        lyjew.com.lyclaw.react.DefaultReActEngine.clearSessionEmitters(session.getSessionId());
+                    });
         } catch (Exception e) {
             SessionRequestContext.clear();
+            lyjew.com.lyclaw.react.DefaultReActEngine.clearSessionEmitters(session.getSessionId());
             throw e;
         }
     }
@@ -72,6 +76,7 @@ public class ChatController {
                         return chatAgent.chat(userMessage);
                     } finally {
                         SessionRequestContext.clear();
+                        lyjew.com.lyclaw.react.DefaultReActEngine.clearSessionEmitters(sessionId);
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic())

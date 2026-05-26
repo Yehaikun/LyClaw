@@ -187,7 +187,8 @@ public class ToolAnnotationProcessor implements BeanPostProcessor, DeferredRegis
                     pDesc = (String) pa.getClass().getMethod("description").invoke(pa);
                     pReq = (Boolean) pa.getClass().getMethod("required").invoke(pa);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.debug("Failed to reflect @Param on {}: {}", p.getName(), e.getMessage());
             }
 
             Map<String, Object> prop = new LinkedHashMap<>();

@@ -25,20 +25,26 @@ public class TaskGraph {
         if (completed == null) {
             return getRootNodes();
         }
+        String completedId = completed.getId();
+        if (completedId == null) {
+            return getRootNodes();
+        }
         List<String> nextIds = edges.stream()
-                .filter(e -> e.getFromNodeId().equals(completed.getId()))
+                .filter(e -> e.getFromNodeId() != null && e.getFromNodeId().equals(completedId))
                 .map(TaskEdge::getToNodeId)
+                .filter(id -> id != null)
                 .collect(Collectors.toList());
 
         return nodes.stream()
-                .filter(n -> nextIds.contains(n.getId()))
+                .filter(n -> n.getId() != null && nextIds.contains(n.getId()))
                 .filter(n -> {
                     List<String> deps = edges.stream()
-                            .filter(e -> e.getToNodeId().equals(n.getId()))
+                            .filter(e -> e.getToNodeId() != null && e.getToNodeId().equals(n.getId()))
                             .map(TaskEdge::getFromNodeId)
+                            .filter(id -> id != null)
                             .collect(Collectors.toList());
                     return deps.stream().allMatch(depId ->
-                            nodes.stream().anyMatch(on -> on.getId().equals(depId)
+                            nodes.stream().anyMatch(on -> on.getId() != null && on.getId().equals(depId)
                                     && on.getStatus() == TaskNode.Status.COMPLETED));
                 })
                 .collect(Collectors.toList());

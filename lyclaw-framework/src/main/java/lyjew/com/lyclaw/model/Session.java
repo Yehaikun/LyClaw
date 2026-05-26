@@ -35,10 +35,16 @@ public class Session {
     /**
      * 向会话追加一条消息。
      */
+    private static final int MAX_MESSAGES = 500;
+
     public void addMessage(Message message) {
         if (this.messages == null) {
             this.messages = new ArrayList<>();
         }
         this.messages.add(message);
+        // 防止长会话导致 OOM
+        if (this.messages.size() > MAX_MESSAGES) {
+            this.messages = new ArrayList<>(this.messages.subList(this.messages.size() - MAX_MESSAGES, this.messages.size()));
+        }
     }
 }

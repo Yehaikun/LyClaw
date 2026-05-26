@@ -26,6 +26,9 @@
 
         <!-- Starter（一站式依赖引入） -->
         <module>lyclaw-starter</module>
+
+        <!-- Web层（唯一部署单元） -->
+        <module>lyclaw-web</module>
     </modules>
 
     <!-- ========== properties 统一定义版本 ========== -->

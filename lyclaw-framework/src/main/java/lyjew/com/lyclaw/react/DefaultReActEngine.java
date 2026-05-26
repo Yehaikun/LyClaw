@@ -80,6 +80,12 @@ public class DefaultReActEngine implements ReActEngine {
         }
     }
 
+    public static void clearSessionEmitters(String sessionId) {
+        if (sessionId != null) {
+            PROGRESS_EMITTERS.entrySet().removeIf(e -> e.getKey().startsWith(sessionId + ":"));
+        }
+    }
+
     // Phase 2: thinking level → thinking budget mapping (token counts)
     private static final int THINKING_BUDGET_LOW = 1024;
     private static final int THINKING_BUDGET_MEDIUM = 4096;
