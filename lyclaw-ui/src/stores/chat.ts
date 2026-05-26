@@ -113,6 +113,29 @@ export const useChatStore = defineStore('chat', () => {
   const subagentEvents = ref<Array<{ event: string; data: string }>>([])
   const reflectionProgress = ref<any>(null)
 
+  // ═══════════════════════════════════════════════════════════
+  // Phase 4: 委派流程可视化状态
+  // ═══════════════════════════════════════════════════════════
+
+  /** 当前委派链信息（用于 AgentDelegationCard） */
+  const currentDelegation = ref<{
+    source: string
+    targetAgentId: string
+    task: string
+    timestamp: number
+  } | null>(null)
+
+  /** 当前子 Agent 实时进度（用于 AgentLiveCard） */
+  const currentLiveAgent = ref<AgentActivity | null>(null)
+
+  /** 子 Agent 结果列表（用于 SubagentResultCard） */
+  const subagentResults = ref<Map<string, {
+    agentId: string
+    output: string
+    duration: number
+    success: boolean
+  }>>(new Map())
+
   // ====================================================================
   // 计算属性（Getters）
   // ====================================================================
@@ -185,6 +208,9 @@ export const useChatStore = defineStore('chat', () => {
     activeAgents.value = new Map()
     agentOutputs.value = new Map()
     waitingForSubagent.value = false
+    currentDelegation.value = null
+    currentLiveAgent.value = null
+    subagentResults.value = new Map()
 
     try {
       const agentId = useSessionStore().currentAgentId
@@ -296,18 +322,29 @@ export const useChatStore = defineStore('chat', () => {
                 }],
               })
             }
-            // 检测 delegate_to_agent 工具调用 → 更新 Agent 活动面板
+            // 检测 delegate_to_agent → 更新委派链卡片 + 实时进度卡片
             if (event.name === 'delegate_to_agent' && event.status === 'executing') {
               try {
                 const args = JSON.parse(event.arguments || '{}')
                 if (args.agentId) {
-                  const act: AgentActivity = {
+                  // 委派链卡片
+                  currentDelegation.value = {
+                    source: useSessionStore().currentAgentId || 'chat',
+                    targetAgentId: args.agentId,
+                    task: args.task || '',
+                    timestamp: Date.now(),
+                  }
+                  // 实时进度卡片
+                  currentLiveAgent.value = {
                     agentId: args.agentId,
                     status: 'running',
-                    task: (args.task || '').substring(0, 100),
+                    task: (args.task || '').substring(0, 80),
                     startedAt: Date.now(),
+                    liveThinking: '',
+                    liveToolCalls: [],
+                    liveOutput: '',
                   }
-                  activeAgents.value.set(args.agentId, act)
+                  activeAgents.value.set(args.agentId, currentLiveAgent.value)
                   activeAgents.value = new Map(activeAgents.value)
                   waitingForSubagent.value = true
                 }
@@ -318,28 +355,20 @@ export const useChatStore = defineStore('chat', () => {
                 const args = JSON.parse(event.arguments || '{}')
                 if (args.agentId) {
                   const agentId = args.agentId
-                  const existing = activeAgents.value.get(agentId)
-                  if (existing) {
-                    existing.status = 'completed'
-                    existing.completedAt = Date.now()
-                    existing.output = event.result || '完成'
-                    activeAgents.value = new Map(activeAgents.value)
-                  }
-                  // 子 Agent 输出
-                  if (event.result) {
-                    const output: SubagentMessage = {
-                      agentId,
-                      content: event.result,
-                      role: 'assistant',
-                      status: 'completed',
-                    }
-                    if (!agentOutputs.value.has(agentId)) {
-                      agentOutputs.value.set(agentId, [])
-                    }
-                    agentOutputs.value.get(agentId)!.push(output)
-                    agentOutputs.value = new Map(agentOutputs.value)
-                    waitingForSubagent.value = false
-                  }
+                  const duration = currentLiveAgent.value?.startedAt
+                    ? Math.round((Date.now() - currentLiveAgent.value.startedAt) / 1000) : 0
+                  // 结果卡片
+                  subagentResults.value.set(agentId, {
+                    agentId,
+                    output: event.result || '',
+                    duration,
+                    success: event.success !== false,
+                  })
+                  subagentResults.value = new Map(subagentResults.value)
+                  // 清除实时卡片
+                  currentDelegation.value = null
+                  currentLiveAgent.value = null
+                  waitingForSubagent.value = false
                 }
               } catch { /* ignore */ }
             }
@@ -636,6 +665,9 @@ export const useChatStore = defineStore('chat', () => {
     activeAgents.value = new Map()
     agentOutputs.value = new Map()
     waitingForSubagent.value = false
+    currentDelegation.value = null
+    currentLiveAgent.value = null
+    subagentResults.value = new Map()
   }
 
   /**
@@ -787,6 +819,9 @@ export const useChatStore = defineStore('chat', () => {
     activeAgents,
     agentOutputs,
     waitingForSubagent,
+    currentDelegation,
+    currentLiveAgent,
+    subagentResults,
     reflectionProgress,
     // 计算属性
     messageCount,

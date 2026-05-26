@@ -50,7 +50,9 @@ import MessageBubble from '@/components/MessageBubble.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ToolCallCard from '@/components/ToolCallCard.vue'
 import ToolApprovalDialog from '@/components/ToolApprovalDialog.vue'
-import AgentActivityPanel from '@/components/AgentActivityPanel.vue'
+import AgentDelegationCard from '@/components/chat/AgentDelegationCard.vue'
+import AgentLiveCard from '@/components/chat/AgentLiveCard.vue'
+import SubagentResultCard from '@/components/chat/SubagentResultCard.vue'
 import TraceIdBadge from '@/components/TraceIdBadge.vue'
 import MessageNav from '@/components/MessageNav.vue'
 import type { NavItem } from '@/components/MessageNav.vue'
@@ -551,6 +553,17 @@ watch(
             />
           </div>
 
+          <!-- Phase 4: 委派链卡片 -->
+          <AgentDelegationCard :delegation="chatStore.currentDelegation" />
+
+          <!-- Phase 4: 子 Agent 实时进度卡片 -->
+          <AgentLiveCard :agent="chatStore.currentLiveAgent" />
+
+          <!-- Phase 4: 子 Agent 结果卡片 -->
+          <div v-for="result in chatStore.subagentResults" :key="result[0]" class="result-list">
+            <SubagentResultCard :result="result[1]" />
+          </div>
+
           <!-- 推理/思考指示器：仅流式进行中显示，完毕后由 MessageBubble 渲染 -->
           <div v-if="chatStore.isStreaming && chatStore.thinkingText.length > 0" class="thinking-reasoning">
             <div class="thinking-reasoning-header" @click="showThinking = !showThinking">
@@ -586,50 +599,6 @@ watch(
           </div>
         </div>
 
-        <!-- Agent 协作面板：显示在消息列表与输入框之间 -->
-        <div class="agent-panel">
-          <AgentActivityPanel />
-
-          <div v-if="chatStore.agentOutputs.size > 0" class="agent-outputs">
-            <div v-for="[agentId, outputs] in chatStore.agentOutputs" :key="agentId" class="agent-output-card">
-              <div class="agent-output-header">
-                <div class="agent-output-icon">{{ agentId.charAt(0).toUpperCase() }}</div>
-                <div class="agent-output-info">
-                  <span class="agent-output-name">{{ agentId }}</span>
-                  <span class="agent-output-status">✅ 已完成</span>
-                </div>
-              </div>
-              <div v-for="(out, oi) in outputs" :key="oi" class="agent-output-body">
-                <div v-if="out.content" class="agent-output-content">
-                  <div class="markdown-content">{{ out.content.substring(0, 500) }}{{ out.content.length > 500 ? '...' : '' }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="chatStore.waitingForSubagent" class="subagent-waiting">
-            <div class="waiting-dots"><span class="waiting-dot"></span><span class="waiting-dot"></span><span class="waiting-dot"></span></div>
-            <span class="waiting-text">子 Agent 执行中...</span>
-          </div>
-
-          <div v-if="chatStore.subagentEvents.length > 0" class="subagent-events">
-            <div v-for="(evt, idx) in chatStore.subagentEvents" :key="idx" class="subagent-event-item">
-              <template v-if="evt.event === 'routing_start'"><div class="routing-badge routing-start">🔍 正在匹配合适的 Agent...</div></template>
-              <template v-else-if="evt.event === 'routing_decision'"><div class="routing-badge routing-decision">➡️ 路由到 <strong>{{ parseEventData(evt.data).targetAgentId || 'unknown' }}</strong> <span class="routing-confidence" v-if="parseEventData(evt.data).confidence">({{ parseEventData(evt.data).confidence }})</span></div></template>
-              <template v-else-if="evt.event === 'routing_fallback'"><div class="routing-badge routing-fallback">⚠️ 无匹配</div></template>
-              <template v-else-if="evt.event === 'collaboration_start'"><div class="routing-badge collaboration-start">🤝 协作开始 ({{ parseEventData(evt.data).pattern || 'hierarchical' }})</div></template>
-              <template v-else-if="evt.event === 'sub_task_start'"><div class="routing-badge sub-task-start">▶️ {{ parseEventData(evt.data).description || '' }} <span class="agent-tag" v-if="parseEventData(evt.data).assignedAgent">@{{ parseEventData(evt.data).assignedAgent }}</span></div></template>
-              <template v-else-if="evt.event === 'sub_task_complete'"><div class="routing-badge sub-task-complete">✅ 子任务完成</div></template>
-              <template v-else-if="evt.event === 'sub_task_fail'"><div class="routing-badge sub-task-fail">❌ {{ parseEventData(evt.data).error || '' }}</div></template>
-              <template v-else-if="evt.event === 'aggregation_complete'"><div class="routing-badge aggregation-complete">📊 聚合完成</div></template>
-              <template v-else-if="evt.event === 'vote_round'"><div class="routing-badge vote-round">🗳️ 投票 {{ parseEventData(evt.data).round || '' }}</div></template>
-              <template v-else-if="evt.event === 'consensus_reached'"><div class="routing-badge consensus-reached">✅ 共识</div></template>
-              <template v-else-if="evt.event === 'consensus_failed'"><div class="routing-badge consensus-failed">🤷 无共识</div></template>
-              <template v-else-if="evt.event === 'subagent_spawned' || evt.event === 'subagent_ended'"><div class="routing-badge subagent-lifecycle">{{ evt.event === 'subagent_spawned' ? '🔄' : '✅' }} {{ parseEventData(evt.data).agentId || 'unknown' }}</div></template>
-              <template v-else><div class="routing-badge routing-other">📡 {{ evt.event }}</div></template>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- 右侧消息导航栏：仅左侧栏折叠时可见 -->
@@ -981,71 +950,6 @@ watch(
     gap: var(--spacing-xs);
   }
 }
-
-/* Agent 路由与协作事件样式 */
-.subagent-events {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 48px;
-}
-
-.subagent-event-item {
-  display: flex;
-  align-items: center;
-}
-
-.routing-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: var(--rounded-pill, 999px);
-  font-size: 12px;
-  line-height: 1.4;
-  background: var(--color-surface-soft, #f0f0f0);
-  color: var(--color-body, #333);
-  border: 1px solid var(--color-hairline, #e0e0e0);
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.routing-start { border-color: #93c5fd; background: #eff6ff; }
-.routing-decision { border-color: #86efac; background: #f0fdf4; }
-.routing-fallback { border-color: #fde68a; background: #fffbeb; }
-.collaboration-start { border-color: #c4b5fd; background: #f5f3ff; }
-.task-decomposed { border-color: #a5b4fc; background: #eef2ff; }
-.sub-task-start { border-color: #93c5fd; background: #f0f9ff; }
-.sub-task-complete { border-color: #86efac; background: #f0fdf4; }
-.sub-task-fail { border-color: #fca5a5; background: #fef2f2; }
-.aggregation-complete { border-color: #86efac; background: #f0fdf4; }
-.vote-round { border-color: #c4b5fd; background: #faf5ff; }
-.consensus-reached { border-color: #86efac; background: #f0fdf4; }
-.consensus-failed { border-color: #fde68a; background: #fffbeb; }
-.subagent-lifecycle { border-color: #93c5fd; background: #f0f9ff; }
-.routing-other { border-color: var(--color-hairline); background: var(--color-surface-soft); }
-
-.routing-confidence {
-  font-size: 10px;
-  color: var(--color-muted, #888);
-  text-transform: uppercase;
-}
-
-.agent-tag {
-  display: inline-block;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: var(--color-primary, #6C63FF);
-  color: white;
-  font-size: 10px;
-  font-weight: 500;
-}
-
-/* 子 Agent 输出卡片 */
 .agent-outputs {
   display: flex;
   flex-direction: column;
@@ -1152,121 +1056,6 @@ watch(
   font-weight: 500;
 }
 
-/* ---- Agent 协作面板（消息列表与输入框之间） ---- */
-.agent-panel {
-  max-height: 240px;
-  overflow-y: auto;
-  border-top: 1px solid var(--color-hairline, #e0e0e0);
-  background: var(--card-bg, #fff);
-}
-
-.agent-outputs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 4px 12px;
-}
-
-.agent-output-card {
-  border-radius: var(--rounded-sm, 4px);
-  border: 1px solid var(--color-hairline, #e0e0e0);
-  overflow: hidden;
-  animation: fadeIn 0.3s ease;
-}
-
-.agent-output-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: #f0fdf4;
-  border-bottom: 1px solid #dcfce7;
-}
-
-.agent-output-icon {
-  width: 20px; height: 20px;
-  border-radius: 4px;
-  background: #22c55e; color: white;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700;
-}
-
-.agent-output-info {
-  flex: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.agent-output-name { font-size: 11px; font-weight: 600; }
-.agent-output-status { font-size: 10px; color: #22c55e; }
-.agent-output-body { padding: 4px 8px; }
-.agent-output-content { font-size: 12px; line-height: 1.4; color: var(--color-body, #333); }
-.markdown-content { white-space: pre-wrap; word-break: break-word; }
-
-.subagent-waiting {
-  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
-}
-
-.waiting-dots { display: flex; gap: 3px; }
-.waiting-dot {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: var(--color-primary, #6C63FF);
-  animation: dotBounce 1.4s ease-in-out infinite both;
-}
-.waiting-dot:nth-child(1) { animation-delay: -0.32s; }
-.waiting-dot:nth-child(2) { animation-delay: -0.16s; }
-.waiting-dot:nth-child(3) { animation-delay: 0s; }
-
-@keyframes dotBounce {
-  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
-  40% { transform: scale(1); opacity: 1; }
-}
-
-.waiting-text { font-size: 11px; color: var(--color-muted, #888); }
-
-.subagent-events {
-  display: flex; flex-direction: column; gap: 2px; padding: 2px 12px;
-}
-
-.subagent-event-item { display: flex; align-items: center; }
-
-.routing-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 8px; border-radius: var(--rounded-pill, 999px);
-  font-size: 11px; line-height: 1.4;
-  background: var(--color-surface-soft, #f0f0f0);
-  color: var(--color-body, #333);
-  border: 1px solid var(--color-hairline, #e0e0e0);
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-2px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.routing-start { border-color: #93c5fd; background: #eff6ff; }
-.routing-decision { border-color: #86efac; background: #f0fdf4; }
-.routing-fallback { border-color: #fde68a; background: #fffbeb; }
-.collaboration-start { border-color: #c4b5fd; background: #f5f3ff; }
-.sub-task-start { border-color: #93c5fd; background: #f0f9ff; }
-.sub-task-complete { border-color: #86efac; background: #f0fdf4; }
-.sub-task-fail { border-color: #fca5a5; background: #fef2f2; }
-.aggregation-complete { border-color: #86efac; background: #f0fdf4; }
-.vote-round { border-color: #c4b5fd; background: #faf5ff; }
-.consensus-reached { border-color: #86efac; background: #f0fdf4; }
-.consensus-failed { border-color: #fde68a; background: #fffbeb; }
-.subagent-lifecycle { border-color: #93c5fd; background: #f0f9ff; }
-.routing-other { border-color: var(--color-hairline); background: var(--color-surface-soft); }
-
-.routing-confidence { font-size: 10px; color: var(--color-muted, #888); text-transform: uppercase; }
-
-.agent-tag {
-  display: inline-block; padding: 0 4px; border-radius: 3px;
-  background: var(--color-primary, #6C63FF); color: white;
-  font-size: 10px; font-weight: 500;
-}
 </style>
 
 <style>
