@@ -83,78 +83,9 @@ import {
 } from 'lucide-vue-next'
 import { getAgentCard } from '@/api/protocol'
 import { useAgentStore } from '@/stores/agent'
+import type { AgentSummary } from '@/api/agent'
 import type { AgentCard, AgentCapability } from '@/types'
 import { AgentCapability as CapEnum } from '@/types'
-
-// ---- 硬编码示例Agent ----
-/** 示例Agent的本地数据结构，用于页面展示和拓扑图渲染 */
-interface SampleAgent {
-  agentId: string
-  name: string
-  description: string
-  capabilities: AgentCapability[]
-  url: string
-  version: string
-  status: 'online' | 'offline' | 'unknown'
-}
-
-/** 6个预配置的微服务代理：Orchestrator + 5个外围服务 */
-const sampleAgents: SampleAgent[] = [
-  {
-    agentId: 'orchestrator-01',
-    name: 'Orchestrator',
-    description: '主调度代理',
-    capabilities: [CapEnum.TEXT_GEN, CapEnum.TOOL_USE, CapEnum.PLANNING],
-    url: 'http://localhost:8081',
-    version: '1.0.0',
-    status: 'online',
-  },
-  {
-    agentId: 'memory-agent',
-    name: 'Memory Agent',
-    description: '记忆管理代理',
-    capabilities: [CapEnum.MEMORY_MANAGEMENT, CapEnum.RAG],
-    url: 'http://localhost:8082',
-    version: '1.0.0',
-    status: 'online',
-  },
-  {
-    agentId: 'plan-agent',
-    name: 'Plan Agent',
-    description: '任务规划代理',
-    capabilities: [CapEnum.PLANNING, CapEnum.TEXT_GEN],
-    url: 'http://localhost:8083',
-    version: '1.0.0',
-    status: 'online',
-  },
-  {
-    agentId: 'action-agent',
-    name: 'Action Agent',
-    description: '工具执行代理',
-    capabilities: [CapEnum.TOOL_USE, CapEnum.CODE_EXEC],
-    url: 'http://localhost:8084',
-    version: '1.0.0',
-    status: 'online',
-  },
-  {
-    agentId: 'reflect-agent',
-    name: 'Reflect Agent',
-    description: '反思评估代理',
-    capabilities: [CapEnum.REFLECTION, CapEnum.TEXT_GEN],
-    url: 'http://localhost:8085',
-    version: '1.0.0',
-    status: 'offline',
-  },
-  {
-    agentId: 'protocol-agent',
-    name: 'Protocol Agent',
-    description: '协议网关代理',
-    capabilities: [CapEnum.TEXT_GEN, CapEnum.TOOL_USE],
-    url: 'http://localhost:8086',
-    version: '1.0.0',
-    status: 'online',
-  },
-]
 
 /** 8种Agent能力的元数据：值、标签、中文描述、图标标识 */
 const capabilityInfo: { value: AgentCapability; label: string; description: string; icon: string }[] = [
@@ -188,28 +119,6 @@ const hoveredAgent = ref<string | null>(null)
  * @param status Agent状态字符串
  * @returns CSS颜色变量或颜色值
  */
-function statusColor(status: string): string {
-  switch (status) {
-    case 'online': return 'var(--color-success)'
-    case 'offline': return 'var(--color-error)'
-    default: return 'var(--color-muted-soft)'
-  }
-}
-
-/**
- * Agent状态中文文本映射。
- *
- * @param status Agent状态字符串
- * @returns 中文状态描述
- */
-function statusLabel(status: string): string {
-  switch (status) {
-    case 'online': return '在线'
-    case 'offline': return '离线'
-    default: return '未知'
-  }
-}
-
 /**
  * 获取能力对应的图标标识字符串。
  * 从capabilityInfo中查找匹配的capability记录并返回其icon字段。
@@ -247,7 +156,8 @@ function agentPosition(index: number, total: number): { x: number; y: number } {
 }
 
 /** 排除中央Orchestrator后的外围Agent列表（用于拓扑图布局） */
-const perimeterAgents = computed(() => sampleAgents.filter(a => a.agentId !== 'orchestrator-01'))
+const displayAgents = computed(() => agentStore.agents.length > 0 ? agentStore.agents : [])
+const perimeterAgents = computed(() => displayAgents.value.filter(a => a.agentId !== 'chat'))
 
 /**
  * 外围Agent位置数组：将每个Agent映射为其在SVG圆形布局中的坐标。
@@ -305,6 +215,7 @@ async function handleDiscover() {
 }
 
 const agentStore = useAgentStore()
+onMounted(() => agentStore.fetchAgents())
 
 onMounted(() => {
   // 从后端加载真实Agent列表
@@ -328,14 +239,14 @@ onMounted(() => {
       <h2 class="section-title">
         <Network :size="20" />
         Agent 状态
-        <span class="agent-count">{{ sampleAgents.length }}</span>
+        <span class="agent-count">{{ displayAgents.length }}</span>
       </h2>
       <div class="agents-grid">
         <article
-          v-for="agent in sampleAgents"
+          v-for="agent in displayAgents"
           :key="agent.agentId"
           class="agent-card-dark"
-          :class="{ offline: agent.status === 'offline' }"
+          :class="{ offline: agent.health === 'DOWN' }"
         >
           <div class="agent-card-top">
             <div class="agent-identity">
@@ -347,7 +258,7 @@ onMounted(() => {
                 <span class="agent-id">{{ agent.agentId }}</span>
               </div>
             </div>
-            <div class="agent-status-dot" :style="{ background: statusColor(agent.status) }" />
+            <div class="agent-status-dot" :style="{ background: agent.health === 'UP' ? '#22c55e' : agent.health === 'DEGRADED' ? '#eab308' : '#ef4444' }" />
           </div>
 
           <p class="agent-desc">{{ agent.description }}</p>
@@ -364,10 +275,10 @@ onMounted(() => {
 
           <div class="agent-card-footer">
             <div class="agent-meta">
-              <span class="agent-version">v{{ agent.version }}</span>
-              <span class="agent-status-text">{{ statusLabel(agent.status) }}</span>
+              <span class="agent-version">{{ agent.model || 'default' }}</span>
+              <span class="agent-status-text">{{ agent.state }} | {{ agent.health }}</span>
             </div>
-            <span class="agent-url" :title="agent.url">{{ agent.url }}</span>
+            <span class="agent-url" :title="agent.agentId">{{ agent.agentId }}</span>
           </div>
         </article>
       </div>
@@ -415,12 +326,12 @@ onMounted(() => {
               r="28"
               class="agent-circle"
               :class="{
-                online: pos.status === 'online',
-                offline: pos.status === 'offline',
+                online: pos.health === 'UP' || pos.health === 'DEGRADED',
+                offline: pos.health === 'DOWN',
               }"
             />
             <text :x="pos.x" :y="pos.y + 4" text-anchor="middle" class="agent-circle-text">
-              {{ pos.name.slice(0, 3) }}
+              {{ (pos.name || pos.agentId).slice(0, 3) }}
             </text>
           </g>
         </svg>
@@ -428,7 +339,7 @@ onMounted(() => {
         <!-- 拓扑图图例列表 -->
         <div class="graph-legend">
           <div
-            v-for="agent in sampleAgents"
+            v-for="agent in displayAgents"
             :key="agent.agentId"
             class="graph-legend-item"
             @mouseenter="hoveredAgent = agent.agentId"
@@ -436,11 +347,11 @@ onMounted(() => {
           >
             <div
               class="legend-dot"
-              :style="{ background: agent.agentId === 'orchestrator-01' ? 'var(--color-primary)' : statusColor(agent.status) }"
+              :style="{ background: agent.agentId === 'chat' ? 'var(--color-primary)' : (agent.health === 'UP' ? '#22c55e' : '#ef4444') }"
             />
-            <span class="legend-name">{{ agent.name }}</span>
+            <span class="legend-name">{{ agent.name || agent.agentId }}</span>
             <ArrowRight :size="12" class="legend-arrow" />
-            <span class="legend-role">{{ agent.description }}</span>
+            <span class="legend-role">{{ agent.description || agent.model || '-' }}</span>
           </div>
         </div>
       </div>
