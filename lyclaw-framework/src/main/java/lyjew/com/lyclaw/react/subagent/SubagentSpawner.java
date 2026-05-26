@@ -11,7 +11,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.config.AgentConfigResolver;
 import lyjew.com.lyclaw.model.ChatRequest;
@@ -327,7 +326,8 @@ public class SubagentSpawner {
                     if (progressEmitter != null && evtType != null) {
                         String json = buildSubagentEventJson(targetAgentId, event);
                         progressEmitter.accept(
-                                ServerSentEvent.<String>builder().event("subagent_progress").data(json).build());
+                                lyjew.com.lyclaw.react.sse.SseEventFactory.subagentProgress(
+                                        targetAgentId, evtType, json));
                         progressCount[0]++;
                     }
                     if ("message".equals(evtType) && evtData != null) {
@@ -353,7 +353,8 @@ public class SubagentSpawner {
             map.put("agentId", agentId);
             map.put("type", event.event());
             map.put("data", event.data());
-            return new ObjectMapper().writeValueAsString(map);
+            return lyjew.com.lyclaw.react.sse.SseEventFactory.getObjectMapper()
+                    .writeValueAsString(map);
         } catch (Exception e) {
             return "{\"agentId\":\"" + agentId + "\",\"type\":\"unknown\"}";
         }

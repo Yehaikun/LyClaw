@@ -9,6 +9,7 @@ import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ModelResponse;
 import lyjew.com.lyclaw.model.ToolCall;
+import lyjew.com.lyclaw.react.sse.SseEventFactory;
 
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
@@ -378,9 +379,8 @@ public class DefaultReActEngine implements ReActEngine {
                                 request.getSessionId(), request.getAgentId());
                     }
                     log.info("[ReAct流式] 直接执行工具（无需审批）: {} | toolCallId={}", req.getName(), req.getId());
-                    String execJson = toolCallEventJson(req.getId(), req.getName(),
-                            "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
-                    ServerSentEvent<String> execEvent = sseEvent("tool_call", execJson);
+                    ServerSentEvent<String> execEvent = SseEventFactory.toolCallExecuting(
+                            req.getId(), req.getName(), "正在执行 " + req.getName() + "...", toolArgs);
 
                     String busKey = request.getSessionId() + ":" + req.getId();
                     log.info("ProgressBus CREATED | key={}", busKey);
@@ -407,11 +407,11 @@ public class DefaultReActEngine implements ReActEngine {
                             success = false;
                         }
                         messages.add(Message.tool(req.getId(), output));
-                        String doneJson = toolCallEventJson(req.getId(), req.getName(),
-                                "done", req.getName() + " 完成", toolArgs, output, success);
                         log.info("{} [ReAct流式] 工具执行完成: {} | 成功={}",
                                 success ? "[OK]" : "[FAIL]", req.getName(), success);
-                        return sseEvent("tool_call", doneJson);
+                        return SseEventFactory.toolCallDone(
+                                req.getId(), req.getName(), req.getName() + " 完成",
+                                toolArgs, output, success);
                     }).subscribeOn(Schedulers.boundedElastic());
 
                     return Flux.merge(
@@ -444,11 +444,12 @@ public class DefaultReActEngine implements ReActEngine {
         log.info("[ReAct流式] 创建审批请求: toolCallId={} | 待审批数={} | toolName={}",
                 req.getId(), pendingApprovals.size(), req.getName());
 
-        String approvalJson = toolApprovalEventJson(req.getId(), req.getName(), toolArgs);
-        ServerSentEvent<String> approvalEvent = sseEvent("tool_approval", approvalJson);
+        ServerSentEvent<String> approvalEvent = SseEventFactory.toolApproval(
+                req.getId(), req.getName(), toolArgs,
+                "AI 请求执行 " + req.getName());
 
-        String execJson = toolCallEventJson(req.getId(), req.getName(),
-                "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
+        ServerSentEvent<String> execEvent = SseEventFactory.toolCallExecuting(
+                req.getId(), req.getName(), "正在执行 " + req.getName() + "...", toolArgs);
 
         Mono<ServerSentEvent<String>> doneEvent = Mono.fromCallable(() -> {
             boolean approved;
@@ -476,12 +477,12 @@ public class DefaultReActEngine implements ReActEngine {
                 success = false;
             }
             messages.add(Message.tool(req.getId(), output));
-            String doneJson = toolCallEventJson(req.getId(), req.getName(),
-                    "done", req.getName() + " 完成", toolArgs, output, success);
-            return sseEvent("tool_call", doneJson);
+            return SseEventFactory.toolCallDone(
+                    req.getId(), req.getName(), req.getName() + " 完成",
+                    toolArgs, output, success);
         }).subscribeOn(Schedulers.boundedElastic());
 
-        return Flux.just(approvalEvent, sseEvent("tool_call", execJson)).concatWith(doneEvent);
+        return Flux.just(approvalEvent, execEvent).concatWith(doneEvent);
     }
 
     /** 构建 tool_approval SSE 事件的 JSON */
