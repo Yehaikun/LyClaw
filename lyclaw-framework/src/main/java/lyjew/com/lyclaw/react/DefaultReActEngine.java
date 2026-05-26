@@ -194,27 +194,28 @@ public class DefaultReActEngine implements ReActEngine {
                     round + 1, response.getToolCalls().size(),
                     response.getToolCalls().stream().map(ModelResponse.ToolCallRequest::getName).toList());
 
-            // 追加 assistant 消息（含工具调用列表）
+            // 追加 assistant 消息（含工具调用列表，ID 已去重）
             messages.add(Message.builder()
                     .role("assistant")
                     .content(response.getContent() != null ? response.getContent() : "")
                     .thinking(response.getThinking() != null ? response.getThinking() : "")
-                    .toolCalls(toMessageToolCalls(response))
+                    .toolCalls(toMessageToolCalls(response, request))
                     .build());
 
-            // 执行每个工具调用，追加 tool 消息
+            // 执行每个工具调用，追加 tool 消息（使用去重后的 ID）
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
-                log.info("[ReAct引擎] 执行工具: {} | toolCallId={}", req.getName(), req.getId());
+                String actualId = getDedupedId(request, req.getId());
+                log.info("[ReAct引擎] 执行工具: {} | toolCallId={}", req.getName(), actualId);
                 try {
                     String toolOutput = toolExecutor.execute(
-                            req.getName(), req.getId(),
+                            req.getName(), actualId,
                             req.getArguments() != null ? req.getArguments() : "{}");
-                    messages.add(Message.tool(req.getId(), toolOutput));
+                    messages.add(Message.tool(actualId, toolOutput));
                     log.info("[OK] [ReAct引擎] 工具执行完成: {} | 输出长度={}", req.getName(),
                             toolOutput != null ? toolOutput.length() : 0);
                 } catch (Exception e) {
                     log.error("[FAIL] [ReAct引擎] 工具执行异常: name={} error={}", req.getName(), e.getMessage(), e);
-                    messages.add(Message.tool(req.getId(), "工具错误: " + e.getMessage()));
+                    messages.add(Message.tool(actualId, "工具错误: " + e.getMessage()));
                 }
             }
         }
@@ -362,7 +363,7 @@ public class DefaultReActEngine implements ReActEngine {
                 .role("assistant")
                 .content(content)
                 .thinking(firstResponse.getThinking() != null ? firstResponse.getThinking() : "")
-                .toolCalls(toMessageToolCalls(firstResponse))
+                .toolCalls(toMessageToolCalls(firstResponse, request))
                 .build());
 
         return textFlux
@@ -382,7 +383,7 @@ public class DefaultReActEngine implements ReActEngine {
                     String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
                     if (approvalRequired.contains(req.getName())) {
                         return emitApprovalFlow(req, toolExecutor, messages, toolArgs,
-                                request.getSessionId(), request.getAgentId());
+                                request.getSessionId(), request.getAgentId(), request);
                     }
                     log.info("[ReAct流式] 直接执行工具（无需审批）: {} | toolCallId={}", req.getName(), req.getId());
                     ServerSentEvent<String> execEvent = SseEventFactory.toolCallExecuting(
@@ -405,18 +406,18 @@ public class DefaultReActEngine implements ReActEngine {
                         String output;
                         boolean success;
                         try {
-                            output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                            output = toolExecutor.execute(req.getName(), getDedupedId(request, req.getId()), toolArgs);
                             success = true;
                         } catch (Exception e) {
                             log.error("[FAIL] [ReAct流式] 工具执行失败: name={}", req.getName(), e);
                             output = "工具错误: " + e.getMessage();
                             success = false;
                         }
-                        messages.add(Message.tool(req.getId(), output));
+                        messages.add(Message.tool(getDedupedId(request, req.getId()), output));
                         log.info("{} [ReAct流式] 工具执行完成: {} | 成功={}",
                                 success ? "[OK]" : "[FAIL]", req.getName(), success);
                         return SseEventFactory.toolCallDone(
-                                req.getId(), req.getName(), req.getName() + " 完成",
+                                getDedupedId(request, req.getId()), req.getName(), req.getName() + " 完成",
                                 toolArgs, output, success);
                     }).subscribeOn(Schedulers.boundedElastic());
 
@@ -437,7 +438,8 @@ public class DefaultReActEngine implements ReActEngine {
      *  approve()，导致匹配不到 pending future（竞态条件）。</p> */
     private Flux<ServerSentEvent<String>> emitApprovalFlow(
             ModelResponse.ToolCallRequest req, ToolExecutor toolExecutor,
-            List<Message> messages, String toolArgs, String sessionId, String agentId) {
+            List<Message> messages, String toolArgs, String sessionId, String agentId,
+            ChatRequest request) {
         // 必须在 Flux 返回前创建 future，消除竞态：保证前端 approve() 时 future 已就绪
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         pendingApprovals.put(req.getId(), future);
@@ -471,7 +473,7 @@ public class DefaultReActEngine implements ReActEngine {
             boolean success;
             if (approved) {
                 try {
-                    output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                    output = toolExecutor.execute(req.getName(), getDedupedId(request, req.getId()), toolArgs);
                     success = true;
                 } catch (Exception e) {
                     log.error("Tool execution failed: name={} error={}", req.getName(), e.getMessage(), e);
@@ -484,7 +486,7 @@ public class DefaultReActEngine implements ReActEngine {
             }
             messages.add(Message.tool(req.getId(), output));
             return SseEventFactory.toolCallDone(
-                    req.getId(), req.getName(), req.getName() + " 完成",
+                    getDedupedId(request, req.getId()), req.getName(), req.getName() + " 完成",
                     toolArgs, output, success);
         }).subscribeOn(Schedulers.boundedElastic());
 
@@ -582,7 +584,7 @@ public class DefaultReActEngine implements ReActEngine {
                                     .role("assistant")
                                     .content(textContent)
                                     .thinking(merged.getThinking() != null ? merged.getThinking() : "")
-                                    .toolCalls(toMessageToolCalls(merged))
+                                    .toolCalls(toMessageToolCalls(merged, request))
                                     .build());
 
                             return preTextFlux
@@ -660,12 +662,46 @@ public class DefaultReActEngine implements ReActEngine {
                 });
     }
 
-    /** 将 LLM 返回的 ToolCalls 转为 Message 的 ToolCall 列表。 */
-    private List<ToolCall> toMessageToolCalls(ModelResponse response) {
-        if (response.getToolCalls() == null) return List.of();
+    /**
+     * Generates unique tool_call_ids by appending a counter suffix.
+     * The mapping is stored in thread-safe ChatRequest.extras so both
+     * toMessageToolCalls and tool execution (on any thread) can use the SAME ID.
+     */
+    private static final java.util.concurrent.atomic.AtomicLong TOOL_ID_GEN =
+            new java.util.concurrent.atomic.AtomicLong(0);
+
+    private static final String TOOL_ID_MAP_KEY = "_tid_map";
+
+    /** Store [original → deduped] mapping in ChatRequest extras. */
+    private static void putToolIdMap(ChatRequest req, java.util.Map<String, String> map) {
+        if (req != null) req.getExtras().put(TOOL_ID_MAP_KEY, map);
+    }
+
+    /** Lookup deduped ID from ChatRequest extras. Returns original if no mapping. */
+    private static String getDedupedId(ChatRequest req, String originalId) {
+        if (req == null || originalId == null) return originalId;
+        Object o = req.getExtras().get(TOOL_ID_MAP_KEY);
+        if (o instanceof java.util.Map) {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> map = (java.util.Map<String, String>) o;
+            String d = map.get(originalId);
+            return d != null ? d : originalId;
+        }
+        return originalId;
+    }
+
+    /** 将 LLM 返回的 ToolCalls 转为 Message ToolCalls，ID 追加唯一后缀。 */
+    private List<ToolCall> toMessageToolCalls(ModelResponse response, ChatRequest request) {
+        if (response.getToolCalls() == null || response.getToolCalls().isEmpty()) return List.of();
+        long batch = TOOL_ID_GEN.incrementAndGet();
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        for (var req : response.getToolCalls()) {
+            map.put(req.getId(), req.getId() + "_g" + batch);
+        }
+        putToolIdMap(request, map);
         return response.getToolCalls().stream()
                 .<ToolCall>map(req -> ToolCall.builder()
-                        .toolCallId(req.getId())
+                        .toolCallId(map.get(req.getId()))
                         .name(req.getName())
                         .arguments(req.getArguments())
                         .build())
