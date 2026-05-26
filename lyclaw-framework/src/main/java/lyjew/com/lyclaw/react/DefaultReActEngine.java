@@ -194,7 +194,7 @@ public class DefaultReActEngine implements ReActEngine {
                     round + 1, response.getToolCalls().size(),
                     response.getToolCalls().stream().map(ModelResponse.ToolCallRequest::getName).toList());
 
-            // 追加 assistant 消息（含工具调用列表）
+            // 追加 assistant 消息（含工具调用列表，ID 已去重）
             messages.add(Message.builder()
                     .role("assistant")
                     .content(response.getContent() != null ? response.getContent() : "")
@@ -202,19 +202,20 @@ public class DefaultReActEngine implements ReActEngine {
                     .toolCalls(toMessageToolCalls(response))
                     .build());
 
-            // 执行每个工具调用，追加 tool 消息
+            // 执行每个工具调用，追加 tool 消息（使用去重后的 ID）
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
-                log.info("[ReAct引擎] 执行工具: {} | toolCallId={}", req.getName(), req.getId());
+                String dedupedId = dedupToolCallId(req.getId());
+                log.info("[ReAct引擎] 执行工具: {} | toolCallId={} (deduped={})", req.getName(), req.getId(), dedupedId);
                 try {
                     String toolOutput = toolExecutor.execute(
-                            req.getName(), req.getId(),
+                            req.getName(), dedupedId,
                             req.getArguments() != null ? req.getArguments() : "{}");
-                    messages.add(Message.tool(req.getId(), toolOutput));
+                    messages.add(Message.tool(dedupedId, toolOutput));
                     log.info("[OK] [ReAct引擎] 工具执行完成: {} | 输出长度={}", req.getName(),
                             toolOutput != null ? toolOutput.length() : 0);
                 } catch (Exception e) {
                     log.error("[FAIL] [ReAct引擎] 工具执行异常: name={} error={}", req.getName(), e.getMessage(), e);
-                    messages.add(Message.tool(req.getId(), "工具错误: " + e.getMessage()));
+                    messages.add(Message.tool(dedupedId, "工具错误: " + e.getMessage()));
                 }
             }
         }
@@ -392,8 +393,9 @@ public class DefaultReActEngine implements ReActEngine {
                     log.info("ProgressBus CREATED | key={}", busKey);
 
                     // Flux.create: tool executors call the emitter from any thread
+                    String dedupedIdForBus = dedupToolCallId(req.getId());
                     Flux<ServerSentEvent<String>> progressFlux = Flux.<ServerSentEvent<String>>create(sink -> {
-                        registerEmitter(request.getSessionId(), req.getId(), ev -> {
+                        registerEmitter(request.getSessionId(), dedupedIdForBus, ev -> {
                             sink.next(ev);
                             log.info("PROGRESS_EVENT_FWD | key={} | event={}", busKey, ev.event());
                         });
@@ -405,18 +407,18 @@ public class DefaultReActEngine implements ReActEngine {
                         String output;
                         boolean success;
                         try {
-                            output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
+                            output = toolExecutor.execute(req.getName(), dedupedIdForBus, toolArgs);
                             success = true;
                         } catch (Exception e) {
                             log.error("[FAIL] [ReAct流式] 工具执行失败: name={}", req.getName(), e);
                             output = "工具错误: " + e.getMessage();
                             success = false;
                         }
-                        messages.add(Message.tool(req.getId(), output));
+                        messages.add(Message.tool(dedupedIdForBus, output));
                         log.info("{} [ReAct流式] 工具执行完成: {} | 成功={}",
                                 success ? "[OK]" : "[FAIL]", req.getName(), success);
                         return SseEventFactory.toolCallDone(
-                                req.getId(), req.getName(), req.getName() + " 完成",
+                                dedupedIdForBus, req.getName(), req.getName() + " 完成",
                                 toolArgs, output, success);
                     }).subscribeOn(Schedulers.boundedElastic());
 
@@ -661,10 +663,64 @@ public class DefaultReActEngine implements ReActEngine {
     }
 
     /** 将 ModelResponse 的 toolCalls 转换为 Message 的 ToolCall 列表 */
+    private static final java.util.concurrent.atomic.AtomicLong toolCallIdCounter =
+            new java.util.concurrent.atomic.AtomicLong(0);
+
+    /**
+     * ThreadLocal counter for generating unique tool_call_id suffixes.
+     * Incremented per batch of tool calls to prevent DeepSeek API
+     * "Duplicate value for 'tool_call_id'" errors.
+     */
+    private static final ThreadLocal<String> TOOL_CALL_BATCH =
+            ThreadLocal.withInitial(() -> "");
+
+    /**
+     * Mark the start of a new tool-call batch and return a unique suffix
+     * that will be appended to every tool_call_id in this batch.
+     * Callers must use the SAME suffix in both the assistant tool_calls
+     * array and the subsequent tool result messages.
+     */
+    private static String startToolCallBatch() {
+        String suffix = "_" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        TOOL_CALL_BATCH.set(suffix);
+        return suffix;
+    }
+
+    /**
+     * Get the current batch suffix.
+     * Returns empty string if no batch is active (no dedup needed).
+     */
+    private static String currentToolCallSuffix() {
+        String s = TOOL_CALL_BATCH.get();
+        return s != null ? s : "";
+    }
+
+    /**
+     * End the current tool-call batch (clear ThreadLocal).
+     */
+    private static void endToolCallBatch() {
+        TOOL_CALL_BATCH.remove();
+    }
+
+    /** Dedup a single tool_call_id by appending the current batch suffix. */
+    private static String dedupToolCallId(String originalId) {
+        String suffix = currentToolCallSuffix();
+        if (suffix.isEmpty() || originalId == null) return originalId;
+        return originalId + suffix;
+    }
+
+    /** 将 LLM 返回的 ToolCalls 转为 Message ToolCalls，
+     *  每个 ID 追加唯一后缀，防止 DeepSeek "Duplicate tool_call_id"。 */
     private List<ToolCall> toMessageToolCalls(ModelResponse response) {
+        if (response.getToolCalls() == null) return List.of();
+        String suffix = currentToolCallSuffix();
+        if (suffix.isEmpty()) {
+            suffix = startToolCallBatch();
+        }
+        final String batchSuffix = suffix;
         return response.getToolCalls().stream()
                 .<ToolCall>map(req -> ToolCall.builder()
-                        .toolCallId(req.getId())
+                        .toolCallId(req.getId() + batchSuffix)
                         .name(req.getName())
                         .arguments(req.getArguments())
                         .build())
