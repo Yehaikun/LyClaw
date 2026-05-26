@@ -5,8 +5,11 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -201,10 +204,28 @@ public class AgentInvocationHandler implements InvocationHandler {
             log.info("解析到的供应商: {}", resolvedConfig.getProvider());
         }
 
-        // TODO: Phase 2 - wire delegate_to_agent tool via DelegateToAgentToolProvider
-        // into toolRegistry so that tool definitions include delegate_to_agent.
-        // The tool registry should be populated with delegate_to_agent when
-        // resolvedConfig.getDelegationMode() is not "none" and allowAgents is non-empty.
+        // Phase 1: per-Agent delegation control — pass delegation config to ToolProvider
+        // via request extras. DelegateToAgentToolProvider checks these when providing tools.
+        String delegationMode = resolvedConfig.getDelegationMode();
+        List<String> allowAgents = resolvedConfig.getAllowAgents();
+
+        if (!"none".equals(delegationMode)
+                && allowAgents != null && !allowAgents.isEmpty()
+                && toolRegistry != null) {
+            Map<String, Object> delConfig = new HashMap<>();
+            delConfig.put("delegationMode", delegationMode);
+            delConfig.put("allowAgents", new ArrayList<>(allowAgents));
+            delConfig.put("maxSpawnDepth", resolvedConfig.getMaxSpawnDepth());
+            delConfig.put("maxChildrenPerAgent", resolvedConfig.getMaxChildrenPerAgent());
+            delConfig.put("agentId", resolvedConfig.getAgentId());
+            request.getExtras().put("agent.delegation", delConfig);
+            log.info("per-Agent delegation enabled: mode={}, allowAgents={}, agentId={}",
+                    delegationMode, allowAgents, resolvedConfig.getAgentId());
+        } else {
+            request.getExtras().put("agent.delegation", Collections.emptyMap());
+            log.info("per-Agent delegation disabled for agent: {} (mode={}, allowAgents={})",
+                    resolvedConfig.getAgentId(), delegationMode, allowAgents);
+        }
 
         // 0. beforeAgentRun hook dispatch (with fully prepared context)
         log.info("[AgentInvocationHandler] 派发 beforeAgentRun 钩子...");

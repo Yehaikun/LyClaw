@@ -93,6 +93,22 @@ public class DelegateToAgentToolProvider implements ToolProvider {
             return result;
         }
 
+        // Phase 1: per-Agent delegation control — check config from request extras
+        // The AgentInvocationHandler sets "agent.delegation" on ChatRequest.extras
+        Map<String, Object> delConfig = getDelegationConfig(request.getChatRequest());
+        if (delConfig == null || delConfig.isEmpty()) {
+            return result;
+        }
+        String mode = (String) delConfig.getOrDefault("delegationMode", "none");
+        if ("none".equals(mode)) {
+            return result;
+        }
+        @SuppressWarnings("unchecked")
+        List<String> allowAgents = (List<String>) delConfig.get("allowAgents");
+        if (allowAgents == null || allowAgents.isEmpty()) {
+            return result;
+        }
+
         ToolDefinition definition = getOrBuildDefinition(request.getChatRequest());
         if (definition != null) {
             // Extract the AgentContext from request attributes for use in execution
@@ -395,5 +411,24 @@ public class DelegateToAgentToolProvider implements ToolProvider {
             return s;
         }
         return null;
+    }
+
+    /**
+     * Retrieves per-Agent delegation configuration from the ChatRequest extras.
+     * Set by AgentInvocationHandler based on @Agent annotation or YAML config.
+     *
+     * @param request the chat request containing extras
+     * @return delegation config map, or empty map if not configured
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getDelegationConfig(ChatRequest request) {
+        if (request == null) return Collections.emptyMap();
+        Map<String, Object> extras = request.getExtras();
+        if (extras == null || extras.isEmpty()) return Collections.emptyMap();
+        Object config = extras.get("agent.delegation");
+        if (config instanceof Map) {
+            return (Map<String, Object>) config;
+        }
+        return Collections.emptyMap();
     }
 }

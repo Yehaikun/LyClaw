@@ -54,4 +54,47 @@ public final class SseEventTypes {
     public static final String REFLECT_STEP = "reflect_step";
     /** 流式错误通知，前端收到后停止spinner并显示错误信息 */
     public static final String ERROR = "error";
+
+    // ========== Phase 1: Agent 注册发现事件 ==========
+
+    /** Agent 注册完成 */
+    public static final String AGENT_REGISTERED = "agent_registered";
+    /** Agent 注销 */
+    public static final String AGENT_UNREGISTERED = "agent_unregistered";
+    /** Agent 状态变更 */
+    public static final String AGENT_STATE_CHANGED = "agent_state_changed";
+    /** Agent 健康状态变更 */
+    public static final String AGENT_HEALTH_CHANGED = "agent_health_changed";
+
+    // ========== Phase 2: Agent 路由事件 ==========
+
+    /** 路由开始 */
+    public static final String ROUTING_START = "routing_start";
+    /** 路由决策 */
+    public static final String ROUTING_DECISION = "routing_decision";
+    /** 路由降级（无匹配） */
+    public static final String ROUTING_FALLBACK = "routing_fallback";
+
+    // ========== Phase 3: Agent 协作事件 ==========
+
+    /** 协作开始 */
+    public static final String COLLABORATION_START = "collaboration_start";
+    /** 任务分解完成 */
+    public static final String TASK_DECOMPOSED = "task_decomposed";
+    /** 子任务开始 */
+    public static final String SUB_TASK_START = "sub_task_start";
+    /** 子任务完成 */
+    public static final String SUB_TASK_COMPLETE = "sub_task_complete";
+    /** 子任务失败 */
+    public static final String SUB_TASK_FAIL = "sub_task_fail";
+    /** 投票轮次 */
+    public static final String VOTE_ROUND = "vote_round";
+    /** 辩论轮次 */
+    public static final String DEBATE_ROUND = "debate_round";
+    /** 达成共识 */
+    public static final String CONSENSUS_REACHED = "consensus_reached";
+    /** 未达成共识 */
+    public static final String CONSENSUS_FAILED = "consensus_failed";
+    /** 聚合完成 */
+    public static final String AGGREGATION_COMPLETE = "aggregation_complete";
 }

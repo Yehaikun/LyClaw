@@ -2,6 +2,9 @@ package lyjew.com.lyclaw.agent;
 
 import java.util.Map;
 
+import lombok.Builder;
+import lombok.Data;
+
 /**
  * 代理任务，封装了分配给代理执行的一次工作单元。
  *
@@ -27,15 +30,7 @@ public class AgentTask {
     /** 任务的扩展元数据，键值对形式 */
     private final Map<String, Object> metadata;
 
-    /**
-     * 构造一个不可变的代理任务。
-     *
-     * @param taskId   任务唯一标识
-     * @param type     任务类型
-     * @param target   操作目标
-     * @param payload  任务负载
-     * @param metadata 扩展元数据
-     */
+    @Builder
     public AgentTask(String taskId, String type, String target,
                      String payload, Map<String, Object> metadata) {
         this.taskId = taskId;

@@ -61,6 +61,9 @@ public class AgentDeclaration {
     // ── 技能 ──
     private List<String> skills = new ArrayList<>();
 
+    // ── 能力 ──
+    private List<String> capabilities = new ArrayList<>();
+
     // ── 委托 ──
     private String delegationMode = "suggest";
     private List<String> allowAgents = new ArrayList<>();
@@ -134,6 +137,9 @@ public class AgentDeclaration {
 
     public List<String> getSkills() { return skills; }
     public void setSkills(List<String> skills) { this.skills = skills; }
+
+    public List<String> getCapabilities() { return capabilities; }
+    public void setCapabilities(List<String> capabilities) { this.capabilities = capabilities; }
 
     public String getDelegationMode() { return delegationMode; }
     public void setDelegationMode(String delegationMode) { this.delegationMode = delegationMode; }

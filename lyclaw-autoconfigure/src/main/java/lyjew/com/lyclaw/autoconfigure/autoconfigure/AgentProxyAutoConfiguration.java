@@ -5,10 +5,12 @@ import java.util.List;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 import lyjew.com.lyclaw.autoconfigure.processor.AgentInterfaceProcessor;
 import lyjew.com.lyclaw.autoconfigure.config.LyClawConfigurationProperties;
@@ -176,5 +178,63 @@ public class AgentProxyAutoConfiguration {
             SubagentSpawner spawner,
             AgentDefaultsConfig defaults) {
         return new DelegateToAgentToolProvider(spawner, defaults.isSubagentEnabled());
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Phase 1: Agent Registry beans (from lyclaw-action)
+    // ══════════════════════════════════════════════════════════════
+
+    @Configuration
+    @ConditionalOnClass(name = "lyjew.com.lyclaw.action.agent.DefaultAgentRegistry")
+    static class AgentRegistryConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(name = "defaultAgentRegistry")
+        public lyjew.com.lyclaw.agent.AgentRegistry defaultAgentRegistry() {
+            try {
+                Class<?> clazz = Class.forName("lyjew.com.lyclaw.action.agent.DefaultAgentRegistry");
+                return (lyjew.com.lyclaw.agent.AgentRegistry) clazz.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create DefaultAgentRegistry", e);
+            }
+        }
+
+        @Bean
+        @ConditionalOnMissingBean(name = "agentLifecycleImpl")
+        @ConditionalOnBean(name = "defaultAgentRegistry")
+        public lyjew.com.lyclaw.agent.AgentLifecycle agentLifecycleImpl(
+                lyjew.com.lyclaw.agent.AgentRegistry registry) {
+            try {
+                Class<?> registryClass = Class.forName("lyjew.com.lyclaw.action.agent.DefaultAgentRegistry");
+                Class<?> lifecycleClass = Class.forName("lyjew.com.lyclaw.action.agent.AgentLifecycleImpl");
+                return (lyjew.com.lyclaw.agent.AgentLifecycle)
+                        lifecycleClass.getDeclaredConstructor(registryClass).newInstance(registry);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create AgentLifecycleImpl", e);
+            }
+        }
+
+        @Bean
+        @ConditionalOnMissingBean(name = "agentScanner")
+        @ConditionalOnBean(name = "defaultAgentRegistry")
+        public Object agentScanner(
+                lyjew.com.lyclaw.agent.AgentRegistry registry,
+                org.springframework.context.ApplicationContext appCtx,
+                AgentConfigResolver configResolver,
+                YamlAgentConfigSource yamlConfigSource,
+                LyClawConfigurationProperties lyClawConfig) {
+            try {
+                Class<?> scannerClass = Class.forName("lyjew.com.lyclaw.action.agent.AgentScanner");
+                return scannerClass.getDeclaredConstructor(
+                        Class.forName("lyjew.com.lyclaw.action.agent.DefaultAgentRegistry"),
+                        org.springframework.context.ApplicationContext.class,
+                        AgentConfigResolver.class,
+                        YamlAgentConfigSource.class,
+                        LyClawConfigurationProperties.class)
+                        .newInstance(registry, appCtx, configResolver, yamlConfigSource, lyClawConfig);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to create AgentScanner", e);
+            }
+        }
     }
 }

@@ -1,25 +1,13 @@
 package lyjew.com.lyclaw.agent;
 
-/**
- * 代理状态枚举，定义代理在其生命周期中可能处于的各种状态。
- *
- * 状态机路径如下：代理创建后处于 IDLE（空闲），收到任务后转为 RUNNING
- * （运行中），若需要等待外部资源或其它代理的结果则进入 WAITING（等待），
- * 任务正常结束进入 COMPLETED（已完成），异常终止进入 FAILED（失败），
- * 被外部取消进入 CANCELLED（已取消）。协调器和生命周期管理器根据当前
- * 状态决定下一步操作，例如只有 IDLE 状态的代理可以被分配新任务。
- */
 public enum AgentState {
-    /** 空闲：代理已创建，未在执行任何任务 */
     IDLE,
-    /** 运行中：代理正在执行任务 */
     RUNNING,
-    /** 等待中：代理暂停执行，等待外部资源或其它代理的响应 */
     WAITING,
-    /** 已完成：代理的任务正常完成 */
     COMPLETED,
-    /** 失败：代理的任务异常终止 */
     FAILED,
-    /** 已取消：代理的任务被外部取消 */
-    CANCELLED
+    CANCELLED,
+    PAUSED,
+    DEGRADED,
+    UNREGISTERED
 }
