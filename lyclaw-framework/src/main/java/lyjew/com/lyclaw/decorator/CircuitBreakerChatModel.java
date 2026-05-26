@@ -86,6 +86,20 @@ public class CircuitBreakerChatModel implements ChatModel {
         this.halfOpenMaxRequests = config.halfOpenMaxRequests();
     }
 
+    /**
+     * 使用编程方式指定参数构造熔断装饰器，适用于非 Spring 编程式配置场景。
+     *
+     * @param delegate           被装饰的底层 ChatModel 实例
+     * @param failureThreshold   连续失败次数阈值，达到后触发熔断
+     * @param halfOpenAfterMs    熔断后等待毫秒数，之后进入半开探测状态
+     */
+    public CircuitBreakerChatModel(ChatModel delegate, int failureThreshold, long halfOpenAfterMs) {
+        this.delegate = delegate;
+        this.failureThreshold = failureThreshold;
+        this.halfOpenAfterMs = halfOpenAfterMs;
+        this.halfOpenMaxRequests = 3;
+    }
+
     @Override
     public String provider() {
         return delegate.provider();

@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import lyjew.com.lyclaw.context.ChatContext;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.security.SandboxLevel;
@@ -56,6 +57,9 @@ public class AgentContext {
     private final AtomicLong respondStartMs = new AtomicLong();
     private final AtomicBoolean terminated = new AtomicBoolean(false);
     private final AtomicReference<String> currentStage = new AtomicReference<>("init");
+
+    // ========== 关联的 ChatContext（可选） ==========
+    private ChatContext chatContext;
 
     // ========== 扩展属性 ==========
     private final Map<String, Object> attributes = new HashMap<>();
@@ -155,6 +159,11 @@ public class AgentContext {
     public void setTerminated(boolean value) { terminated.set(value); }
 
     public AtomicReference<String> getCurrentStage() { return currentStage; }
+
+    // ========== ChatContext 关联 ==========
+
+    public ChatContext getChatContext() { return chatContext; }
+    public void setChatContext(ChatContext chatContext) { this.chatContext = chatContext; }
 
     // ========== 扩展属性 ==========
 

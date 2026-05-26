@@ -36,7 +36,9 @@ public class SecurityCheckStage extends PipelineStageBase {
         this.metricsCollector = metricsCollector;
     }
 
-    private static ChatContext buildChatContext(AgentContext ctx) {
+    private static ChatContext resolveChatContext(AgentContext ctx) {
+        ChatContext cc = ctx.getChatContext();
+        if (cc != null) return cc;
         Session session = new Session();
         session.setSessionId(ctx.getSessionId());
         List<Message> messages = ctx.getChatRequest() != null && ctx.getChatRequest().getMessages() != null
@@ -68,7 +70,7 @@ public class SecurityCheckStage extends PipelineStageBase {
 
                 if (securityManager != null) {
                     log.info("[安全检查] 执行安全审批 | action=EXECUTE_CHAT");
-                    var approvalResult = securityManager.approve(buildChatContext(ctx), "EXECUTE_CHAT");
+                    var approvalResult = securityManager.approve(resolveChatContext(ctx), "EXECUTE_CHAT");
                     if (!approvalResult.isApproved()) {
                         String reason = approvalResult.getReason();
                         log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
@@ -94,7 +96,7 @@ public class SecurityCheckStage extends PipelineStageBase {
                 if (contentFilter != null) {
                     log.info("[安全检查] 执行内容过滤 | 原始消息长度={}",
                             ctx.getUserMessage() != null ? ctx.getUserMessage().length() : 0);
-                    FilterResult filterResult = contentFilter.filter(ctx.getUserMessage(), buildChatContext(ctx));
+                    FilterResult filterResult = contentFilter.filter(ctx.getUserMessage(), resolveChatContext(ctx));
                     if (!filterResult.isPassed()) {
                         String reason = filterResult.getReason();
                         log.warn(logJson("WARN", "stage_blocked", "INTERCEPT", traceId,
