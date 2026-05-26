@@ -379,6 +379,15 @@ function handleStop() {
   chatStore.stopGeneration()
 }
 
+/** 解析 SSE 事件 JSON 数据，异常安全 */
+function parseEventData(data: string): Record<string, unknown> {
+  try {
+    return JSON.parse(data)
+  } catch {
+    return {}
+  }
+}
+
 /** 重试最后一条失败的消息：用户点击错误栏Retry按钮时触发 */
 function handleRetry() {
   chatStore.retry()
@@ -539,6 +548,92 @@ watch(
               :key="tc.toolCallId"
               :tool-call="tc"
             />
+          </div>
+
+          <!-- Agent 路由与协作事件：subagent_event SSE 事件驱动 -->
+          <div v-if="chatStore.subagentEvents.length > 0" class="subagent-events">
+            <div
+              v-for="(evt, idx) in chatStore.subagentEvents"
+              :key="idx"
+              class="subagent-event-item"
+            >
+              <template v-if="evt.event === 'routing_start'">
+                <div class="routing-badge routing-start">🔍 正在匹配合适的 Agent...</div>
+              </template>
+              <template v-else-if="evt.event === 'routing_decision'">
+                <div class="routing-badge routing-decision">
+                  <span class="routing-arrow">➡️</span>
+                  路由到 <strong>{{ parseEventData(evt.data).targetAgentId || 'unknown' }}</strong>
+                  <span class="routing-confidence" v-if="parseEventData(evt.data).confidence">
+                    ({{ parseEventData(evt.data).confidence }})
+                  </span>
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'routing_fallback'">
+                <div class="routing-badge routing-fallback">⚠️ 未找到匹配 Agent</div>
+              </template>
+              <template v-else-if="evt.event === 'collaboration_start'">
+                <div class="routing-badge collaboration-start">
+                  🤝 协作开始 ({{ parseEventData(evt.data).pattern || 'hierarchical' }})
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'task_decomposed'">
+                <div class="routing-badge task-decomposed">
+                  📋 任务分解: {{ parseEventData(evt.data).subTasks || '...' }} 个子任务
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'sub_task_start'">
+                <div class="routing-badge sub-task-start">
+                  ▶️ 子任务: {{ parseEventData(evt.data).description || '' }}
+                  <span class="agent-tag" v-if="parseEventData(evt.data).assignedAgent">
+                    @{{ parseEventData(evt.data).assignedAgent }}
+                  </span>
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'sub_task_complete'">
+                <div class="routing-badge sub-task-complete">
+                  ✅ 子任务完成: {{ parseEventData(evt.data).description || '' }}
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'sub_task_fail'">
+                <div class="routing-badge sub-task-fail">
+                  ❌ 子任务失败: {{ parseEventData(evt.data).error || '' }}
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'aggregation_complete'">
+                <div class="routing-badge aggregation-complete">
+                  📊 结果聚合完成
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'vote_round'">
+                <div class="routing-badge vote-round">
+                  🗳️ 投票轮: {{ parseEventData(evt.data).round || '' }}
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'consensus_reached'">
+                <div class="routing-badge consensus-reached">
+                  ✅ 达成共识 (置信度: {{ parseEventData(evt.data).confidence || 'N/A' }})
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'consensus_failed'">
+                <div class="routing-badge consensus-failed">
+                  🤷 未达成共识
+                </div>
+              </template>
+              <template v-else-if="evt.event === 'subagent_spawned' || evt.event === 'subagent_ended'">
+                <div class="routing-badge subagent-lifecycle">
+                  <template v-if="evt.event === 'subagent_spawned'">🔄</template>
+                  <template v-else>✅</template>
+                  {{ evt.event === 'subagent_spawned' ? '委派' : '子Agent完成' }}:
+                  {{ parseEventData(evt.data).agentId || 'unknown' }}
+                </div>
+              </template>
+              <template v-else>
+                <div class="routing-badge routing-other">
+                  📡 {{ evt.event }}: {{ evt.data.substring(0, 60) }}{{ evt.data.length > 60 ? '...' : '' }}
+                </div>
+              </template>
+            </div>
           </div>
 
           <!-- 推理/思考指示器：仅流式进行中显示，完毕后由 MessageBubble 渲染 -->
@@ -925,6 +1020,69 @@ watch(
   .thinking-bubble-inner {
     gap: var(--spacing-xs);
   }
+}
+
+/* Agent 路由与协作事件样式 */
+.subagent-events {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 48px;
+}
+
+.subagent-event-item {
+  display: flex;
+  align-items: center;
+}
+
+.routing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--rounded-pill, 999px);
+  font-size: 12px;
+  line-height: 1.4;
+  background: var(--color-surface-soft, #f0f0f0);
+  color: var(--color-body, #333);
+  border: 1px solid var(--color-hairline, #e0e0e0);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.routing-start { border-color: #93c5fd; background: #eff6ff; }
+.routing-decision { border-color: #86efac; background: #f0fdf4; }
+.routing-fallback { border-color: #fde68a; background: #fffbeb; }
+.collaboration-start { border-color: #c4b5fd; background: #f5f3ff; }
+.task-decomposed { border-color: #a5b4fc; background: #eef2ff; }
+.sub-task-start { border-color: #93c5fd; background: #f0f9ff; }
+.sub-task-complete { border-color: #86efac; background: #f0fdf4; }
+.sub-task-fail { border-color: #fca5a5; background: #fef2f2; }
+.aggregation-complete { border-color: #86efac; background: #f0fdf4; }
+.vote-round { border-color: #c4b5fd; background: #faf5ff; }
+.consensus-reached { border-color: #86efac; background: #f0fdf4; }
+.consensus-failed { border-color: #fde68a; background: #fffbeb; }
+.subagent-lifecycle { border-color: #93c5fd; background: #f0f9ff; }
+.routing-other { border-color: var(--color-hairline); background: var(--color-surface-soft); }
+
+.routing-confidence {
+  font-size: 10px;
+  color: var(--color-muted, #888);
+  text-transform: uppercase;
+}
+
+.agent-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--color-primary, #6C63FF);
+  color: white;
+  font-size: 10px;
+  font-weight: 500;
 }
 </style>
 

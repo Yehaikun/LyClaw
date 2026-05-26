@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown, Circle } from 'lucide-vue-next'
 import type { AgentSummary } from '@/api/agent'
 
 const props = defineProps<{
@@ -16,9 +16,33 @@ const isOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 
 const currentLabel = computed(() => {
-  const found = props.agents.find((a) => a.agent_id === props.modelValue)
-  return found ? (found.agent_name || found.agent_id) : props.modelValue
+  const found = props.agents.find((a) => a.agentId === props.modelValue)
+  return found ? (found.name || found.agentId) : props.modelValue
 })
+
+const currentHealth = computed(() => {
+  const found = props.agents.find((a) => a.agentId === props.modelValue)
+  return found?.health ?? 'UNKNOWN'
+})
+
+function healthColor(health: string): string {
+  switch (health) {
+    case 'UP': return 'var(--color-success, #22c55e)'
+    case 'DEGRADED': return 'var(--color-warning, #eab308)'
+    case 'DOWN': return 'var(--color-danger, #ef4444)'
+    default: return 'var(--color-muted, #888)'
+  }
+}
+
+function stateColor(state: string): string {
+  switch (state) {
+    case 'IDLE': return 'var(--color-muted, #888)'
+    case 'RUNNING': return 'var(--color-primary, #6C63FF)'
+    case 'PAUSED': return 'var(--color-warning, #eab308)'
+    case 'DEGRADED': return 'var(--color-warning, #eab308)'
+    default: return 'var(--color-muted, #888)'
+  }
+}
 
 function select(agentId: string) {
   emit('update:modelValue', agentId)
@@ -42,19 +66,28 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 <template>
   <div ref="rootRef" class="agent-selector">
     <button class="selector-trigger" type="button" @click="toggleOpen">
+      <Circle :size="8" :fill="healthColor(currentHealth)" :color="healthColor(currentHealth)" />
       <span class="selector-label">{{ currentLabel }}</span>
       <ChevronDown :size="12" class="chevron" :class="{ open: isOpen }" />
     </button>
     <div v-if="isOpen" class="selector-dropdown">
       <button
         v-for="agent in agents"
-        :key="agent.agent_id"
+        :key="agent.agentId"
         class="dropdown-option"
-        :class="{ active: agent.agent_id === modelValue }"
+        :class="{ active: agent.agentId === modelValue }"
         type="button"
-        @click="select(agent.agent_id)"
+        @click="select(agent.agentId)"
       >
-        {{ agent.agent_name || agent.agent_id }}
+        <div class="option-top">
+          <Circle :size="8" :fill="healthColor(agent.health)" :color="healthColor(agent.health)" />
+          <span class="option-name">{{ agent.name || agent.agentId }}</span>
+          <span class="option-state" :style="{ color: stateColor(agent.state) }">{{ agent.state }}</span>
+        </div>
+        <div v-if="agent.capabilities && agent.capabilities.length" class="option-caps">
+          <span v-for="cap in agent.capabilities.slice(0, 3)" :key="cap" class="cap-tag">{{ cap }}</span>
+          <span v-if="agent.capabilities.length > 3" class="cap-more">+{{ agent.capabilities.length - 3 }}</span>
+        </div>
       </button>
       <div v-if="agents.length === 0" class="dropdown-empty">No agents found</div>
     </div>
@@ -82,7 +115,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast);
   white-space: nowrap;
-  max-width: 140px;
+  max-width: 160px;
 }
 
 .selector-trigger:hover {
@@ -112,8 +145,8 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   top: 100%;
   left: 0;
   margin-top: 4px;
-  min-width: 160px;
-  max-height: 300px;
+  min-width: 220px;
+  max-height: 360px;
   overflow-y: auto;
   background: var(--card-bg);
   border: 1px solid var(--color-hairline);
@@ -133,13 +166,9 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   color: var(--color-body);
   font-family: var(--font-sans);
   font-size: var(--body-sm-size);
-  font-weight: 400;
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .dropdown-option:hover {
@@ -149,6 +178,49 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 .dropdown-option.active {
   color: var(--color-primary);
   font-weight: 500;
+}
+
+.option-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.option-name {
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.option-state {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.option-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 14px;
+}
+
+.cap-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-surface-soft);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.cap-more {
+  font-size: 10px;
+  color: var(--color-muted);
+  padding: 1px 4px;
 }
 
 .dropdown-empty {

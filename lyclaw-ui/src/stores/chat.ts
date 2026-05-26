@@ -79,6 +79,7 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 子代理委派事件列表（Phase 2 subagent_spawned/subagent_ended SSE 事件） */
   const subagentEvents = ref<Array<{ event: string; data: string }>>([])
+  const reflectionProgress = ref<any>(null)
 
   // ====================================================================
   // 计算属性（Getters）
@@ -562,6 +563,7 @@ export const useChatStore = defineStore('chat', () => {
     pendingApproval,
     thinkingText,
     subagentEvents,
+    reflectionProgress,
     // 计算属性
     messageCount,
     lastMessage,

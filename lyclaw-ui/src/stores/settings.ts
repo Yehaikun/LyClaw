@@ -119,6 +119,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const sendOnEnter = ref<boolean>(persisted.sendOnEnter ?? true)
   const compactMode = ref<boolean>(persisted.compactMode ?? false)
   const developerMode = ref<boolean>(persisted.developerMode ?? false)
+  const reflectionMode = ref<boolean>(false)
   const sandboxLevel = ref<string>(persisted.sandboxLevel ?? 'NONE')
   const maxTokens = ref<number>(persisted.maxTokens ?? 4096)
   const temperature = ref<number>(persisted.temperature ?? 0.7)
@@ -144,6 +145,7 @@ export const useSettingsStore = defineStore('settings', () => {
     sendOnEnter,
     compactMode,
     developerMode,
+    reflectionMode,
     sandboxLevel,
     maxTokens,
     temperature,
@@ -272,6 +274,7 @@ export const useSettingsStore = defineStore('settings', () => {
     sendOnEnter,
     compactMode,
     developerMode,
+    reflectionMode,
     sandboxLevel,
     maxTokens,
     temperature,

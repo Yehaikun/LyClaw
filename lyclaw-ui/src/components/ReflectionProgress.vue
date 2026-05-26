@@ -15,7 +15,10 @@
 -->
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import type { ReflectionProgress, ReflectionStep } from '@/types'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReflectionStep = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReflectionProgress = any
 import MarkdownRenderer from './MarkdownRenderer.vue'
 
 const props = defineProps<{

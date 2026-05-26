@@ -1,12 +1,3 @@
-/**
- * Agent管理Store（Pinia），管理Agent列表、当前Agent和CRUD操作。
- *
- * 本Store负责：
- * 1. 获取Agent列表 GET /api/agents
- * 2. 获取Agent详情 GET /api/agents/{id}
- * 3. 创建/更新/删除Agent
- * 4. 追踪当前选中的Agent
- */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
@@ -16,40 +7,28 @@ import {
   updateAgent as apiUpdateAgent,
   deleteAgent as apiDeleteAgent,
   type AgentSummary,
-  type AgentDetail,
   type CreateAgentRequest,
 } from '@/api/agent'
+import { useSessionStore } from '@/stores/session'
 
 export const useAgentStore = defineStore('agent', () => {
-  // ====================================================================
-  // 状态（State）
-  // ====================================================================
-
   const agents = ref<AgentSummary[]>([])
   const currentAgentId = ref<string>('chat')
-  const currentAgentDetail = ref<AgentDetail | null>(null)
+  const currentAgentDetail = ref<AgentSummary | null>(null)
   const isLoading = ref<boolean>(false)
   const error = ref<string | null>(null)
 
-  // ====================================================================
-  // 计算属性（Getters）
-  // ====================================================================
-
   const currentAgent = computed<AgentSummary | null>(() => {
-    return agents.value.find((a) => a.agent_id === currentAgentId.value) ?? null
+    return agents.value.find((a) => a.agentId === currentAgentId.value) ?? null
   })
 
   const agentOptions = computed(() =>
     agents.value.map((a) => ({
-      value: a.agent_id,
-      label: a.agent_name || a.agent_id,
+      value: a.agentId,
+      label: a.name || a.agentId,
       description: a.description,
     })),
   )
-
-  // ====================================================================
-  // 操作方法（Actions）
-  // ====================================================================
 
   async function fetchAgents(): Promise<void> {
     isLoading.value = true
@@ -78,13 +57,16 @@ export const useAgentStore = defineStore('agent', () => {
 
   function selectAgent(agentId: string): void {
     currentAgentId.value = agentId
+    const sessionStore = useSessionStore()
+    sessionStore.setAgentId(agentId)
   }
 
-  async function createAgent(data: CreateAgentRequest): Promise<{ agentId: string; agentName: string; createdAt: number } | null> {
+  async function createAgent(data: CreateAgentRequest): Promise<AgentSummary | null> {
     error.value = null
     try {
       const result = await apiCreateAgent(data)
       await fetchAgents()
+      selectAgent(result.agentId)
       return result
     } catch (err) {
       error.value = (err as Error).message
@@ -108,9 +90,9 @@ export const useAgentStore = defineStore('agent', () => {
     error.value = null
     try {
       await apiDeleteAgent(agentId)
-      agents.value = agents.value.filter((a) => a.agent_id !== agentId)
+      agents.value = agents.value.filter((a) => a.agentId !== agentId)
       if (currentAgentId.value === agentId) {
-        currentAgentId.value = 'chat'
+        selectAgent('chat')
       }
       return true
     } catch (err) {
@@ -120,16 +102,13 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   return {
-    // 状态
     agents,
     currentAgentId,
     currentAgentDetail,
     isLoading,
     error,
-    // 计算属性
     currentAgent,
     agentOptions,
-    // 操作方法
     fetchAgents,
     fetchAgentDetail,
     selectAgent,
