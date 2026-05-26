@@ -55,6 +55,9 @@ public final class SseEventTypes {
     /** 流式错误通知，前端收到后停止spinner并显示错误信息 */
     public static final String ERROR = "error";
 
+    /** Phase 4: 子 Agent 实时进度事件（thinking/tool_call/message） */
+    public static final String SUBAGENT_PROGRESS = "subagent_progress";
+
     // ========== Phase 1: Agent 注册发现事件 ==========
 
     /** Agent 注册完成 */

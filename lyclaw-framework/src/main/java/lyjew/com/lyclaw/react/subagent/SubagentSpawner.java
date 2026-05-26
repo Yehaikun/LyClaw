@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.config.AgentConfigResolver;
 import lyjew.com.lyclaw.model.ChatRequest;
@@ -18,6 +19,8 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
+import org.springframework.http.codec.ServerSentEvent;
+import reactor.core.publisher.Flux;
 import lyjew.com.lyclaw.react.AgentContext;
 import lyjew.com.lyclaw.react.AgentHook;
 import lyjew.com.lyclaw.react.ReActEngine;
@@ -216,6 +219,144 @@ public class SubagentSpawner {
                     parentCtx.removeActiveSubagent(targetAgentId);
                     log.info("[子代理] 清理完成 | agentId={} | 信号类型={}", targetAgentId, signalType);
                 });
+    }
+
+    /**
+     * Phase 4: spawn subagent with ProgressBus for streaming progress forwarding.
+     * Shares validation logic with 4-arg version but uses streaming child execution.
+     */
+    public Mono<SubagentResult> spawnSubagent(String targetAgentId,
+                                               String task,
+                                               Map<String, Object> options,
+                                               AgentContext parentCtx,
+                                               java.util.function.Consumer<ServerSentEvent<String>> progressEmitter) {
+        if (targetAgentId == null || targetAgentId.isBlank()) {
+            return Mono.just(SubagentResult.error("targetAgentId is required"));
+        }
+        if (task == null || task.isBlank()) {
+            return Mono.just(SubagentResult.error("task is required"));
+        }
+        long startTime = System.currentTimeMillis();
+        SubagentConfig config = resolveSubagentConfig(parentCtx);
+        Map<String, Object> opts = options != null ? options : Collections.emptyMap();
+
+        List<String> allowAgents = config.getAllowAgents();
+        if (allowAgents != null && !allowAgents.isEmpty()) {
+            boolean wildcard = allowAgents.contains("*");
+            boolean explicit = allowAgents.contains(targetAgentId);
+            if (!wildcard && !explicit) {
+                return Mono.just(SubagentResult.rejected(targetAgentId,
+                        "Agent not in allowAgents: " + targetAgentId));
+            }
+        }
+        int currentDepth = getCurrentDepth(parentCtx);
+        int maxDepth = config.getMaxSpawnDepth() > 0 ? config.getMaxSpawnDepth() : DEFAULT_MAX_SPAWN_DEPTH;
+        if (currentDepth >= maxDepth) {
+            return Mono.just(SubagentResult.error("Max spawn depth exceeded"));
+        }
+        int activeCount = parentCtx.getActiveSubagentIds().size();
+        int maxChildren = config.getMaxChildrenPerAgent() > 0
+                ? config.getMaxChildrenPerAgent() : DEFAULT_MAX_CHILDREN_PER_AGENT;
+        if (activeCount >= maxChildren) {
+            return Mono.just(SubagentResult.error("Max children per agent reached"));
+        }
+
+        String parentSessionId = parentCtx.getSessionId();
+        String parentAgentId = parentCtx.getAgentId();
+        String childModel = (String) opts.getOrDefault("model",
+                config.getModel() != null ? config.getModel() : "");
+        String childSessionId = parentSessionId + "/subagent/" + targetAgentId + "/"
+                + UUID.randomUUID().toString().substring(0, 8);
+        Session childSession = Session.builder()
+                .sessionId(childSessionId).model(childModel).build();
+        Semaphore semaphore = concurrencySemaphores.computeIfAbsent(parentSessionId,
+                k -> new Semaphore(config.getMaxConcurrent() > 0
+                        ? config.getMaxConcurrent() : 1));
+        parentCtx.addActiveSubagent(targetAgentId);
+
+        return Mono.fromCallable(() -> {
+                    if (!semaphore.tryAcquire(10, TimeUnit.SECONDS)) {
+                        throw new RuntimeException("Semaphore acquisition timeout");
+                    }
+                    return runSubagentStreaming(targetAgentId, task, childSession,
+                            config, parentCtx, progressEmitter);
+                })
+                .timeout(Duration.ofSeconds(config.getRunTimeoutSeconds() + 10))
+                .onErrorResume(t -> {
+                    log.error("[FAIL] [子代理] 流式执行失败: agentId={} error={}",
+                            targetAgentId, t.getMessage());
+                    return Mono.just(SubagentResult.error(
+                            "Subagent execution failed: " + t.getMessage()));
+                })
+                .doFinally(sig -> {
+                    semaphore.release();
+                    parentCtx.removeActiveSubagent(targetAgentId);
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    log.info("[子代理] 流式清理完成 | agentId={} | 耗时={}ms | signal={}",
+                            targetAgentId, elapsed, sig);
+                });
+    }
+
+    /**
+     * Streaming version of runSubagent. Uses executeStream() instead of execute()
+     * so child agent events (thinking, tool_call, message) are forwarded to the
+     * parent's ProgressBus in real-time.
+     */
+    private SubagentResult runSubagentStreaming(String targetAgentId, String task,
+                                                 Session childSession, SubagentConfig config,
+                                                 AgentContext parentCtx,
+                                                 java.util.function.Consumer<ServerSentEvent<String>> progressEmitter) {
+        long startTime = System.currentTimeMillis();
+        AgentContext childCtx = buildChildContext(targetAgentId, task, childSession, config, parentCtx);
+        dispatchSubagentSpawning(childCtx);
+        ToolExecutor toolExecutor = buildChildToolExecutor(childCtx);
+        List<AgentHook> sorted = new ArrayList<>(defaultHooks);
+        sorted.sort(java.util.Comparator.comparingInt(AgentHook::getOrder));
+        for (AgentHook hook : sorted) {
+            toolExecutor = hook.wrapToolExecutor(toolExecutor, childCtx);
+        }
+        ChatRequest childRequest = childCtx.getChatRequest();
+        childRequest.setStream(true);
+        StringBuilder outputBuilder = new StringBuilder();
+
+        int[] progressCount = {0};
+        reActEngine.executeStream(chatFacade, childRequest, toolExecutor)
+                .doOnNext(event -> {
+                    String evtType = event.event();
+                    String evtData = event.data();
+                    if (progressEmitter != null && evtType != null) {
+                        String json = buildSubagentEventJson(targetAgentId, event);
+                        progressEmitter.accept(
+                                ServerSentEvent.<String>builder().event("subagent_progress").data(json).build());
+                        progressCount[0]++;
+                    }
+                    if ("message".equals(evtType) && evtData != null) {
+                        outputBuilder.append(evtData);
+                    }
+                })
+                .doFinally(sig -> log.info("[子代理流式] 进度事件转发完成 | agentId={} | 转发事件数={} | signal={}",
+                        targetAgentId, progressCount[0], sig))
+                .blockLast();
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        String output = outputBuilder.toString();
+        SubagentResult result = SubagentResult.success(
+                childSession.getSessionId(), targetAgentId, output, elapsed, 0, 0);
+        dispatchSubagentSpawned(childCtx, result);
+        dispatchSubagentEnded(childCtx, result);
+        return result;
+    }
+
+    private String buildSubagentEventJson(String agentId, ServerSentEvent<String> event) {
+        try {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("agentId", agentId);
+            map.put("type", event.event());
+            map.put("data", event.data());
+            return new ObjectMapper().writeValueAsString(map);
+        } catch (Exception e) {
+            return "{\"agentId\":\"" + agentId + "\",\"type\":\"unknown\"}";
+        }
     }
 
     public SubagentConfig resolveSubagentConfig(AgentContext ctx) {

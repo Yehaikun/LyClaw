@@ -10,7 +10,9 @@ import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.react.AgentContext;
+import lyjew.com.lyclaw.react.DefaultReActEngine;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
+import org.springframework.http.codec.ServerSentEvent;
 import lyjew.com.lyclaw.tool.ToolProvider;
 import lyjew.com.lyclaw.tool.ToolProviderRequest;
 
@@ -253,12 +255,22 @@ public class DelegateToAgentToolProvider implements ToolProvider {
         String finalAgentId = targetAgentId;
         try {
             long timeout = config.getRunTimeoutSeconds() > 0
-                    ? config.getRunTimeoutSeconds() + 5   // add buffer for Mono wrapper
+                    ? config.getRunTimeoutSeconds() + 5
                     : SubagentSpawner.DEFAULT_RUN_TIMEOUT_SECONDS + 5;
 
-            SubagentResult subagentResult = spawner.spawnSubagent(
-                            finalAgentId, task, options, agentCtx)
-                    .block(Duration.ofSeconds(timeout));
+            // Phase 4: get the Flux.create emitter from the shared map
+            java.util.function.Consumer<ServerSentEvent<String>> progressEmitter = resolveEmitter(agentCtx, toolCall);
+            SubagentResult subagentResult;
+            if (progressEmitter != null) {
+                subagentResult = spawner.spawnSubagent(
+                                finalAgentId, task, options, agentCtx, progressEmitter)
+                        .block(Duration.ofSeconds(timeout));
+            } else {
+                // fallback: no ProgressBus (backward compatible)
+                subagentResult = spawner.spawnSubagent(
+                                finalAgentId, task, options, agentCtx)
+                        .block(Duration.ofSeconds(timeout));
+            }
 
             if (subagentResult == null) {
                 return ToolExecutionResult.failure(
@@ -405,6 +417,33 @@ public class DelegateToAgentToolProvider implements ToolProvider {
      * Extracts a string value from the argument map, returning null if the key
      * is missing or the value is not a string.
      */
+    /**
+     * Resolve the ProgressBus from the shared ConcurrentHashMap by sessionId prefix.
+     */
+    private java.util.function.Consumer<ServerSentEvent<String>> resolveEmitter(AgentContext agentCtx,
+                                                                                  ToolCall toolCall) {
+        if (agentCtx == null) return null;
+        String sessionId = agentCtx.getSessionId();
+        if (sessionId == null || sessionId.isEmpty()) return null;
+        if (toolCall != null && toolCall.getToolCallId() != null && !toolCall.getToolCallId().isEmpty()) {
+            var emitter = DefaultReActEngine.getEmitter(sessionId, toolCall.getToolCallId());
+            if (emitter != null) {
+                log.info("resolveEmitter: found by toolCallId | sessionId={} toolCallId={}",
+                        sessionId, toolCall.getToolCallId());
+                return emitter;
+            }
+        }
+        for (java.util.Map.Entry<String, java.util.function.Consumer<ServerSentEvent<String>>> e :
+                DefaultReActEngine.getEmitters().entrySet()) {
+            if (e.getKey().startsWith(sessionId + ":")) {
+                log.info("resolveEmitter: found by scan | key={}", e.getKey());
+                return e.getValue();
+            }
+        }
+        log.warn("resolveEmitter: not found for sessionId={}", sessionId);
+        return null;
+    }
+
     private String getStringArg(Map<String, Object> args, String key) {
         Object value = args.get(key);
         if (value instanceof String s) {

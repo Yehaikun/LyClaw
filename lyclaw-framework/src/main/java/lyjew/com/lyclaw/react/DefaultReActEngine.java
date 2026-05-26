@@ -12,6 +12,7 @@ import lyjew.com.lyclaw.model.ToolCall;
 
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -45,6 +46,38 @@ import java.util.concurrent.TimeUnit;
 public class DefaultReActEngine implements ReActEngine {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    // Phase 4: ProgressBus — ThreadLocal event bus for streaming tool execution progress.
+    // Set by emitRoundToolCallEvents() before blocking tool execution,
+    // read by tool implementations (e.g. DelegateToAgentToolProvider) to forward progress events,
+    // cleared in doFinally.
+    // Phase 4: ProgressBus — simple thread-safe emitter for streaming tool execution progress.
+    // Uses Flux.create with a callback that tool executors call to emit events.
+    private static final java.util.concurrent.ConcurrentHashMap<String,
+            java.util.function.Consumer<ServerSentEvent<String>>> PROGRESS_EMITTERS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static void registerEmitter(String sessionId, String toolCallId,
+                                        java.util.function.Consumer<ServerSentEvent<String>> emitter) {
+        if (sessionId != null && toolCallId != null) {
+            PROGRESS_EMITTERS.put(sessionId + ":" + toolCallId, emitter);
+        }
+    }
+
+    public static java.util.function.Consumer<ServerSentEvent<String>> getEmitter(String sessionId, String toolCallId) {
+        if (sessionId == null || toolCallId == null) return null;
+        return PROGRESS_EMITTERS.get(sessionId + ":" + toolCallId);
+    }
+
+    public static java.util.Map<String, java.util.function.Consumer<ServerSentEvent<String>>> getEmitters() {
+        return PROGRESS_EMITTERS;
+    }
+
+    public static void removeEmitter(String sessionId, String toolCallId) {
+        if (sessionId != null && toolCallId != null) {
+            PROGRESS_EMITTERS.remove(sessionId + ":" + toolCallId);
+        }
+    }
 
     // Phase 2: thinking level → thinking budget mapping (token counts)
     private static final int THINKING_BUDGET_LOW = 1024;
@@ -340,15 +373,28 @@ public class DefaultReActEngine implements ReActEngine {
         return Flux.fromIterable(toolCalls)
                 .concatMap(req -> {
                     String toolArgs = req.getArguments() != null ? req.getArguments() : "{}";
-                    // 需要用户审批时走审批流程
                     if (approvalRequired.contains(req.getName())) {
                         return emitApprovalFlow(req, toolExecutor, messages, toolArgs,
                                 request.getSessionId(), request.getAgentId());
                     }
-                    // 无需审批：直接执行
                     log.info("[ReAct流式] 直接执行工具（无需审批）: {} | toolCallId={}", req.getName(), req.getId());
                     String execJson = toolCallEventJson(req.getId(), req.getName(),
                             "executing", "正在执行 " + req.getName() + "...", toolArgs, null, true);
+                    ServerSentEvent<String> execEvent = sseEvent("tool_call", execJson);
+
+                    String busKey = request.getSessionId() + ":" + req.getId();
+                    log.info("ProgressBus CREATED | key={}", busKey);
+
+                    // Flux.create: tool executors call the emitter from any thread
+                    Flux<ServerSentEvent<String>> progressFlux = Flux.<ServerSentEvent<String>>create(sink -> {
+                        registerEmitter(request.getSessionId(), req.getId(), ev -> {
+                            sink.next(ev);
+                            log.info("PROGRESS_EVENT_FWD | key={} | event={}", busKey, ev.event());
+                        });
+                    }, FluxSink.OverflowStrategy.LATEST)
+                    .doOnNext(ev -> log.info("PROGRESS_FLUX_RX | key={} | event={}", busKey, ev.event()))
+                    .doFinally(sig -> log.info("PROGRESS_FLUX_DONE | key={} | sig={}", busKey, sig));
+
                     Mono<ServerSentEvent<String>> doneEvent = Mono.fromCallable(() -> {
                         String output;
                         boolean success;
@@ -356,8 +402,7 @@ public class DefaultReActEngine implements ReActEngine {
                             output = toolExecutor.execute(req.getName(), req.getId(), toolArgs);
                             success = true;
                         } catch (Exception e) {
-                            log.error("[FAIL] [ReAct流式] 工具执行失败: name={} error={}",
-                                    req.getName(), e.getMessage(), e);
+                            log.error("[FAIL] [ReAct流式] 工具执行失败: name={}", req.getName(), e);
                             output = "工具错误: " + e.getMessage();
                             success = false;
                         }
@@ -368,7 +413,14 @@ public class DefaultReActEngine implements ReActEngine {
                                 success ? "[OK]" : "[FAIL]", req.getName(), success);
                         return sseEvent("tool_call", doneJson);
                     }).subscribeOn(Schedulers.boundedElastic());
-                    return Flux.just(sseEvent("tool_call", execJson)).concatWith(doneEvent);
+
+                    return Flux.merge(
+                            Flux.just(execEvent),
+                            progressFlux.takeUntilOther(doneEvent),
+                            doneEvent
+                    ).doFinally(sig -> {
+                        removeEmitter(request.getSessionId(), req.getId());
+                    });
                 });
     }
 
