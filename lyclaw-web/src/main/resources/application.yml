@@ -728,3 +728,41 @@ lyclaw:
       # 最大延迟（毫秒）
       # 默认: 60000
       max-delay-ms: 60000
+
+  # ╔══════════════════════════════════════════════════════════╗
+  # ║  lyclaw.agents  —  声明式 Agent 定义                     ║
+  # ║  AgentScanner 在 ContextRefreshedEvent 时自动注册         ║
+  # ╚══════════════════════════════════════════════════════════╝
+  agents:
+    code-reviewer:
+      name: "代码审查员"
+      description: "审查代码质量、设计模式和潜在bug"
+      model: deepseek-chat
+      provider: deepseek
+      system-prompt-override: "你是一位资深的代码审查员。请仔细检查代码的质量、安全性和可维护性。"
+      delegation-mode: none
+      max-spawn-depth: 0
+      extensions:
+        capabilities: "code_review,security_audit,quality_assurance"
+
+    researcher:
+      name: "搜索研究员"
+      description: "擅长搜索和分析信息"
+      model: deepseek-chat
+      provider: deepseek
+      system-prompt-override: "你是一位研究助手。请分析问题并提供详细的答案。"
+      delegation-mode: none
+      max-spawn-depth: 0
+      extensions:
+        capabilities: "web_search,research,information_retrieval"
+
+    writer:
+      name: "文档写手"
+      description: "擅长技术写作和文档生成"
+      model: deepseek-chat
+      provider: deepseek
+      system-prompt-override: "你是一位技术文档写手。请生成清晰、结构化的文档内容。"
+      delegation-mode: none
+      max-spawn-depth: 0
+      extensions:
+        capabilities: "documentation,technical_writing,content_writing"

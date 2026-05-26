@@ -156,9 +156,12 @@ public class AgentRegistryController {
 
     @GetMapping("/{agentId}/capabilities")
     public ResponseEntity<List<String>> getCapabilities(@PathVariable String agentId) {
-        return registry.lookup(agentId)
-                .map(h -> ResponseEntity.ok(
-                        h.getCapabilities() != null ? h.getCapabilities() : Collections.emptyList()))
-                .orElse(ResponseEntity.notFound().build());
+        java.util.Optional<AgentHandle> opt = registry.lookup(agentId);
+        if (opt.isPresent()) {
+            AgentHandle h = opt.get();
+            return ResponseEntity.ok(
+                    h.getCapabilities() != null ? h.getCapabilities() : Collections.emptyList());
+        }
+        return ResponseEntity.notFound().build();
     }
 }
