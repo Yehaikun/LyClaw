@@ -19,6 +19,8 @@ import lyjew.com.lyclaw.mesh.AgentLifecycleState;
 import lyjew.com.lyclaw.mesh.AgentFactory;
 import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.mesh.AgentMeshListener;
+import lyjew.com.lyclaw.mesh.AgentMeshMetrics;
+import lyjew.com.lyclaw.mesh.AgentSnapshot;
 import lyjew.com.lyclaw.mesh.AgentMessage;
 import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.AgentSpec;
@@ -73,12 +75,22 @@ public class DefaultAgentMesh implements AgentMesh {
     // ── Agent 工厂 ──
     private final AgentFactory agentFactory;
 
+    // ── 指标收集 ──
+    private final AgentMeshMetrics metrics;
+
     public DefaultAgentMesh() {
         this.agentFactory = new DefaultAgentFactory(this);
+        this.metrics = new DefaultAgentMeshMetrics();
     }
 
     public DefaultAgentMesh(AgentFactory agentFactory) {
         this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory(this);
+        this.metrics = new DefaultAgentMeshMetrics();
+    }
+
+    public DefaultAgentMesh(AgentFactory agentFactory, AgentMeshMetrics metrics) {
+        this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory(this);
+        this.metrics = metrics != null ? metrics : new DefaultAgentMeshMetrics();
     }
 
     // ════════════════════════════════════════════════════════════
@@ -412,6 +424,37 @@ public class DefaultAgentMesh implements AgentMesh {
     // ════════════════════════════════════════════════════════════
     // 内部方法
     // ════════════════════════════════════════════════════════════
+
+    // ════════════════════════════════════════════════════════════
+    // 可观测性
+    // ════════════════════════════════════════════════════════════
+
+    /** 获取指标收集器 */
+    public AgentMeshMetrics getMetrics() { return metrics; }
+
+    /** 获取指定 Agent 的快照 */
+    public AgentSnapshot snapshot(String agentId) {
+        AgentInstance instance = instances.get(agentId);
+        if (instance == null) return null;
+        return AgentSnapshot.from(instance);
+    }
+
+    /** 获取所有 Agent 的快照 */
+    public java.util.List<AgentSnapshot> snapshotAll() {
+        return instances.values().stream()
+                .map(AgentSnapshot::from)
+                .toList();
+    }
+
+    private void recordMetrics(String agentId, boolean success, long durationMs) {
+        if (metrics != null) {
+            metrics.recordCall(agentId, success, durationMs);
+            AgentHandle handle = handles.get(agentId);
+            if (handle != null) {
+                metrics.recordActiveRequests(agentId, handle.getActiveRequestCount());
+            }
+        }
+    }
 
     private AgentInstance resolveTarget(AgentMessage message) {
         // 按 to 字段直接路由
