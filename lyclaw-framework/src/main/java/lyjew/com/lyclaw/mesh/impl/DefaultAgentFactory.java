@@ -27,22 +27,27 @@ public class DefaultAgentFactory implements AgentFactory {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultAgentFactory.class);
 
-    private final AgentMesh mesh;
+    private AgentMesh mesh;
     private ChatFacade chatFacade;
     private ReActEngine reActEngine;
     private ToolRegistry toolRegistry;
+
+    public DefaultAgentFactory() {}
 
     public DefaultAgentFactory(AgentMesh mesh) {
         this.mesh = mesh;
     }
 
-    /** 注入 ChatFacade（由 Spring 配置调用） */
+    /** 注入 AgentMesh */
+    public void setMesh(AgentMesh mesh) { this.mesh = mesh; }
+
+    /** 注入 ChatFacade */
     public void setChatFacade(ChatFacade chatFacade) { this.chatFacade = chatFacade; }
 
-    /** 注入 ReActEngine（由 Spring 配置调用） */
+    /** 注入 ReActEngine */
     public void setReActEngine(ReActEngine reActEngine) { this.reActEngine = reActEngine; }
 
-    /** 注入 ToolRegistry（由 Spring 配置调用） */
+    /** 注入 ToolRegistry */
     public void setToolRegistry(ToolRegistry toolRegistry) { this.toolRegistry = toolRegistry; }
 
     @Override

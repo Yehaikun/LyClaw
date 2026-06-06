@@ -245,11 +245,11 @@ public class MeshController {
     }
 
     private Map<String, Object> agentRefToMap(AgentRef ref) {
-        return Map.of(
-                "agentId", ref.getAgentId(),
-                "type", ref.getType().name(),
-                "capabilities", String.join(", ", ref.getCapabilities()),
-                "createdAt", ref.getCreatedAt()
-        );
+        Map<String, Object> map = new java.util.LinkedHashMap<>();
+        map.put("agentId", ref.getAgentId());
+        map.put("type", ref.getType().name());
+        map.put("capabilities", String.join(", ", ref.getCapabilities()));
+        map.put("createdAt", ref.getCreatedAt());
+        return map;
     }
 }

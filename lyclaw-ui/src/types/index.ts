@@ -495,3 +495,64 @@ export interface ServiceHealth {
   /** 额外的详情信息 */
   details?: Record<string, unknown>
 }
+
+// ====================================================================
+// Agent Mesh 类型（Agent Mesh Types）
+// ====================================================================
+
+/** Agent Mesh 中的 Agent */
+export interface AgentMeshAgent {
+  agentId: string
+  name?: string
+  type?: string
+  description?: string
+  capabilities?: string[]
+  model?: string
+  systemPrompt?: string
+  state?: string
+  health?: string
+  totalCalls?: number
+  totalErrors?: number
+  activeRequests?: number
+  avgDurationMs?: number
+  successRate?: number
+  createdAt?: number
+}
+
+/** 编排请求 */
+export interface OrchestrationRequest {
+  pattern: string
+  task?: string
+  agentIds?: string[]
+  capabilities?: string[]
+  aggregationStrategy?: string
+  timeoutMs?: number
+}
+
+/** 编排结果 */
+export interface OrchestrationResult {
+  success: boolean
+  pattern: string
+  result: string
+  error?: string
+  agentResults?: Array<{
+    agentId: string
+    success: boolean
+    resultPreview?: string
+  }>
+  durationMs: number
+}
+
+/** Agent 指标 */
+export interface MeshMetrics {
+  totalCalls: number
+  totalErrors: number
+  totalDurationMs: number
+  agentCount: number
+  agents?: Record<string, {
+    totalCalls: number
+    successRate: number
+    avgDurationMs: number
+    activeRequests: number
+  }>
+}

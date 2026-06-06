@@ -23,16 +23,7 @@ import org.springframework.context.annotation.Bean;
  * <p>用户可以通过提供自定义的 {@link AgentMesh}、{@link OrchestrationEngine}、
  * 或 {@link AgentFactory} Bean 来覆盖默认实现。</p>
  *
- * <p>配置示例：</p>
- * <pre>{@code
- * // 在 application.yml 中配置 Agent
- * lyclaw:
- *   mesh:
- *     agents:
- *       - agentId: reviewer
- *         model: deepseek-v4
- *         capabilities: [code-review]
- * }</pre>
+ * <p>AgentFactory 使用 @Lazy 注入到 AgentMesh，避免循环依赖。</p>
  */
 @AutoConfiguration
 @ConditionalOnClass(AgentMesh.class)
@@ -42,19 +33,18 @@ public class MeshAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AgentMesh agentMesh(AgentFactory agentFactory) {
-        DefaultAgentMesh mesh = new DefaultAgentMesh(agentFactory);
+    public AgentMesh agentMesh() {
+        DefaultAgentMesh mesh = new DefaultAgentMesh();
         log.info("AgentMesh initialized");
         return mesh;
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public AgentFactory agentFactory(AgentMesh mesh,
-                                      ChatFacade chatFacade,
+    public AgentFactory agentFactory(ChatFacade chatFacade,
                                       ReActEngine reActEngine,
                                       ToolRegistry toolRegistry) {
-        DefaultAgentFactory factory = new DefaultAgentFactory(mesh);
+        DefaultAgentFactory factory = new DefaultAgentFactory();
         factory.setChatFacade(chatFacade);
         factory.setReActEngine(reActEngine);
         factory.setToolRegistry(toolRegistry);

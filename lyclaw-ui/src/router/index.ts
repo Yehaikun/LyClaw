@@ -78,6 +78,12 @@ export const routeConfig: Array<RouteRecordRaw & { icon?: string }> = [
     icon: 'Users',
   },
   {
+    path: '/mesh',
+    name: 'mesh',
+    component: () => import('@/views/MeshView.vue'),
+    icon: 'Network',
+  },
+  {
     path: '/dashboard',
     name: 'dashboard',
     component: () => import('@/views/DashboardView.vue'),

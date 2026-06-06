@@ -79,18 +79,29 @@ public class DefaultAgentMesh implements AgentMesh {
     private final AgentMeshMetrics metrics;
 
     public DefaultAgentMesh() {
-        this.agentFactory = new DefaultAgentFactory(this);
+        this.agentFactory = new DefaultAgentFactory();
         this.metrics = new DefaultAgentMeshMetrics();
+        if (this.agentFactory instanceof DefaultAgentFactory) {
+            ((DefaultAgentFactory) this.agentFactory).setMesh(this);
+        }
     }
 
     public DefaultAgentMesh(AgentFactory agentFactory) {
-        this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory(this);
+        this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory();
         this.metrics = new DefaultAgentMeshMetrics();
+        if (!this.agentFactory.getClass().equals(DefaultAgentFactory.class)
+                && this.agentFactory instanceof DefaultAgentFactory) {
+            ((DefaultAgentFactory) this.agentFactory).setMesh(this);
+        }
     }
 
     public DefaultAgentMesh(AgentFactory agentFactory, AgentMeshMetrics metrics) {
-        this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory(this);
+        this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory();
         this.metrics = metrics != null ? metrics : new DefaultAgentMeshMetrics();
+        if (!this.agentFactory.getClass().equals(DefaultAgentFactory.class)
+                && this.agentFactory instanceof DefaultAgentFactory) {
+            ((DefaultAgentFactory) this.agentFactory).setMesh(this);
+        }
     }
 
     // ════════════════════════════════════════════════════════════
