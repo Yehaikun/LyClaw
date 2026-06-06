@@ -189,7 +189,7 @@ class StagePipelineEmbeddedTest {
                     .chatFacade(chatFacade)
                     .reActEngine(new ReActEngine() {
                         @Override
-                        public String execute(ChatFacade chat, ChatRequest req, ToolExecutor toolExecutor) {
+                        public String execute(ChatFacade chat, ChatRequest req, ToolExecutor toolExecutor, java.util.function.Consumer<lyjew.com.lyclaw.mesh.AgentExecutionEvent> cb) {
                             return "direct engine";
                         }
 
