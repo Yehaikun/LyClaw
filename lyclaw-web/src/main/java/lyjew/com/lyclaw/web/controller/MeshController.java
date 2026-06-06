@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,11 +34,16 @@ import lyjew.com.lyclaw.mesh.OrchestrationSpec;
  *
  * <p>提供 Agent 的注册、查看、消息发送、编排、指标监控等能力。
  * 前端通过此 API 实现 Agent Mesh 的可视化管理。</p>
+ *
+ * <p>安全说明：所有端点需要认证（isAuthenticated），
+ * Agent 资源按 agentId 授权，每个用户只可操作自己的 Agent。</p>
  */
 @Tag(name = "Agent Mesh", description = "多Agent调度网格管理")
 @RestController
 @RequestMapping("/api/mesh")
 public class MeshController {
+
+    private static final Logger log = LoggerFactory.getLogger(MeshController.class);
 
     private final AgentMesh mesh;
     private final OrchestrationEngine orchestrationEngine;
@@ -79,7 +86,9 @@ public class MeshController {
             AgentMeshMetrics.AgentMetrics agentMetrics = metrics.getAgentMetrics(agentId);
             info.put("avgDurationMs", Math.round(agentMetrics.avgDurationMs()));
             info.put("successRate", Math.round(agentMetrics.successRate()));
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.warn("Failed to get metrics for agent {}: {}", agentId, e.getMessage());
+        }
 
         return info;
     }
@@ -163,7 +172,8 @@ public class MeshController {
                     "callHistory", snapshot.formatCallHistory()
             );
         } catch (Exception e) {
-            return Map.of("error", e.getMessage());
+            log.warn("Failed to get snapshot for agent {}: {}", agentId, e.getMessage());
+            return Map.of("error", "Failed to retrieve snapshot");
         }
     }
 
@@ -229,7 +239,8 @@ public class MeshController {
                     ))
             );
         } catch (Exception e) {
-            return Map.of("error", e.getMessage());
+            log.warn("Failed to get mesh metrics: {}", e.getMessage());
+            return Map.of("error", "Failed to retrieve metrics");
         }
     }
 
