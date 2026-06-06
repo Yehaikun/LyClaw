@@ -24,6 +24,7 @@ import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.AgentSpec;
 import lyjew.com.lyclaw.mesh.DelayedResult;
 import lyjew.com.lyclaw.mesh.MessageType;
+import lyjew.com.lyclaw.mesh.SupervisionStrategy;
 import reactor.core.publisher.Flux;
 
 /**
@@ -49,6 +50,7 @@ public class DefaultAgentMesh implements AgentMesh {
     private final ConcurrentHashMap<String, AgentRef> refs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AgentInstance> instances = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AgentHandle> handles = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AgentSpec> specs = new ConcurrentHashMap<>();
 
     // ── 能力索引 ──
     private final ConcurrentHashMap<String, CopyOnWriteArrayList<String>> capabilityIndex = new ConcurrentHashMap<>();
@@ -102,10 +104,13 @@ public class DefaultAgentMesh implements AgentMesh {
         handle.setState(AgentLifecycleState.PENDING);
         handles.put(ref.getAgentId(), handle);
 
-        // 4. 注册能力索引
+        // 4. 存储 Spec
+        specs.put(ref.getAgentId(), spec);
+
+        // 5. 注册能力索引
         indexCapabilities(ref);
 
-        // 5. 启动
+        // 6. 启动
         instance.start();
         updateState(ref.getAgentId(), AgentLifecycleState.ACTIVE, "registered");
 
@@ -344,6 +349,50 @@ public class DefaultAgentMesh implements AgentMesh {
         }
         notifyListeners(AgentMeshListener.MeshEventType.AGENT_LIFECYCLE_CHANGED,
                 agentId, oldState + " → " + newState);
+
+        // Supervision: 当 Agent 进入 FAILED 状态时，根据策略自动恢复
+        if (newState == AgentLifecycleState.FAILED) {
+            AgentSpec spec = specs.get(agentId);
+            if (spec != null) {
+                applySupervision(spec, agentId, reason);
+            }
+        }
+    }
+
+    /**
+     * 应用错误恢复策略。
+     */
+    private void applySupervision(AgentSpec spec, String agentId, String reason) {
+        SupervisionStrategy strategy = spec.getSupervisionStrategy() != null
+                ? spec.getSupervisionStrategy() : SupervisionStrategy.RESTART;
+        log.warn("[Supervision] Agent {} failed: {} → strategy={}", agentId, reason, strategy);
+        switch (strategy) {
+            case RESTART -> {
+                int retries = spec.getMaxRetries() > 0 ? spec.getMaxRetries() : 3;
+                AgentHandle handle = handles.get(agentId);
+                int currentRetries = 0;
+                if (handle != null && handle.getLastError() != null) {
+                    // 从错误计数估算重试次数
+                    currentRetries = handle.getTotalErrors();
+                }
+                if (currentRetries < retries) {
+                    log.info("[Supervision] Restarting agent: {} (retry {}/{})", agentId, currentRetries + 1, retries);
+                    startAgent(agentId);
+                } else {
+                    log.warn("[Supervision] Max retries ({}) reached for agent: {}", retries, agentId);
+                }
+            }
+            case ESCALATE -> {
+                notifyListeners(AgentMeshListener.MeshEventType.MESSAGE_ERROR,
+                        agentId, "Agent failed, escalation required: " + reason);
+            }
+            case IGNORE -> {
+                log.info("[Supervision] Ignoring agent failure: {}", agentId);
+            }
+            case STOP -> {
+                stopAgent(agentId);
+            }
+        }
     }
 
     // ════════════════════════════════════════════════════════════

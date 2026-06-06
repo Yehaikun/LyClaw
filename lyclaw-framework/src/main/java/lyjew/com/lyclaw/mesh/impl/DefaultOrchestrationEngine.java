@@ -9,6 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -17,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import lyjew.com.lyclaw.mesh.AgentMessage;
 import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.AggregationStrategy;
+import lyjew.com.lyclaw.mesh.DagDefinition;
 import lyjew.com.lyclaw.mesh.MessageType;
 import lyjew.com.lyclaw.mesh.OrchestrationEngine;
 import lyjew.com.lyclaw.mesh.OrchestrationEvent;
@@ -370,17 +372,204 @@ public class DefaultOrchestrationEngine implements OrchestrationEngine {
     /**
      * DAG 模式：按拓扑序执行有向无环图中的所有节点。
      *
-     * <p>图中的节点是 Agent 及其任务，边表示依赖关系。
-     * 当所有前置依赖完成后，节点才可以执行。</p>
+     * <p>DAG 通过 {@link DagDefinition} 定义节点和边的依赖关系。
+     * 执行流程：拓扑排序 → 逐层按依赖执行 → 结果传递 → 汇总。</p>
      *
-     * <p>DAG 通过 {@code config} 中的 "dagNodes" 和 "dagEdges" 定义。</p>
+     * <p>使用示例：</p>
+     * <pre>{@code
+     * DagDefinition dag = DagDefinition.builder()
+     *     .node("fetch", "Fetch data", "data-loader")
+     *     .node("process", "Process data", "data-processor")
+     *     .node("report", "Generate report", "reporter")
+     *     .edge("fetch", "process")
+     *     .edge("process", "report")
+     *     .build();
+     *
+     * engine.execute(OrchestrationSpec.builder()
+     *     .pattern(OrchestrationPattern.DAG)
+     *     .config("dag", dag.toConfig())
+     *     .timeoutMs(300_000)
+     *     .build());
+     * }</pre>
      */
+    @SuppressWarnings("unchecked")
     protected OrchestrationResult executeDag(OrchestrationSpec spec) {
-        log.info("[DAG] Executing DAG pattern");
-        // Phase 3: 完整 DAG 执行（基于现有的 SupervisorOrchestrator）
-        // 当前降级为 CHAIN+FAN_OUT 组合
-        return OrchestrationResult.failure("DAG pattern not yet fully implemented",
-                spec.getPattern(), List.of());
+        long dagStart = System.currentTimeMillis();
+
+        // 1. 解析 DAG 定义
+        DagDefinition dag;
+        Object dagConfig = spec.getConfig() != null ? spec.getConfig().get("dag") : null;
+        if (dagConfig instanceof Map) {
+            dag = DagDefinition.fromConfig((Map<String, Object>) dagConfig);
+        } else {
+            dag = DagDefinition.fromConfig(spec.getConfig());
+        }
+
+        if (dag.getNodes().isEmpty()) {
+            return OrchestrationResult.failure(
+                    "DAG has no nodes. Define nodes via DagDefinition.builder()",
+                    spec.getPattern(), List.of());
+        }
+
+        // 2. 拓扑排序
+        List<String> topoOrder = dag.topologicalSort();
+        log.info("[DAG] Topological order: {}", topoOrder);
+
+        if (topoOrder.size() < dag.getNodes().size()) {
+            return OrchestrationResult.failure(
+                    "DAG contains a cycle (topological sort incomplete: "
+                            + topoOrder.size() + "/" + dag.getNodes().size() + ")",
+                    spec.getPattern(), List.of());
+        }
+
+        // 3. 逐层执行（同层可并行）
+        Map<String, String> nodeResults = new LinkedHashMap<>();    // nodeId → result
+        Map<String, Boolean> nodeStatus = new LinkedHashMap<>();    // nodeId → done
+        Map<String, String> nodeErrors = new LinkedHashMap<>();     // nodeId → error
+
+        // 初始化状态
+        for (DagDefinition.DagNode node : dag.getNodes()) {
+            nodeStatus.put(node.getId(), false);
+        }
+
+        List<OrchestrationResult.AgentResult> agentResults = new ArrayList<>();
+        AtomicBoolean anyFailed = new AtomicBoolean(false);
+
+        // 按拓扑序遍历，每轮找可并行执行的节点
+        List<String> sortedCopy = new ArrayList<>(topoOrder);
+
+        while (!sortedCopy.isEmpty()) {
+            // 找当前所有可执行的节点（所有依赖已完成）
+            List<String> readyNodes = new ArrayList<>();
+            for (String nodeId : sortedCopy) {
+                if (nodeStatus.get(nodeId)) continue;
+                List<String> deps = dag.getDependencies(nodeId);
+                boolean allDepsMet = deps.stream()
+                        .allMatch(d -> nodeStatus.getOrDefault(d, false));
+                if (allDepsMet) {
+                    readyNodes.add(nodeId);
+                }
+            }
+
+            if (readyNodes.isEmpty()) {
+                // 死锁检测
+                log.warn("[DAG] No ready nodes but " + sortedCopy.size() + " remain");
+                break;
+            }
+
+            // 并行执行就绪节点
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            for (String nodeId : readyNodes) {
+                DagDefinition.DagNode nodeDef = dag.getNodes().stream()
+                        .filter(n -> n.getId().equals(nodeId))
+                        .findFirst().orElse(null);
+                if (nodeDef == null) continue;
+
+                String nodeTask = buildNodeTask(nodeDef, nodeResults, spec);
+                String agentId = nodeDef.getAgentId();
+
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    long nodeStart = System.currentTimeMillis();
+                    log.info("[DAG] Executing node: {} → agent: {}", nodeId, agentId);
+
+                    AgentMessage request = AgentMessage.builder()
+                            .type(MessageType.REQUEST)
+                            .to(agentId)
+                            .payload(nodeTask)
+                            .correlationId("dag-" + nodeId)
+                            .ttlMs(spec.getTimeoutMs() / Math.max(1, dag.getNodes().size()))
+                            .build();
+
+                    try {
+                        AgentMessage response = mesh.send(request)
+                                .get(spec.getTimeoutMs() / Math.max(1, dag.getNodes().size()),
+                                        java.util.concurrent.TimeUnit.MILLISECONDS);
+
+                        boolean ok = response.getType() != MessageType.ERROR;
+                        synchronized (nodeResults) {
+                            if (ok) {
+                                nodeResults.put(nodeId, response.getPayload());
+                                nodeStatus.put(nodeId, true);
+                            } else {
+                                nodeErrors.put(nodeId, response.getPayload());
+                                nodeStatus.put(nodeId, true);
+                                anyFailed.set(true);
+                            }
+                        }
+                        synchronized (agentResults) {
+                            agentResults.add(new OrchestrationResult.AgentResult(
+                                    agentId, ok, response.getPayload(),
+                                    ok ? null : response.getPayload(),
+                                    System.currentTimeMillis() - nodeStart,
+                                    Map.of("dagNodeId", nodeId)));
+                        }
+                    } catch (Exception e) {
+                        synchronized (nodeErrors) {
+                            nodeErrors.put(nodeId, "DAG node failed: " + e.getMessage());
+                            nodeStatus.put(nodeId, true);
+                            anyFailed.set(true);
+                        }
+                        synchronized (agentResults) {
+                            agentResults.add(new OrchestrationResult.AgentResult(
+                                    agentId, false, null,
+                                    "DAG node failed: " + e.getMessage(),
+                                    System.currentTimeMillis() - nodeStart,
+                                    Map.of("dagNodeId", nodeId)));
+                        }
+                    }
+                });
+
+                futures.add(future);
+            }
+
+            // 等待这一批完成
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .join();
+
+            // 从待处理列表中移除
+            sortedCopy.removeAll(readyNodes);
+        }
+
+        // 4. 构建结果
+        StringBuilder output = new StringBuilder();
+        output.append("## DAG 执行结果\n\n");
+
+        for (DagDefinition.DagNode node : dag.getNodes()) {
+            output.append("### ").append(node.getId())
+                    .append(" (").append(node.getAgentId()).append(")\n\n");
+            if (nodeErrors.containsKey(node.getId())) {
+                output.append("❌ 失败：").append(nodeErrors.get(node.getId())).append("\n\n");
+            } else if (nodeResults.containsKey(node.getId())) {
+                output.append(nodeResults.get(node.getId())).append("\n\n");
+            }
+        }
+
+        long elapsed = System.currentTimeMillis() - dagStart;
+        return OrchestrationResult.success(
+                output.toString(),
+                OrchestrationPattern.DAG,
+                agentResults,
+                elapsed);
+    }
+
+    /**
+     * 为 DAG 节点构建任务描述，注入前置节点的执行结果。
+     */
+    private String buildNodeTask(DagDefinition.DagNode node,
+                                  Map<String, String> nodeResults,
+                                  OrchestrationSpec spec) {
+        List<String> deps = List.of(); // we'll resolve from the dag
+        // 简单注入：如果节点 task 中包含 {{result.fromNodeId}} 模式
+        String task = node.getTask() != null ? node.getTask()
+                : (spec.getTask() != null ? spec.getTask() : "");
+        for (Map.Entry<String, String> result : nodeResults.entrySet()) {
+            String placeholder = "{{" + result.getKey() + "}}";
+            if (task.contains(placeholder)) {
+                task = task.replace(placeholder,
+                        result.getValue() != null ? result.getValue() : "");
+            }
+        }
+        return task;
     }
 
     // ════════════════════════════════════════════════════════════
