@@ -14,6 +14,7 @@ import lyjew.com.lyclaw.mesh.AgentSpec;
 import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.react.DefaultReActEngine;
 import lyjew.com.lyclaw.react.ReActEngine;
+import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
@@ -27,7 +28,7 @@ public class DefaultAgentFactory implements AgentFactory {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultAgentFactory.class);
 
-    private AgentMesh mesh;
+    private volatile AgentMesh mesh;
     private ChatFacade chatFacade;
     private ReActEngine reActEngine;
     private ToolRegistry toolRegistry;
@@ -70,8 +71,11 @@ public class DefaultAgentFactory implements AgentFactory {
             registry = createScopedToolRegistry(spec);
         }
 
+        // 使用有效的 mesh 引用：优先 Spring 注入的，其次静态默认实例
+        AgentMesh effectiveMesh = this.mesh != null ? this.mesh : DefaultAgentMesh.getDefault();
+
         LLMAgentInstance instance = new LLMAgentInstance(
-                spec, engine, chatFacade, registry, mesh);
+                spec, engine, chatFacade, registry, effectiveMesh);
         log.info("Created LLM Agent: {} (model={}, tools={})",
                 spec.getAgentId(), spec.getModel(),
                 spec.getTools() != null ? spec.getTools().size() : 0);
@@ -79,7 +83,8 @@ public class DefaultAgentFactory implements AgentFactory {
     }
 
     private AgentInstance createTool(AgentSpec spec) {
-        ToolAgentInstance instance = new ToolAgentInstance(spec, mesh);
+        AgentMesh effectiveMesh = this.mesh != null ? this.mesh : DefaultAgentMesh.getDefault();
+        ToolAgentInstance instance = new ToolAgentInstance(spec, effectiveMesh);
         log.info("Created Tool Agent: {} (tool={})", spec.getAgentId(), spec.getName());
         return instance;
     }

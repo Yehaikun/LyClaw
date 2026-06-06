@@ -72,35 +72,54 @@ public class DefaultAgentMesh implements AgentMesh {
     // ── 生命周期监听器 ──
     private final ConcurrentHashMap<String, CopyOnWriteArrayList<AgentLifecycleListener>> lifecycleListeners = new ConcurrentHashMap<>();
 
-    // ── Agent 工厂 ──
-    private final AgentFactory agentFactory;
+    // ── 全局默认实例（用于 DefaultAgentFactory 在无 Spring 注入时引用） ──
+    private static volatile DefaultAgentMesh defaultInstance;
+
+    /** 获取全局默认 AgentMesh 实例 */
+    public static DefaultAgentMesh getDefault() { return defaultInstance; }
+
+    // ── Agent 工厂（由 Spring 的 MeshAutoConfiguration 注入） ──
+    private volatile AgentFactory agentFactory;
 
     // ── 指标收集 ──
     private final AgentMeshMetrics metrics;
 
+    /**
+     * 无参构造器。AgentFactory 由 {@link #configureAgentFactory(AgentFactory)}
+     * 在 Spring 初始化完成后注入，在此之前调用 register() 会抛出异常。
+     */
     public DefaultAgentMesh() {
-        this.agentFactory = new DefaultAgentFactory();
+        this.agentFactory = null;
+        this.metrics = new DefaultAgentMeshMetrics();
+        defaultInstance = this;
+    }
+
+    public DefaultAgentMesh(AgentFactory agentFactory) {
+        this.agentFactory = agentFactory;
         this.metrics = new DefaultAgentMeshMetrics();
         if (this.agentFactory instanceof DefaultAgentFactory) {
             ((DefaultAgentFactory) this.agentFactory).setMesh(this);
         }
     }
 
-    public DefaultAgentMesh(AgentFactory agentFactory) {
-        this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory();
-        this.metrics = new DefaultAgentMeshMetrics();
-        if (!this.agentFactory.getClass().equals(DefaultAgentFactory.class)
-                && this.agentFactory instanceof DefaultAgentFactory) {
+    public DefaultAgentMesh(AgentFactory agentFactory, AgentMeshMetrics metrics) {
+        this.agentFactory = agentFactory;
+        this.metrics = metrics != null ? metrics : new DefaultAgentMeshMetrics();
+        if (this.agentFactory instanceof DefaultAgentFactory) {
             ((DefaultAgentFactory) this.agentFactory).setMesh(this);
         }
     }
 
-    public DefaultAgentMesh(AgentFactory agentFactory, AgentMeshMetrics metrics) {
-        this.agentFactory = agentFactory != null ? agentFactory : new DefaultAgentFactory();
-        this.metrics = metrics != null ? metrics : new DefaultAgentMeshMetrics();
-        if (!this.agentFactory.getClass().equals(DefaultAgentFactory.class)
-                && this.agentFactory instanceof DefaultAgentFactory) {
-            ((DefaultAgentFactory) this.agentFactory).setMesh(this);
+    /**
+     * 用外部配置好的工厂替换内部工厂。
+     * 由 MeshAutoConfiguration 在 Spring 初始化完成后调用。
+     */
+    public void configureAgentFactory(AgentFactory externalFactory) {
+        if (externalFactory != null) {
+            this.agentFactory = externalFactory;
+            if (externalFactory instanceof DefaultAgentFactory) {
+                ((DefaultAgentFactory) externalFactory).setMesh(this);
+            }
         }
     }
 
@@ -112,6 +131,12 @@ public class DefaultAgentMesh implements AgentMesh {
     public AgentRef register(AgentSpec spec) {
         if (refs.containsKey(spec.getAgentId())) {
             throw new IllegalStateException("Agent already registered: " + spec.getAgentId());
+        }
+
+        if (agentFactory == null) {
+            throw new IllegalStateException(
+                    "AgentFactory not configured. MeshAutoConfiguration must wire a factory before agents can be registered. "
+                    + "Ensure MeshAutoConfiguration is registered in AutoConfiguration.imports.");
         }
 
         // 1. 创建 AgentRef

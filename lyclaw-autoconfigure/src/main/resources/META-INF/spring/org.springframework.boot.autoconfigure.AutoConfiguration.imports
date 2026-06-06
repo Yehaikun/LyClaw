@@ -8,3 +8,4 @@ lyjew.com.lyclaw.autoconfigure.autoconfigure.ProcessorAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.autoconfigure.AgentProxyAutoConfiguration
 lyjew.com.lyclaw.autoconfigure.config.LyClawPropertiesBinder
 lyjew.com.lyclaw.tracing.TraceAutoConfiguration
+lyjew.com.lyclaw.autoconfigure.autoconfigure.MeshAutoConfiguration
