@@ -47,6 +47,7 @@ import { processRawMessages } from '@/utils/message-mapper'
 import { useSettingsStore } from '@/stores/settings'
 import WelcomeHero from '@/components/WelcomeHero.vue'
 import MessageBubble from '@/components/MessageBubble.vue'
+import AgentExecSidebar from '@/components/AgentExecSidebar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ToolCallCard from '@/components/ToolCallCard.vue'
 import ToolApprovalDialog from '@/components/ToolApprovalDialog.vue'
@@ -610,6 +611,8 @@ watch(
           @select="scrollToMessage"
         />
       </Transition>
+      <!-- Agent 执行进度侧栏 -->
+      <AgentExecSidebar />
     </div>
     </Transition>
 
@@ -640,6 +643,8 @@ watch(
   position: relative;
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: row;
 }
 
 .chat-main {
