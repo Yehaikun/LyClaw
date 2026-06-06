@@ -11,6 +11,7 @@ import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.config.AgentConfigResolver;
 import lyjew.com.lyclaw.config.ResolvedAgentConfig;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
+import lyjew.com.lyclaw.session.SessionService;
 import lyjew.com.lyclaw.session.SessionStore;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
@@ -34,6 +35,7 @@ public class AgentProxyFactory {
     private final List<ReactivePipelineStage> stages;
     private final AgentConfigResolver configResolver;
     private final SessionStore sessionStore;
+    private final SessionService sessionService;
 
     public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
                               ToolRegistry toolRegistry) {
@@ -81,6 +83,20 @@ public class AgentProxyFactory {
                               List<ReactivePipelineStage> stages,
                               AgentConfigResolver configResolver,
                               SessionStore sessionStore) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt,
+                modelOverride, providerOverride, hooks, stages, configResolver,
+                sessionStore, null);
+    }
+
+    /** Full constructor. */
+    public AgentProxyFactory(ChatFacade chatFacade, ReActEngine reActEngine,
+                              ToolRegistry toolRegistry, String defaultSystemPrompt,
+                              String modelOverride, String providerOverride,
+                              List<AgentHook> hooks,
+                              List<ReactivePipelineStage> stages,
+                              AgentConfigResolver configResolver,
+                              SessionStore sessionStore,
+                              SessionService sessionService) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
@@ -91,6 +107,7 @@ public class AgentProxyFactory {
         this.stages = stages != null ? List.copyOf(stages) : List.of();
         this.configResolver = configResolver;
         this.sessionStore = sessionStore;
+        this.sessionService = sessionService;
     }
 
     @SuppressWarnings("unchecked")
@@ -121,7 +138,7 @@ public class AgentProxyFactory {
 
         AgentInvocationHandler handler = new AgentInvocationHandler(
                 chatFacade, reActEngine, toolRegistry, systemPrompt, model, provider,
-                hooks, stages, resolvedConfig, sessionStore);
+                hooks, stages, null, resolvedConfig, sessionStore, sessionService);
 
         log.info("🏭 [AgentProxyFactory] 创建Agent代理: interface={} model={} provider={} hooks={} stages={}",
                 agentInterface.getSimpleName(), model, provider, hooks.size(), stages.size());

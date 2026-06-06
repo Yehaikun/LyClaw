@@ -26,6 +26,7 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
+import lyjew.com.lyclaw.session.SessionService;
 import lyjew.com.lyclaw.session.SessionStore;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.tool.ToolRegistry;
@@ -61,6 +62,7 @@ public class AgentInvocationHandler implements InvocationHandler {
     private final HookRegistry hookRegistry;
     private final ResolvedAgentConfig resolvedConfig;
     private final SessionStore sessionStore;
+    private final SessionService sessionService;
 
     public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
                                    ToolRegistry toolRegistry, String defaultSystemPrompt,
@@ -103,7 +105,7 @@ public class AgentInvocationHandler implements InvocationHandler {
                                    SessionStore sessionStore) {
         this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt,
                 modelOverride, providerOverride, hooks, stages, null,
-                resolvedConfig, sessionStore);
+                resolvedConfig, sessionStore, null);
     }
 
     /** Full constructor. */
@@ -116,10 +118,10 @@ public class AgentInvocationHandler implements InvocationHandler {
                                    ResolvedAgentConfig resolvedConfig) {
         this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt,
                 modelOverride, providerOverride, hooks, stages, hookRegistry,
-                resolvedConfig, null);
+                resolvedConfig, null, null);
     }
 
-    /** Full constructor. */
+    /** Full constructor (backward compatible - SessionStore only). */
     public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
                                    ToolRegistry toolRegistry, String defaultSystemPrompt,
                                    String modelOverride, String providerOverride,
@@ -128,6 +130,21 @@ public class AgentInvocationHandler implements InvocationHandler {
                                    HookRegistry hookRegistry,
                                    ResolvedAgentConfig resolvedConfig,
                                    SessionStore sessionStore) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt,
+                modelOverride, providerOverride, hooks, stages, hookRegistry,
+                resolvedConfig, sessionStore, null);
+    }
+
+    /** Ultimate constructor. */
+    public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
+                                   ToolRegistry toolRegistry, String defaultSystemPrompt,
+                                   String modelOverride, String providerOverride,
+                                   List<AgentHook> hooks,
+                                   List<ReactivePipelineStage> stages,
+                                   HookRegistry hookRegistry,
+                                   ResolvedAgentConfig resolvedConfig,
+                                   SessionStore sessionStore,
+                                   SessionService sessionService) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
@@ -139,6 +156,7 @@ public class AgentInvocationHandler implements InvocationHandler {
         this.hookRegistry = hookRegistry != null ? hookRegistry : new HookRegistry();
         this.resolvedConfig = resolvedConfig != null ? resolvedConfig : ResolvedAgentConfig.builder().build();
         this.sessionStore = sessionStore;
+        this.sessionService = sessionService;
         // 将所有现有 hooks 注册到 HookRegistry
         for (AgentHook hook : this.hooks) {
             this.hookRegistry.register(hook, "agent-hook", hook.getOrder());
@@ -601,16 +619,28 @@ public class AgentInvocationHandler implements InvocationHandler {
 
         applyDelegationConfig(request);
 
-        if (sessionStore != null && sessionId != null && !sessionId.isEmpty()) {
-            sessionStore.getOrCreate(sessionId, request.getAgentId(), request.getModel());
-            List<Message> history = sessionStore.loadMessages(sessionId, 500);
-            List<Message> merged = new ArrayList<>(history);
-            if (!sameLastUserMessage(merged, userMessage)) {
-                merged.add(Message.user(userMessage));
+        if (sessionId != null && !sessionId.isEmpty()) {
+            if (sessionService != null) {
+                sessionService.getOrCreate(sessionId, request.getAgentId(), request.getModel());
+                List<Message> history = sessionService.loadLatestMessages(sessionId, 500);
+                List<Message> merged = new ArrayList<>(history);
+                if (!sameLastUserMessage(merged, userMessage)) {
+                    merged.add(Message.user(userMessage));
+                }
+                request.setMessages(merged);
+                log.info("会话历史已加载 (via SessionService) | sessionId={} | history={}",
+                        sessionId, history.size());
+            } else if (sessionStore != null) {
+                sessionStore.getOrCreate(sessionId, request.getAgentId(), request.getModel());
+                List<Message> history = sessionStore.loadMessages(sessionId, 500);
+                List<Message> merged = new ArrayList<>(history);
+                if (!sameLastUserMessage(merged, userMessage)) {
+                    merged.add(Message.user(userMessage));
+                }
+                request.setMessages(merged);
+                log.info("会话历史已加载 (via SessionStore) | sessionId={} | history={}",
+                        sessionId, history.size());
             }
-            request.setMessages(merged);
-            log.info("会话历史已加载 | sessionId={} | history={} | requestMessages={}",
-                    sessionId, history.size(), merged.size());
         }
 
         refreshToolDefinitions(request, ctx);
@@ -658,16 +688,30 @@ public class AgentInvocationHandler implements InvocationHandler {
     }
 
     private void persistSession(AgentContext ctx) {
-        if (sessionStore == null || ctx == null || ctx.getChatRequest() == null) {
+        if (ctx == null || ctx.getChatRequest() == null) {
             return;
         }
         ChatRequest request = ctx.getChatRequest();
-        if (request.getSessionId() == null || request.getSessionId().isEmpty()) {
+        String sessionId = request.getSessionId();
+        if (sessionId == null || sessionId.isEmpty()) {
             return;
         }
-        sessionStore.saveMessages(request.getSessionId(), request.getMessages());
-        log.info("会话消息已保存 | sessionId={} | messages={}",
-                request.getSessionId(), request.getMessageCount());
+
+        if (sessionService != null) {
+            // 增量追加：只保存新增的消息
+            List<Message> fullMessages = request.getMessages();
+            int existingCount = sessionService.messageCount(sessionId);
+            if (fullMessages.size() > existingCount) {
+                List<Message> newMessages = fullMessages.subList(existingCount, fullMessages.size());
+                sessionService.appendMessages(sessionId, newMessages);
+            }
+            log.info("会话消息已保存 (via SessionService) | sessionId={} | 新增={} | 总数={}",
+                    sessionId, fullMessages.size() - existingCount, fullMessages.size());
+        } else if (sessionStore != null) {
+            sessionStore.saveMessages(sessionId, request.getMessages());
+            log.info("会话消息已保存 (via SessionStore) | sessionId={} | messages={}",
+                    sessionId, request.getMessageCount());
+        }
     }
 
     private ChatRequest buildChatRequest(Method method, String userMessage, String systemPrompt) {

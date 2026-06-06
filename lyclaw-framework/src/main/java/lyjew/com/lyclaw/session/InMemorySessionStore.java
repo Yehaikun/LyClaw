@@ -11,6 +11,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
+import lyjew.com.lyclaw.model.SessionQuery;
+import lyjew.com.lyclaw.model.SessionStatus;
 
 /**
  * 默认进程内 {@link SessionStore} 实现。
@@ -26,11 +28,16 @@ public class InMemorySessionStore implements SessionStore {
     @Override
     public Session createSession(String agentId, String model) {
         String sessionId = UUID.randomUUID().toString().replace("-", "");
+        long now = System.currentTimeMillis();
         Session session = Session.builder()
                 .sessionId(sessionId)
+                .agentId(agentId != null && !agentId.isBlank() ? agentId : null)
                 .name(agentId != null && !agentId.isBlank() ? agentId : "Chat")
                 .model(model)
                 .messages(new ArrayList<>())
+                .createdAt(now)
+                .updatedAt(now)
+                .lastActiveAt(now)
                 .build();
         sessions.put(sessionId, session);
         return copySession(session);
@@ -41,11 +48,16 @@ public class InMemorySessionStore implements SessionStore {
         if (sessionId == null || sessionId.isBlank()) {
             return createSession(agentId, model);
         }
+        long now = System.currentTimeMillis();
         Session session = sessions.computeIfAbsent(sessionId, id -> Session.builder()
                 .sessionId(id)
+                .agentId(agentId != null && !agentId.isBlank() ? agentId : null)
                 .name(agentId != null && !agentId.isBlank() ? agentId : "Chat")
                 .model(model)
                 .messages(new ArrayList<>())
+                .createdAt(now)
+                .updatedAt(now)
+                .lastActiveAt(now)
                 .build());
         return copySession(session);
     }
@@ -106,25 +118,84 @@ public class InMemorySessionStore implements SessionStore {
     }
 
     @Override
+    public List<Session> list(SessionQuery query) {
+        return sessions.values().stream()
+                .filter(s -> query == null || matchesQuery(s, query))
+                .sorted((a, b) -> {
+                    if (query != null && "name".equals(query.getSortBy()) && !query.isAscending()) {
+                        return b.getName().compareToIgnoreCase(a.getName());
+                    }
+                    return Long.compare(b.getUpdatedAt(), a.getUpdatedAt());
+                })
+                .skip(query != null ? query.getOffset() : 0)
+                .limit(query != null ? query.getLimit() : 50)
+                .map(this::copySession)
+                .toList();
+    }
+
+    @Override
+    public int count(SessionQuery query) {
+        return (int) sessions.values().stream()
+                .filter(s -> query == null || matchesQuery(s, query))
+                .count();
+    }
+
+    private boolean matchesQuery(Session s, SessionQuery q) {
+        if (q.getAgentId() != null && !q.getAgentId().isBlank()
+                && !q.getAgentId().equals(s.getAgentId())) {
+            return false;
+        }
+        if (q.getUserId() != null && !q.getUserId().isBlank()
+                && !q.getUserId().equals(s.getUserId())) {
+            return false;
+        }
+        if (q.getStatus() != null && q.getStatus() != s.getStatus()) {
+            return false;
+        }
+        if (q.getKeyword() != null && !q.getKeyword().isBlank()) {
+            String keyword = q.getKeyword().toLowerCase();
+            if (s.getName() != null && s.getName().toLowerCase().contains(keyword)) {
+                return true;
+            }
+            if (s.getMessages() != null) {
+                return s.getMessages().stream()
+                        .anyMatch(m -> m.getContent() != null
+                                && m.getContent().toLowerCase().contains(keyword));
+            }
+            return false;
+        }
+        if (q.getCreatedAfter() != null && s.getCreatedAt() < q.getCreatedAfter()) {
+            return false;
+        }
+        if (q.getCreatedBefore() != null && s.getCreatedAt() > q.getCreatedBefore()) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
     public List<Map<String, Object>> listSessions(String agentId) {
         return sessions.values().stream()
                 .filter(session -> agentId == null || agentId.isBlank()
+                        || agentId.equals(session.getAgentId())
                         || agentId.equals(session.getName()))
                 .sorted(Comparator.comparing(Session::getSessionId).reversed())
                 .map(session -> {
                     Map<String, Object> row = new LinkedHashMap<>();
+                    String resolvedAgentId = session.getAgentId() != null ? session.getAgentId()
+                            : session.getName();
                     row.put("sessionId", session.getSessionId());
                     row.put("session_id", session.getSessionId());
                     row.put("name", session.getName());
-                    row.put("agentId", session.getName());
-                    row.put("agent_id", session.getName());
+                    row.put("agentId", resolvedAgentId);
+                    row.put("agent_id", resolvedAgentId);
                     row.put("model", session.getModel());
                     row.put("messageCount", session.getMessages() != null ? session.getMessages().size() : 0);
                     row.put("message_count", session.getMessages() != null ? session.getMessages().size() : 0);
-                    row.put("createdAt", "");
-                    row.put("updatedAt", "");
-                    row.put("created_at", 0L);
-                    row.put("updated_at", 0L);
+                    row.put("createdAt", session.getCreatedAt());
+                    row.put("updatedAt", session.getUpdatedAt());
+                    row.put("created_at", session.getCreatedAt());
+                    row.put("updated_at", session.getUpdatedAt());
                     row.put("firstMsgPreview", firstUserPreview(session));
                     row.put("first_msg_preview", firstUserPreview(session));
                     return row;
@@ -159,8 +230,18 @@ public class InMemorySessionStore implements SessionStore {
     private Session copySession(Session source) {
         return Session.builder()
                 .sessionId(source.getSessionId())
+                .agentId(source.getAgentId())
                 .name(source.getName())
                 .model(source.getModel())
+                .status(source.getStatus())
+                .tags(source.getTags() != null ? new java.util.LinkedHashMap<>(source.getTags()) : null)
+                .userId(source.getUserId())
+                .createdAt(source.getCreatedAt())
+                .updatedAt(source.getUpdatedAt())
+                .lastActiveAt(source.getLastActiveAt())
+                .messageCount(source.getMessageCount())
+                .estimatedTokenCount(source.getEstimatedTokenCount())
+                .metadataJson(source.getMetadataJson())
                 .messages(source.getMessages() != null
                         ? new ArrayList<>(source.getMessages()) : new ArrayList<>())
                 .build();

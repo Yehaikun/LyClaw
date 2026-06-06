@@ -11,7 +11,8 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.web.agent.ChatAgent;
 import lyjew.com.lyclaw.react.SessionRequestContext;
-import lyjew.com.lyclaw.session.SessionStore;
+import lyjew.com.lyclaw.session.SessionService;
+import lyjew.com.lyclaw.session.SessionUpdate;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -25,11 +26,11 @@ import reactor.core.scheduler.Schedulers;
 public class ChatController {
 
     private final ChatAgent chatAgent;
-    private final SessionStore sessionStore;
+    private final SessionService sessionService;
 
-    public ChatController(ChatAgent chatAgent, SessionStore sessionStore) {
+    public ChatController(ChatAgent chatAgent, SessionService sessionService) {
         this.chatAgent = chatAgent;
-        this.sessionStore = sessionStore;
+        this.sessionService = sessionService;
     }
 
     @Operation(summary = "流式聊天", description = "发送消息并以SSE流式返回AI响应")
@@ -89,23 +90,22 @@ public class ChatController {
     @PostMapping("/agents/{agentId}/sessions")
     public Session createSession(@PathVariable String agentId,
                                   @RequestBody(required = false) ChatRequest request) {
-        return sessionStore.createSession(agentId,
+        return sessionService.create(agentId,
                 request != null ? request.getModel() : null);
     }
 
     @Operation(summary = "列出会话", description = "获取指定 Agent 的会话列表")
     @GetMapping("/agents/{agentId}/sessions")
     public List<Map<String, Object>> listSessions(@PathVariable String agentId) {
-        return sessionStore.listSessions(agentId);
+        return sessionService.listSessions(agentId);
     }
 
     @Operation(summary = "获取会话", description = "获取会话信息")
     @GetMapping("/agents/{agentId}/sessions/{sessionId}")
     public Session getSession(@PathVariable String agentId,
                                @PathVariable String sessionId) {
-        Session session = sessionStore.getSession(sessionId).orElse(null);
-        if (session == null) throw new RuntimeException("会话不存在: " + sessionId);
-        return session;
+        return sessionService.get(sessionId)
+                .orElseThrow(() -> new RuntimeException("会话不存在: " + sessionId));
     }
 
     @Operation(summary = "获取会话消息", description = "分页获取指定会话的消息历史")
@@ -114,7 +114,7 @@ public class ChatController {
                                      @PathVariable String sessionId,
                                      @RequestParam(defaultValue = "0") int offset,
                                      @RequestParam(defaultValue = "200") int limit) {
-        return sessionStore.loadMessages(sessionId, offset, limit);
+        return sessionService.loadMessages(sessionId, offset, limit);
     }
 
     @Operation(summary = "重命名会话", description = "修改会话名称")
@@ -123,8 +123,7 @@ public class ChatController {
                                              @PathVariable String sessionId,
                                              @RequestBody Map<String, Object> body) {
         String name = body.get("name") != null ? body.get("name").toString() : "";
-        boolean updated = sessionStore.renameSession(sessionId, name);
-        if (!updated) throw new RuntimeException("会话不存在: " + sessionId);
+        sessionService.update(sessionId, new SessionUpdate().name(name));
         return Map.of("sessionId", sessionId, "name", name);
     }
 
@@ -132,14 +131,14 @@ public class ChatController {
     @DeleteMapping("/agents/{agentId}/sessions/{sessionId}")
     public Map<String, Object> deleteSession(@PathVariable String agentId,
                                              @PathVariable String sessionId) {
-        sessionStore.deleteSession(sessionId);
+        sessionService.delete(sessionId);
         return Map.of("deleted", true, "sessionId", sessionId);
     }
 
     private Session resolveSession(ChatRequest request, String agentId) {
         if (request.getSessionId() != null && !request.getSessionId().isEmpty()) {
-            return sessionStore.getOrCreate(request.getSessionId(), agentId, request.getModel());
+            return sessionService.getOrCreate(request.getSessionId(), agentId, request.getModel());
         }
-        return sessionStore.createSession(agentId, request.getModel());
+        return sessionService.create(agentId, request.getModel());
     }
 }

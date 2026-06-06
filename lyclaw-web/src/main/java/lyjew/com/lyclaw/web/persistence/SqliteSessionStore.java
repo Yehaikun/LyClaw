@@ -3,6 +3,8 @@ package lyjew.com.lyclaw.web.persistence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
+import lyjew.com.lyclaw.model.SessionQuery;
+import lyjew.com.lyclaw.model.SessionStatus;
 import lyjew.com.lyclaw.session.SessionStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,22 +53,30 @@ public class SqliteSessionStore implements SessionStore {
         String sessionId = UUID.randomUUID().toString().replace("-", "");
         long now = now();
         String name = "Chat";
+        String normalizedAgentId = normalizeAgentId(agentId);
         try (Connection conn = open();
              PreparedStatement ps = conn.prepareStatement("""
-                     INSERT INTO sessions(session_id, agent_id, name, model, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?)
+                     INSERT INTO sessions(session_id, agent_id, name, model, status, created_at, updated_at, last_active_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                      """)) {
             ps.setString(1, sessionId);
-            ps.setString(2, normalizeAgentId(agentId));
+            ps.setString(2, normalizedAgentId);
             ps.setString(3, name);
             ps.setString(4, model);
-            ps.setLong(5, now);
+            ps.setString(5, SessionStatus.ACTIVE.name());
             ps.setLong(6, now);
+            ps.setLong(7, now);
+            ps.setLong(8, now);
             ps.executeUpdate();
             return Session.builder()
                     .sessionId(sessionId)
+                    .agentId(normalizedAgentId)
                     .name(name)
                     .model(model)
+                    .status(SessionStatus.ACTIVE)
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .lastActiveAt(now)
                     .messages(new ArrayList<>())
                     .build();
         } catch (SQLException e) {
@@ -114,19 +124,17 @@ public class SqliteSessionStore implements SessionStore {
         }
         try (Connection conn = open();
              PreparedStatement ps = conn.prepareStatement("""
-                     SELECT session_id, name, model FROM sessions WHERE session_id = ?
+                     SELECT session_id, agent_id, name, model, status, user_id,
+                            created_at, updated_at, last_active_at, message_count,
+                            estimated_token_count, metadata_json
+                     FROM sessions WHERE session_id = ?
                      """)) {
             ps.setString(1, sessionId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     return Optional.empty();
                 }
-                return Optional.of(Session.builder()
-                        .sessionId(rs.getString("session_id"))
-                        .name(rs.getString("name"))
-                        .model(rs.getString("model"))
-                        .messages(loadMessages(sessionId, DEFAULT_LIMIT))
-                        .build());
+                return Optional.of(mapSession(rs));
             }
         } catch (SQLException e) {
             throw new IllegalStateException("读取 SQLite 会话失败", e);
@@ -138,15 +146,24 @@ public class SqliteSessionStore implements SessionStore {
         if (session == null || session.getSessionId() == null || session.getSessionId().isBlank()) {
             return;
         }
-        getOrCreate(session.getSessionId(), session.getName(), session.getModel());
+        getOrCreate(session.getSessionId(), session.getAgentId(), session.getModel());
         try (Connection conn = open();
              PreparedStatement ps = conn.prepareStatement("""
-                     UPDATE sessions SET name = ?, model = ?, updated_at = ? WHERE session_id = ?
+                     UPDATE sessions SET agent_id = ?, name = ?, model = ?, status = ?,
+                         user_id = ?, updated_at = ?, last_active_at = ?,
+                         message_count = ?, estimated_token_count = ?
+                     WHERE session_id = ?
                      """)) {
-            ps.setString(1, session.getName());
-            ps.setString(2, session.getModel());
-            ps.setLong(3, now());
-            ps.setString(4, session.getSessionId());
+            ps.setString(1, normalizeAgentId(session.getAgentId()));
+            ps.setString(2, session.getName());
+            ps.setString(3, session.getModel());
+            ps.setString(4, session.getStatus() != null ? session.getStatus().name() : SessionStatus.ACTIVE.name());
+            ps.setString(5, session.getUserId());
+            ps.setLong(6, now());
+            ps.setLong(7, session.getLastActiveAt());
+            ps.setInt(8, session.getMessageCount());
+            ps.setInt(9, session.getEstimatedTokenCount());
+            ps.setString(10, session.getSessionId());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("保存 SQLite 会话失败", e);
@@ -341,6 +358,118 @@ public class SqliteSessionStore implements SessionStore {
         }
     }
 
+    @Override
+    public synchronized List<Session> list(SessionQuery query) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT session_id, agent_id, name, model, status, user_id,
+                       created_at, updated_at, last_active_at, message_count,
+                       estimated_token_count, metadata_json
+                FROM sessions WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        if (query != null) {
+            if (query.getAgentId() != null && !query.getAgentId().isBlank()) {
+                sql.append(" AND agent_id = ?");
+                params.add(query.getAgentId());
+            }
+            if (query.getUserId() != null && !query.getUserId().isBlank()) {
+                sql.append(" AND user_id = ?");
+                params.add(query.getUserId());
+            }
+            if (query.getStatus() != null) {
+                sql.append(" AND status = ?");
+                params.add(query.getStatus().name());
+            }
+            if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
+                sql.append(" AND (name LIKE ? OR session_id IN (SELECT DISTINCT session_id FROM messages WHERE content LIKE ?))");
+                String kw = "%" + query.getKeyword() + "%";
+                params.add(kw);
+                params.add(kw);
+            }
+            if (query.getCreatedAfter() != null) {
+                sql.append(" AND created_at >= ?");
+                params.add(query.getCreatedAfter());
+            }
+            if (query.getCreatedBefore() != null) {
+                sql.append(" AND created_at <= ?");
+                params.add(query.getCreatedBefore());
+            }
+        }
+        sql.append(" ORDER BY updated_at DESC");
+        if (query != null) {
+            sql.append(" LIMIT ? OFFSET ?");
+            params.add(query.getLimit());
+            params.add(query.getOffset());
+        } else {
+            sql.append(" LIMIT 50 OFFSET 0");
+        }
+        try (Connection conn = open();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Session> result = new ArrayList<>();
+                while (rs.next()) {
+                    result.add(mapSession(rs));
+                }
+                return result;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("SQLite 查询会话列表失败", e);
+        }
+    }
+
+    @Override
+    public synchronized int count(SessionQuery query) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM sessions WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+        if (query != null) {
+            if (query.getAgentId() != null && !query.getAgentId().isBlank()) {
+                sql.append(" AND agent_id = ?");
+                params.add(query.getAgentId());
+            }
+            if (query.getStatus() != null) {
+                sql.append(" AND status = ?");
+                params.add(query.getStatus().name());
+            }
+        }
+        try (Connection conn = open();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("SQLite 统计会话数失败", e);
+        }
+    }
+
+    private Session mapSession(ResultSet rs) throws SQLException {
+        String statusStr = rs.getString("status");
+        SessionStatus status = SessionStatus.ACTIVE;
+        if (statusStr != null) {
+            try { status = SessionStatus.valueOf(statusStr); } catch (Exception ignored) {}
+        }
+        return Session.builder()
+                .sessionId(rs.getString("session_id"))
+                .agentId(rs.getString("agent_id"))
+                .name(rs.getString("name"))
+                .model(rs.getString("model"))
+                .status(status)
+                .userId(rs.getString("user_id"))
+                .createdAt(rs.getLong("created_at"))
+                .updatedAt(rs.getLong("updated_at"))
+                .lastActiveAt(rs.getLong("last_active_at"))
+                .messageCount(rs.getInt("message_count"))
+                .estimatedTokenCount(rs.getInt("estimated_token_count"))
+                .metadataJson(rs.getString("metadata_json"))
+                .messages(loadMessages(rs.getString("session_id"), DEFAULT_LIMIT))
+                .build();
+    }
+
     private void initSchema() {
         try (Connection conn = open();
              Statement stmt = conn.createStatement()) {
@@ -348,11 +477,17 @@ public class SqliteSessionStore implements SessionStore {
             stmt.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS sessions (
                         session_id TEXT PRIMARY KEY,
-                        agent_id TEXT NOT NULL,
-                        name TEXT NOT NULL,
+                        agent_id TEXT NOT NULL DEFAULT '',
+                        name TEXT NOT NULL DEFAULT 'Chat',
                         model TEXT,
+                        status TEXT NOT NULL DEFAULT 'ACTIVE',
+                        user_id TEXT DEFAULT '',
                         created_at INTEGER NOT NULL,
-                        updated_at INTEGER NOT NULL
+                        updated_at INTEGER NOT NULL,
+                        last_active_at INTEGER NOT NULL,
+                        message_count INTEGER NOT NULL DEFAULT 0,
+                        estimated_token_count INTEGER NOT NULL DEFAULT 0,
+                        metadata_json TEXT DEFAULT ''
                     )
                     """);
             stmt.executeUpdate("""
@@ -379,6 +514,14 @@ public class SqliteSessionStore implements SessionStore {
                     CREATE INDEX IF NOT EXISTS idx_sessions_agent_updated
                     ON sessions(agent_id, updated_at DESC)
                     """);
+
+            // 尝试迁移旧表：添加新列（忽略已存在的错误）
+            try { stmt.executeUpdate("ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE'"); } catch (Exception ignored) {}
+            try { stmt.executeUpdate("ALTER TABLE sessions ADD COLUMN user_id TEXT DEFAULT ''"); } catch (Exception ignored) {}
+            try { stmt.executeUpdate("ALTER TABLE sessions ADD COLUMN last_active_at INTEGER NOT NULL DEFAULT 0"); } catch (Exception ignored) {}
+            try { stmt.executeUpdate("ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0"); } catch (Exception ignored) {}
+            try { stmt.executeUpdate("ALTER TABLE sessions ADD COLUMN estimated_token_count INTEGER NOT NULL DEFAULT 0"); } catch (Exception ignored) {}
+            try { stmt.executeUpdate("ALTER TABLE sessions ADD COLUMN metadata_json TEXT DEFAULT ''"); } catch (Exception ignored) {}
         } catch (SQLException e) {
             throw new IllegalStateException("初始化 SQLite schema 失败", e);
         }
