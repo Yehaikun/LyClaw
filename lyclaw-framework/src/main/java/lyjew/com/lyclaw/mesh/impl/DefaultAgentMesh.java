@@ -16,6 +16,8 @@ import lyjew.com.lyclaw.mesh.AgentInstance;
 import lyjew.com.lyclaw.mesh.AgentLifecycleEvent;
 import lyjew.com.lyclaw.mesh.AgentLifecycleListener;
 import lyjew.com.lyclaw.mesh.AgentLifecycleState;
+import lyjew.com.lyclaw.mesh.AgentExecutionEvent;
+import lyjew.com.lyclaw.mesh.AgentExecutionStore;
 import lyjew.com.lyclaw.mesh.AgentFactory;
 import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.mesh.AgentMeshListener;
@@ -81,6 +83,9 @@ public class DefaultAgentMesh implements AgentMesh {
     // ── Agent 工厂（由 Spring 的 MeshAutoConfiguration 注入） ──
     private volatile AgentFactory agentFactory;
 
+    // ── 执行事件存储 ──
+    private final AgentExecutionStore executionStore;
+
     // ── 指标收集 ──
     private final AgentMeshMetrics metrics;
 
@@ -90,13 +95,16 @@ public class DefaultAgentMesh implements AgentMesh {
      */
     public DefaultAgentMesh() {
         this.agentFactory = null;
+        this.executionStore = new AgentExecutionStore();
         this.metrics = new DefaultAgentMeshMetrics();
         defaultInstance = this;
     }
 
     public DefaultAgentMesh(AgentFactory agentFactory) {
         this.agentFactory = agentFactory;
+        this.executionStore = new AgentExecutionStore();
         this.metrics = new DefaultAgentMeshMetrics();
+        defaultInstance = this;
         if (this.agentFactory instanceof DefaultAgentFactory) {
             ((DefaultAgentFactory) this.agentFactory).setMesh(this);
         }
@@ -104,7 +112,9 @@ public class DefaultAgentMesh implements AgentMesh {
 
     public DefaultAgentMesh(AgentFactory agentFactory, AgentMeshMetrics metrics) {
         this.agentFactory = agentFactory;
+        this.executionStore = new AgentExecutionStore();
         this.metrics = metrics != null ? metrics : new DefaultAgentMeshMetrics();
+        defaultInstance = this;
         if (this.agentFactory instanceof DefaultAgentFactory) {
             ((DefaultAgentFactory) this.agentFactory).setMesh(this);
         }
@@ -467,6 +477,16 @@ public class DefaultAgentMesh implements AgentMesh {
 
     /** 获取指标收集器 */
     public AgentMeshMetrics getMetrics() { return metrics; }
+
+    /** 获取执行事件存储 */
+    public AgentExecutionStore getExecutionStore() { return executionStore; }
+
+    /** 发布执行事件（快捷方法） */
+    public void publishExecutionEvent(AgentExecutionEvent event) {
+        if (executionStore != null) {
+            executionStore.append(event);
+        }
+    }
 
     /** 获取指定 Agent 的快照 */
     public AgentSnapshot snapshot(String agentId) {

@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.mesh.AgentCallHistory;
+import lyjew.com.lyclaw.mesh.AgentExecutionEvent;
 import lyjew.com.lyclaw.mesh.AgentHandle;
 import lyjew.com.lyclaw.mesh.AgentInstance;
 import lyjew.com.lyclaw.mesh.AgentLifecycleListener;
@@ -19,6 +20,7 @@ import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.AgentSpec;
 import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.mesh.MessageType;
+import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolDefinition;
@@ -103,10 +105,21 @@ public class LLMAgentInstance implements AgentInstance {
                 // 2. 构建 ToolExecutor（通过 mesh 路由到工具/子 Agent）
                 ToolExecutor toolExecutor = buildMeshToolExecutor(message);
 
-                // 3. 执行 ReAct 循环
+                // 3. 发布执行事件
+                publishEvent(AgentExecutionEvent.started(getAgentId(),
+                        message.getCorrelationId(), "收到任务: " + truncate(message.getPayload(), 60)));
+                publishEvent(AgentExecutionEvent.stage(getAgentId(),
+                        message.getCorrelationId(), "ReAct 推理",
+                        "开始执行 ReAct 循环", 10));
+
+                // 4. 执行 ReAct 循环
                 handle.setState(AgentLifecycleState.PROGRESS);
                 String result = reActEngine.execute(chatFacade, request, toolExecutor);
                 handle.setState(AgentLifecycleState.ACTIVE);
+
+                publishEvent(AgentExecutionEvent.completed(getAgentId(),
+                        message.getCorrelationId(), "执行完成，结果长度="
+                                + (result != null ? result.length() : 0) + "字符"));
 
                 // 4. 记录调用历史
                 AgentMessage response = AgentMessage.responseTo(message, result);
@@ -301,6 +314,18 @@ public class LLMAgentInstance implements AgentInstance {
     /**
      * 回退到本地 ToolRegistry 执行工具。
      */
+    /** 发布执行事件 */
+    private void publishEvent(AgentExecutionEvent event) {
+        if (mesh instanceof DefaultAgentMesh) {
+            ((DefaultAgentMesh) mesh).publishExecutionEvent(event);
+        }
+    }
+
+    private String truncate(String s, int maxLen) {
+        if (s == null) return "";
+        return s.length() > maxLen ? s.substring(0, maxLen) + "..." : s;
+    }
+
     private String executeLocalTool(String toolName, String argumentsJson) {
         if (toolRegistry == null) {
             return "Error: Tool '" + toolName + "' not found (no ToolRegistry available)";

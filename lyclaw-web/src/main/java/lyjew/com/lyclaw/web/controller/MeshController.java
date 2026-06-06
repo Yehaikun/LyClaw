@@ -11,16 +11,20 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lyjew.com.lyclaw.mesh.AgentExecutionEvent;
+import lyjew.com.lyclaw.mesh.AgentExecutionStore;
 import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.mesh.AgentMeshMetrics;
 import lyjew.com.lyclaw.mesh.AgentMessage;
 import lyjew.com.lyclaw.mesh.AgentRef;
+import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
 import lyjew.com.lyclaw.mesh.AgentSnapshot;
 import lyjew.com.lyclaw.mesh.AgentSpec;
 import lyjew.com.lyclaw.mesh.MessageType;
@@ -215,6 +219,33 @@ public class MeshController {
         );
     }
 
+    @Operation(summary = "SSE 事件流 —— 实时推送 Agent 执行事件")
+    @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public org.springframework.http.codec.ServerSentEvent<String> streamEvents() {
+        return null; // TODO
+    }
+
+    @Operation(summary = "获取 Agent 执行事件历史")
+    @GetMapping("/agents/{agentId}/events")
+    public List<Map<String, Object>> getAgentEvents(@PathVariable String agentId,
+                                                     @RequestParam(defaultValue = "50") int limit) {
+        AgentExecutionStore store = getExecutionStore();
+        if (store == null) return List.of();
+        return store.getEvents(agentId, Math.min(limit, 200)).stream()
+                .map(e -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("eventId", e.getEventId());
+                    m.put("agentId", e.getAgentId());
+                    m.put("type", e.getType().name());
+                    m.put("stage", e.getStage());
+                    m.put("message", e.getMessage());
+                    m.put("progress", e.getProgress());
+                    m.put("timestamp", e.getTimestamp());
+                    return m;
+                })
+                .toList();
+    }
+
     @Operation(summary = "获取 Mesh 指标")
     @GetMapping("/metrics")
     public Map<String, Object> getMetrics() {
@@ -242,6 +273,13 @@ public class MeshController {
             log.warn("Failed to get mesh metrics: {}", e.getMessage());
             return Map.of("error", "Failed to retrieve metrics");
         }
+    }
+
+    private AgentExecutionStore getExecutionStore() {
+        if (mesh instanceof DefaultAgentMesh) {
+            return ((DefaultAgentMesh) mesh).getExecutionStore();
+        }
+        return null;
     }
 
     private Map<String, Object> agentRefToMap(AgentRef ref) {

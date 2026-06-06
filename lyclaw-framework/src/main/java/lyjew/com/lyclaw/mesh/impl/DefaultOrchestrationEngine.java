@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import lyjew.com.lyclaw.mesh.AgentExecutionEvent;
 import lyjew.com.lyclaw.mesh.AgentMessage;
 import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.AggregationStrategy;
@@ -26,6 +27,7 @@ import lyjew.com.lyclaw.mesh.OrchestrationPattern;
 import lyjew.com.lyclaw.mesh.OrchestrationResult;
 import lyjew.com.lyclaw.mesh.OrchestrationSpec;
 import lyjew.com.lyclaw.mesh.AgentMesh;
+import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
 import reactor.core.publisher.Flux;
 
 /**
@@ -62,8 +64,12 @@ public class DefaultOrchestrationEngine implements OrchestrationEngine {
     @Override
     public OrchestrationResult execute(OrchestrationSpec spec) {
         long startTime = System.currentTimeMillis();
+        String taskId = "orch-" + UUID.randomUUID().toString().substring(0, 12);
         log.info("[Orchestration] Starting {} pattern | task={} | timeout={}ms",
                 spec.getPattern(), truncate(spec.getTask(), 50), spec.getTimeoutMs());
+
+        publishEvent(AgentExecutionEvent.started("orchestrator", taskId,
+                spec.getPattern() + " 编排: " + truncate(spec.getTask(), 60)));
 
         OrchestrationResult result;
         try {
@@ -84,6 +90,14 @@ public class DefaultOrchestrationEngine implements OrchestrationEngine {
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("[Orchestration] {} completed | success={} | duration={}ms | agentResults={}",
                 spec.getPattern(), result.isSuccess(), elapsed, result.getAgentResults().size());
+
+        if (result.isSuccess()) {
+            publishEvent(AgentExecutionEvent.completed("orchestrator", taskId,
+                    spec.getPattern() + " 完成，耗时 " + elapsed + "ms"));
+        } else {
+            publishEvent(AgentExecutionEvent.failed("orchestrator", taskId,
+                    spec.getPattern() + " 失败: " + result.getError()));
+        }
         return result;
     }
 
@@ -744,6 +758,13 @@ public class DefaultOrchestrationEngine implements OrchestrationEngine {
                 .map(AgentRef::getAgentId)
                 .filter(id -> !id.equals(excludeAgentId))
                 .collect(Collectors.toList());
+    }
+
+    /** 发布执行事件到 AgentMesh */
+    private void publishEvent(AgentExecutionEvent event) {
+        if (mesh instanceof DefaultAgentMesh) {
+            ((DefaultAgentMesh) mesh).publishExecutionEvent(event);
+        }
     }
 
     private String truncate(String s, int maxLen) {
