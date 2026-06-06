@@ -221,8 +221,26 @@ public class MeshController {
 
     @Operation(summary = "SSE 事件流 —— 实时推送 Agent 执行事件")
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public org.springframework.http.codec.ServerSentEvent<String> streamEvents() {
-        return null; // TODO
+    public reactor.core.publisher.Flux<org.springframework.http.codec.ServerSentEvent<String>> streamEvents() {
+        AgentExecutionStore store = getExecutionStore();
+        if (store == null) {
+            return reactor.core.publisher.Flux.empty();
+        }
+        return reactor.core.publisher.Flux.create(sink -> {
+            java.util.function.Consumer<AgentExecutionEvent> subscriber = event -> {
+                try {
+                    if (sink.isCancelled()) return;
+                    String json = eventToJson(event);
+                    sink.next(org.springframework.http.codec.ServerSentEvent.<String>builder()
+                            .event("agent_execution")
+                            .data(json)
+                            .build());
+                } catch (Exception ignored) {}
+            };
+            store.subscribe(subscriber);
+            sink.onCancel(() -> store.unsubscribe(subscriber));
+            sink.onDispose(() -> store.unsubscribe(subscriber));
+        });
     }
 
     @Operation(summary = "获取 Agent 执行事件历史")
@@ -272,6 +290,23 @@ public class MeshController {
         } catch (Exception e) {
             log.warn("Failed to get mesh metrics: {}", e.getMessage());
             return Map.of("error", "Failed to retrieve metrics");
+        }
+    }
+
+    private String eventToJson(AgentExecutionEvent e) {
+        try {
+            java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("eventId", e.getEventId());
+            m.put("agentId", e.getAgentId());
+            m.put("taskId", e.getTaskId());
+            m.put("type", e.getType().name());
+            m.put("stage", e.getStage());
+            m.put("message", e.getMessage());
+            m.put("progress", e.getProgress());
+            m.put("timestamp", e.getTimestamp());
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(m);
+        } catch (Exception ex) {
+            return "{}";
         }
     }
 

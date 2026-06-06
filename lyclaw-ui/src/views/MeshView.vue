@@ -7,12 +7,24 @@ import {
   Wifi, WifiOff, Users, MessageSquare,
 } from 'lucide-vue-next'
 import { useAgentMeshStore } from '@/stores/agentMesh'
+import { useAgentExecutionStore } from '@/stores/agentExecution'
+import AgentProgressPanel from '@/components/AgentProgressPanel.vue'
 import type { AgentMeshAgent, OrchestrationRequest } from '@/types'
 
 const store = useAgentMeshStore()
+const execStore = useAgentExecutionStore()
 
 // ── 状态 ──
 const activeTab = ref<'list' | 'topology' | 'orchestrate' | 'metrics'>('list')
+
+// 切换标签时自动连接/断开 SSE
+watch(activeTab, (tab) => {
+  if (tab === 'list' || tab === 'orchestrate') {
+    execStore.connect()
+  } else {
+    execStore.disconnect()
+  }
+})
 const showRegisterForm = ref(false)
 const showDetail = ref(false)
 
@@ -233,6 +245,9 @@ function typeColor(type?: string): string {
         <RefreshCcw :size="14" /> 刷新
       </button>
     </div>
+
+    <!-- Agent 执行进度面板（SSE 实时） -->
+    <AgentProgressPanel />
 
     <!-- 面板: Agent 列表 -->
     <div v-if="activeTab === 'list'" class="panel">
