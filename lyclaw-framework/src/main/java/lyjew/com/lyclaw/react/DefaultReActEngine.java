@@ -151,9 +151,11 @@ public class DefaultReActEngine implements ReActEngine {
     }
 
     @Override
-    public String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor) {
+    public String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor,
+                           java.util.function.Consumer<lyjew.com.lyclaw.mesh.AgentExecutionEvent> eventCallback) {
         applyThinkingLevel(request);
         List<Message> messages = request.getMessages();
+        String taskId = request.getSessionId() != null ? request.getSessionId() : "react-" + System.currentTimeMillis();
         log.info("[ReAct引擎] 非流式ReAct启动 | 最大轮数={} | 有工具执行器={}", maxToolRounds, toolExecutor != null);
 
         // 无工具执行器时退化为单次 LLM 调用
@@ -173,6 +175,12 @@ public class DefaultReActEngine implements ReActEngine {
 
         for (int round = 0; round < maxToolRounds; round++) {
             log.info("[ReAct引擎] 第{}/{}轮推理开始", round + 1, maxToolRounds);
+            if (eventCallback != null) {
+                eventCallback.accept(lyjew.com.lyclaw.mesh.AgentExecutionEvent.stage(
+                        "react", taskId, "ReAct 第" + (round + 1) + "轮",
+                        "第" + (round + 1) + "/" + maxToolRounds + "轮推理",
+                        (round * 100) / maxToolRounds));
+            }
             ModelResponse response;
             try {
                 normalizeToolProtocolMessages(messages);
@@ -210,6 +218,10 @@ public class DefaultReActEngine implements ReActEngine {
             for (ModelResponse.ToolCallRequest req : response.getToolCalls()) {
                 String actualId = req.getId() + suffix;
                 log.info("[ReAct引擎] 执行工具: {} | toolCallId={}", req.getName(), actualId);
+                if (eventCallback != null) {
+                    eventCallback.accept(lyjew.com.lyclaw.mesh.AgentExecutionEvent.toolCall(
+                            "react", taskId, req.getName(), "执行工具: " + req.getName()));
+                }
                 try {
                     String toolOutput = toolExecutor.execute(
                             req.getName(), actualId,

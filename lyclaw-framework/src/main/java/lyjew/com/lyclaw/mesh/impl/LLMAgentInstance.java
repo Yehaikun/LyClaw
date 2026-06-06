@@ -112,9 +112,10 @@ public class LLMAgentInstance implements AgentInstance {
                         message.getCorrelationId(), "ReAct 推理",
                         "开始执行 ReAct 循环", 10));
 
-                // 4. 执行 ReAct 循环
+                // 4. 执行 ReAct 循环（带事件回调）
                 handle.setState(AgentLifecycleState.PROGRESS);
-                String result = reActEngine.execute(chatFacade, request, toolExecutor);
+                String result = reActEngine.execute(chatFacade, request, toolExecutor,
+                        event -> publishEvent(event));
                 handle.setState(AgentLifecycleState.ACTIVE);
 
                 publishEvent(AgentExecutionEvent.completed(getAgentId(),
@@ -274,9 +275,28 @@ public class LLMAgentInstance implements AgentInstance {
             if (target.isPresent()) {
                 targetId = target.get().getAgentId();
             } else {
-                // 如果不是已注册的 Agent，可能是一个工具名
-                // 工具不在 mesh 中时，回退到 ToolRegistry
-                return executeLocalTool(toolName, argumentsJson);
+                // 目标 Agent 不存在 → 动态创建 ephemeral Agent
+                log.info("Creating ephemeral agent on-the-fly: {}", toolName);
+                publishEvent(AgentExecutionEvent.subagentSpawn(getAgentId(),
+                        originalMessage.getCorrelationId(), toolName,
+                        "动态创建子 Agent: " + toolName));
+                try {
+                    AgentSpec ephemeralSpec = AgentSpec.builder()
+                            .agentId(toolName)
+                            .type(AgentRef.AgentType.LLM)
+                            .model(spec.getModel())
+                            .systemPrompt("你是 " + toolName + "。请根据接收到的任务执行并返回结果。")
+                            .ephemeral(true)
+                            .ttlMs(300_000)
+                            .parentId(getAgentId())
+                            .build();
+                    mesh.register(ephemeralSpec);
+                    targetId = toolName;
+                } catch (Exception e) {
+                    log.warn("Failed to create ephemeral agent {}, falling back to local tool: {}",
+                            toolName, e.getMessage());
+                    return executeLocalTool(toolName, argumentsJson);
+                }
             }
 
             // 2. 通过 mesh 发送消息
@@ -303,6 +323,11 @@ public class LLMAgentInstance implements AgentInstance {
             }
 
             callHistory.completeCall(correlationId, response);
+
+            // 清理 ephemeral Agent
+            if (mesh instanceof DefaultAgentMesh) {
+                ((DefaultAgentMesh) mesh).checkEphemeralCleanup(toolName);
+            }
 
             if (response.isError()) {
                 return "Error: " + response.getPayload();

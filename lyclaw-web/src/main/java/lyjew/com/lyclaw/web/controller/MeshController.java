@@ -181,7 +181,61 @@ public class MeshController {
         }
     }
 
-    @Operation(summary = "执行编排")
+    // ── 异步编排结果存储 ──
+    private final java.util.concurrent.ConcurrentHashMap<String, OrchestrationResult> asyncResults = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.function.Consumer<OrchestrationResult>> asyncCallbacks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Operation(summary = "执行编排（异步）—— 立刻返回 taskId，结果通过 SSE 推送")
+    @PostMapping("/orchestrate/async")
+    public Map<String, Object> orchestrateAsync(@RequestBody Map<String, Object> body) {
+        String taskId = "task-" + java.util.UUID.randomUUID().toString().substring(0, 12);
+        String pattern = (String) body.getOrDefault("pattern", "SINGLE");
+        String task = (String) body.getOrDefault("task", "");
+        @SuppressWarnings("unchecked")
+        List<String> agentIds = (List<String>) body.get("agentIds");
+        @SuppressWarnings("unchecked")
+        List<String> capabilities = (List<String>) body.get("capabilities");
+
+        OrchestrationSpec spec = OrchestrationSpec.builder()
+                .pattern(OrchestrationPattern.valueOf(pattern.toUpperCase()))
+                .task(task)
+                .agentIds(agentIds)
+                .capabilities(capabilities)
+                .aggregationStrategy((String) body.getOrDefault("aggregationStrategy", "sum"))
+                .timeoutMs(300_000)
+                .build();
+
+        // 异步执行
+        String finalTaskId = taskId;
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            OrchestrationResult result = orchestrationEngine.execute(spec);
+            asyncResults.put(finalTaskId, result);
+            java.util.function.Consumer<OrchestrationResult> cb = asyncCallbacks.remove(finalTaskId);
+            if (cb != null) cb.accept(result);
+        });
+
+        return Map.of("taskId", taskId, "status", "pending",
+                "pattern", pattern, "message", "编排已异步启动，结果可通过 /api/mesh/orchestrate/result/" + taskId + " 查询");
+    }
+
+    @Operation(summary = "查询异步编排结果")
+    @GetMapping("/orchestrate/result/{taskId}")
+    public Map<String, Object> getOrchestrationResult(@PathVariable String taskId) {
+        OrchestrationResult result = asyncResults.get(taskId);
+        if (result == null) {
+            return Map.of("taskId", taskId, "status", "pending", "message", "任务尚未完成");
+        }
+        return Map.of(
+                "taskId", taskId, "status", "done",
+                "success", result.isSuccess(),
+                "pattern", result.getPattern().name(),
+                "resultPreview", result.getResult() != null
+                        ? result.getResult().substring(0, Math.min(200, result.getResult().length())) : "",
+                "durationMs", result.getDurationMs()
+        );
+    }
+
+    @Operation(summary = "执行编排（阻塞，向后兼容）")
     @PostMapping("/orchestrate")
     public Map<String, Object> orchestrate(@RequestBody Map<String, Object> body) {
         String pattern = (String) body.getOrDefault("pattern", "SINGLE");

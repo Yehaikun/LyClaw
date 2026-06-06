@@ -1,9 +1,11 @@
 package lyjew.com.lyclaw.react;
 
 import java.util.Set;
+import java.util.function.Consumer;
 
 import lyjew.com.lyclaw.chat.ChatFacade;
 import lyjew.com.lyclaw.model.ChatRequest;
+import lyjew.com.lyclaw.mesh.AgentExecutionEvent;
 
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
@@ -30,16 +32,25 @@ import reactor.core.publisher.Flux;
 public interface ReActEngine {
 
     /**
-     * 非流式 ReAct 循环。
+     * 非流式 ReAct 循环（带事件回调）。
      * 直接对 messages 列表进行多轮追加（assistant + tool 消息），
      * 直到 LLM 返回纯文本回复或达到最大轮数。
      *
      * @param chatFacade   聊天门面，用于 LLM 调用
      * @param request      聊天请求（其 messages 列表会被原地修改）
      * @param toolExecutor 工具执行器，无工具时传 null
+     * @param eventCallback 执行事件回调（每轮推理、工具调用时触发），可为 null
      * @return 最终的 LLM 文本回复
      */
-    String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor);
+    String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor,
+                   Consumer<AgentExecutionEvent> eventCallback);
+
+    /**
+     * 非流式 ReAct 循环（无事件回调，向后兼容）。
+     */
+    default String execute(ChatFacade chatFacade, ChatRequest request, ToolExecutor toolExecutor) {
+        return execute(chatFacade, request, toolExecutor, null);
+    }
 
     /**
      * 流式 ReAct，先尝试 stream=true 探测是否有工具调用。

@@ -172,6 +172,11 @@ public class DefaultAgentMesh implements AgentMesh {
         instance.start();
         updateState(ref.getAgentId(), AgentLifecycleState.ACTIVE, "registered");
 
+        // 7. ephemeral Agent 超时自动销毁
+        if (spec.isEphemeral() && spec.getTtlMs() > 0) {
+            scheduleEphemeralCleanup(ref.getAgentId(), spec.getTtlMs());
+        }
+
         log.info("Agent registered: {} [{}] caps={}", ref.getAgentId(), ref.getType(), ref.getCapabilities());
         notifyListeners(AgentMeshListener.MeshEventType.AGENT_REGISTERED,
                 ref.getAgentId(), "Agent registered: " + ref.getAgentId());
@@ -563,6 +568,26 @@ public class DefaultAgentMesh implements AgentMesh {
             builder.from("mesh");
         }
         return builder.build();
+    }
+
+    /** 安排 ephemeral Agent 超时清理 */
+    private void scheduleEphemeralCleanup(String agentId, long ttlMs) {
+        CompletableFuture.delayedExecutor(ttlMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .execute(() -> {
+                    if (refs.containsKey(agentId)) {
+                        log.info("[Cleanup] Ephemeral agent {} timed out after {}ms", agentId, ttlMs);
+                        unregister(agentId);
+                    }
+                });
+    }
+
+    /** 检查 ephemeral Agent 是否完成并清理 */
+    public void checkEphemeralCleanup(String agentId) {
+        AgentSpec spec = specs.get(agentId);
+        if (spec != null && spec.isEphemeral()) {
+            log.info("[Cleanup] Ephemeral agent {} completed, destroying", agentId);
+            unregister(agentId);
+        }
     }
 
     private void handleResponse(String agentId, AgentMessage request, AgentMessage response) {
