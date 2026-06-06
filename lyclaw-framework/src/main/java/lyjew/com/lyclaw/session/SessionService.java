@@ -8,6 +8,7 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.SessionQuery;
 import lyjew.com.lyclaw.model.SessionStatus;
+import lyjew.com.lyclaw.model.SessionTree;
 
 /**
  * 会话服务门面 —— 框架业务代码操作会话的唯一入口。
@@ -116,4 +117,26 @@ public interface SessionService {
      * 强制 flush 待写入数据（写策略未提交的 pending 消息）。
      */
     void flush(String sessionId);
+
+    // ── 多 Agent 会话树 ──
+
+    /**
+     * 创建子会话（多 Agent 委托时调用）。
+     *
+     * @param parentSessionId 父会话 ID
+     * @param agentId         子 Agent 标识
+     * @param task            子 Agent 接收的任务
+     * @return 创建的子会话
+     */
+    Session createChildSession(String parentSessionId, String agentId, String task);
+
+    /**
+     * 获取会话树（根会话 + 所有子会话分支）。
+     */
+    SessionTree getSessionTree(String sessionId);
+
+    /**
+     * 获取指定会话的所有直接子会话。
+     */
+    List<Session> getChildSessions(String parentSessionId);
 }

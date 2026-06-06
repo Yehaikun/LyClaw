@@ -1,6 +1,7 @@
 package lyjew.com.lyclaw.session;
 
 import java.util.ArrayList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -14,6 +15,7 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.model.SessionQuery;
 import lyjew.com.lyclaw.model.SessionStatus;
+import lyjew.com.lyclaw.model.SessionTree;
 
 /**
  * 默认会话服务实现 —— 组合 SessionStore + MessageStore + VariableStore + WritePolicy。
@@ -97,6 +99,59 @@ public class DefaultSessionService implements SessionService {
         variableStore.clear(sessionId);
         sessionStore.deleteSession(sessionId);
         writeStates.remove(sessionId);
+        // 同时清理子会话
+        List<Session> children = sessionStore.list(SessionQuery.builder()
+                .agentId(sessionId).build());
+        for (Session child : children) {
+            messageStore.deleteBySession(child.getSessionId());
+        }
+    }
+
+    @Override
+    public Session createChildSession(String parentSessionId, String agentId, String task) {
+        String childId = parentSessionId + "/subagent/" + agentId + "/"
+                + UUID.randomUUID().toString().substring(0, 8);
+        long now = System.currentTimeMillis();
+        Session session = Session.builder()
+                .sessionId(childId)
+                .agentId(agentId)
+                .name(task != null && task.length() > 30 ? task.substring(0, 30) : agentId)
+                .parentSessionId(parentSessionId)
+                .status(SessionStatus.ACTIVE)
+                .createdAt(now)
+                .updatedAt(now)
+                .lastActiveAt(now)
+                .messages(new ArrayList<>())
+                .build();
+        sessionStore.save(session);
+        return session;
+    }
+
+    @Override
+    public SessionTree getSessionTree(String sessionId) {
+        Session root = sessionStore.getSession(sessionId).orElse(null);
+        if (root == null) return null;
+        List<SessionTree.SessionTreeBranch> branches = buildBranches(sessionId);
+        return new SessionTree(root, branches);
+    }
+
+    @Override
+    public List<Session> getChildSessions(String parentSessionId) {
+        return sessionStore.list(SessionQuery.builder()
+                .agentId(parentSessionId).build()).stream()
+                .filter(s -> parentSessionId.equals(s.getParentSessionId()))
+                .toList();
+    }
+
+    private List<SessionTree.SessionTreeBranch> buildBranches(String parentSessionId) {
+        List<Session> children = getChildSessions(parentSessionId);
+        List<SessionTree.SessionTreeBranch> branches = new ArrayList<>();
+        for (Session child : children) {
+            List<Message> messages = messageStore.load(child.getSessionId(), 0, 500);
+            List<SessionTree.SessionTreeBranch> subBranches = buildBranches(child.getSessionId());
+            branches.add(new SessionTree.SessionTreeBranch(child, messages, 0, subBranches));
+        }
+        return branches;
     }
 
     @Override

@@ -48,6 +48,9 @@ public class Session {
     /** 用户身份标识 */
     private String userId;
 
+    /** 父会话 ID（多 Agent 场景：子 Agent 的会话指向父 Agent 的会话） */
+    private String parentSessionId;
+
     /** 创建时间戳（毫秒） */
     @Builder.Default
     private long createdAt = System.currentTimeMillis();

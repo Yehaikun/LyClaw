@@ -42,12 +42,7 @@ import { useRoute } from 'vue-router'
 import {
   MessageSquare,
   History,
-  Cpu,
-  Wrench,
-  Brain,
-  GitBranch,
-  Users,
-  LayoutDashboard,
+  Network,
   Settings,
 } from 'lucide-vue-next'
 import { useSettingsStore } from '@/stores/settings'
@@ -58,15 +53,10 @@ const settingsStore = useSettingsStore()
 const mainNav = [
   { to: '/chat', label: 'Chat', icon: MessageSquare },
   { to: '/sessions', label: 'Sessions', icon: History },
-  { to: '/models', label: 'Models', icon: Cpu },
-  { to: '/tools', label: 'Tools', icon: Wrench },
-  { to: '/memory', label: 'Memory', icon: Brain },
-  { to: '/plan', label: 'Plan', icon: GitBranch },
-  { to: '/agents', label: 'Agents', icon: Users },
+  { to: '/mesh', label: 'Agent Mesh', icon: Network },
 ]
 
 const bottomNav = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
