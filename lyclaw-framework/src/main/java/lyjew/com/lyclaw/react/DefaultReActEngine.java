@@ -103,8 +103,8 @@ public class DefaultReActEngine implements ReActEngine {
     private final ConcurrentHashMap<String, CompletableFuture<Boolean>> pendingApprovals = new ConcurrentHashMap<>();
 
     public DefaultReActEngine(AgentProperties agentProperties) {
-        this.maxToolRounds = agentProperties.getMaxToolRounds();
-        this.approvalTimeoutSeconds = agentProperties.getApprovalStoreTimeoutSeconds();
+        this.maxToolRounds = agentProperties != null ? agentProperties.getMaxToolRounds() : 20;
+        this.approvalTimeoutSeconds = agentProperties != null ? agentProperties.getApprovalStoreTimeoutSeconds() : 300;
     }
 
     /**
