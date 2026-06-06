@@ -710,11 +710,15 @@ public class DefaultOrchestrationEngine implements OrchestrationEngine {
             return spec.getAgentIds();
         }
         if (spec.getRequiredCapabilities() != null && !spec.getRequiredCapabilities().isEmpty()) {
-            return spec.getRequiredCapabilities().stream()
+            List<String> matched = spec.getRequiredCapabilities().stream()
                     .flatMap(cap -> mesh.findByCapability(cap).stream())
                     .map(AgentRef::getAgentId)
                     .distinct()
                     .collect(Collectors.toList());
+            if (!matched.isEmpty()) return matched;
+            // 按能力没匹配到 → 回退到所有可用 Agent
+            log.warn("No agents matched capabilities {}, falling back to all agents",
+                    spec.getRequiredCapabilities());
         }
         return mesh.getAllAgents().stream()
                 .map(AgentRef::getAgentId)
