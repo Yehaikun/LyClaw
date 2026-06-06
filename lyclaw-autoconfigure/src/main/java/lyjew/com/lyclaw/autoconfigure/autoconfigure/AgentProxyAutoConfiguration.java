@@ -29,6 +29,7 @@ import lyjew.com.lyclaw.react.subagent.DelegateToAgentToolProvider;
 import lyjew.com.lyclaw.react.subagent.SubagentConfig;
 import lyjew.com.lyclaw.react.subagent.SubagentSpawner;
 import lyjew.com.lyclaw.react.subagent.SubagentSessionManager;
+import lyjew.com.lyclaw.session.SessionStore;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
 /**
@@ -64,11 +65,12 @@ public class AgentProxyAutoConfiguration {
                                                 ToolRegistry toolRegistry,
                                                 List<ReactivePipelineStage> stages,
                                                 List<AgentHook> hooks,
-                                                AgentConfigResolver configResolver) {
+                                                AgentConfigResolver configResolver,
+                                                SessionStore sessionStore) {
         List<AgentHook> hookList = hooks != null ? hooks : List.of();
         List<ReactivePipelineStage> pipelineStages = stages != null ? stages : List.of();
         return new AgentProxyFactory(chatFacade, reActEngine, toolRegistry,
-                null, null, null, hookList, pipelineStages, configResolver);
+                null, null, null, hookList, pipelineStages, configResolver, sessionStore);
     }
 
     @Bean

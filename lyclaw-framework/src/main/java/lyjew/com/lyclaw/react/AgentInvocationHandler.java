@@ -26,6 +26,7 @@ import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolCall;
 import lyjew.com.lyclaw.model.ToolDefinition;
 import lyjew.com.lyclaw.pipeline.ReactivePipelineStage;
+import lyjew.com.lyclaw.session.SessionStore;
 import lyjew.com.lyclaw.tool.ToolExecutionResult;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 import reactor.core.publisher.Flux;
@@ -59,6 +60,7 @@ public class AgentInvocationHandler implements InvocationHandler {
     private final List<ReactivePipelineStage> stages;
     private final HookRegistry hookRegistry;
     private final ResolvedAgentConfig resolvedConfig;
+    private final SessionStore sessionStore;
 
     public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
                                    ToolRegistry toolRegistry, String defaultSystemPrompt,
@@ -66,7 +68,7 @@ public class AgentInvocationHandler implements InvocationHandler {
                                    List<AgentHook> hooks,
                                    List<ReactivePipelineStage> stages) {
         this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt, modelOverride,
-                providerOverride, hooks, stages, null, null);
+                providerOverride, hooks, stages, (HookRegistry) null, null);
     }
 
     /** Constructor with HookRegistry (backward compatible). */
@@ -91,6 +93,19 @@ public class AgentInvocationHandler implements InvocationHandler {
                 providerOverride, hooks, stages, null, resolvedConfig);
     }
 
+    /** Constructor with ResolvedAgentConfig and framework SessionStore. */
+    public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
+                                   ToolRegistry toolRegistry, String defaultSystemPrompt,
+                                   String modelOverride, String providerOverride,
+                                   List<AgentHook> hooks,
+                                   List<ReactivePipelineStage> stages,
+                                   ResolvedAgentConfig resolvedConfig,
+                                   SessionStore sessionStore) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt,
+                modelOverride, providerOverride, hooks, stages, null,
+                resolvedConfig, sessionStore);
+    }
+
     /** Full constructor. */
     public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
                                    ToolRegistry toolRegistry, String defaultSystemPrompt,
@@ -99,6 +114,20 @@ public class AgentInvocationHandler implements InvocationHandler {
                                    List<ReactivePipelineStage> stages,
                                    HookRegistry hookRegistry,
                                    ResolvedAgentConfig resolvedConfig) {
+        this(chatFacade, reActEngine, toolRegistry, defaultSystemPrompt,
+                modelOverride, providerOverride, hooks, stages, hookRegistry,
+                resolvedConfig, null);
+    }
+
+    /** Full constructor. */
+    public AgentInvocationHandler(ChatFacade chatFacade, ReActEngine reActEngine,
+                                   ToolRegistry toolRegistry, String defaultSystemPrompt,
+                                   String modelOverride, String providerOverride,
+                                   List<AgentHook> hooks,
+                                   List<ReactivePipelineStage> stages,
+                                   HookRegistry hookRegistry,
+                                   ResolvedAgentConfig resolvedConfig,
+                                   SessionStore sessionStore) {
         this.chatFacade = chatFacade;
         this.reActEngine = reActEngine;
         this.toolRegistry = toolRegistry;
@@ -109,6 +138,7 @@ public class AgentInvocationHandler implements InvocationHandler {
         this.stages = stages != null ? sortedStages(stages) : List.of();
         this.hookRegistry = hookRegistry != null ? hookRegistry : new HookRegistry();
         this.resolvedConfig = resolvedConfig != null ? resolvedConfig : ResolvedAgentConfig.builder().build();
+        this.sessionStore = sessionStore;
         // 将所有现有 hooks 注册到 HookRegistry
         for (AgentHook hook : this.hooks) {
             this.hookRegistry.register(hook, "agent-hook", hook.getOrder());
@@ -264,6 +294,9 @@ public class AgentInvocationHandler implements InvocationHandler {
             ctx.setChatRequest(request);
         }
 
+        request = prepareRequestForRun(request, sessionId, httpAgentId, ctx.getUserMessage(), ctx);
+        ctx.setChatRequest(request);
+
         Class<?> returnType = method.getReturnType();
         boolean returnsSSE = isFluxOfServerSentEvent(method);
 
@@ -284,6 +317,7 @@ public class AgentInvocationHandler implements InvocationHandler {
                         .doFinally(signalType -> {
                             log.info("[OK] Stage管线流式执行完成 (signal={})", signalType);
                             hookRegistry.dispatchModelCallEnded(ctx);
+                            persistSession(ctx);
                         });
                 if (returnsSSE) {
                     return stageFlux;
@@ -311,7 +345,8 @@ public class AgentInvocationHandler implements InvocationHandler {
             if (returnType == Flux.class) {
                 log.info("启动流式ReAct引擎...");
                 Flux<org.springframework.http.codec.ServerSentEvent<String>> reActFlux =
-                        reActEngine.executeStream(chatFacade, ctx.getChatRequest(), toolExecutor);
+                        reActEngine.executeStream(chatFacade, ctx.getChatRequest(), toolExecutor)
+                                .doFinally(signalType -> persistSession(ctx));
                 // 模型调用后 dispatch
                 hookRegistry.dispatchModelCallEnded(ctx);
                 if (returnsSSE) {
@@ -345,6 +380,7 @@ public class AgentInvocationHandler implements InvocationHandler {
 
         // 4. agentEnd hook dispatch
         hookRegistry.dispatchAgentEnd(ctx);
+        persistSession(ctx);
         log.info("══════════ Agent代理调用结束 ══════════");
 
         if (returnType == Mono.class) {
@@ -544,6 +580,94 @@ public class AgentInvocationHandler implements InvocationHandler {
             return configDefault;
         }
         return null;
+    }
+
+    private ChatRequest prepareRequestForRun(ChatRequest request, String sessionId,
+                                             String agentId, String userMessage,
+                                             AgentContext ctx) {
+        if (request == null) {
+            request = ChatRequest.builder()
+                    .messages(new ArrayList<>(List.of(Message.user(userMessage))))
+                    .toolChoice("auto")
+                    .build();
+        }
+
+        request.setSessionId(sessionId);
+        if (agentId != null && !agentId.isEmpty()) {
+            request.setAgentId(agentId);
+        } else if (resolvedConfig.getAgentId() != null && !resolvedConfig.getAgentId().isEmpty()) {
+            request.setAgentId(resolvedConfig.getAgentId());
+        }
+
+        applyDelegationConfig(request);
+
+        if (sessionStore != null && sessionId != null && !sessionId.isEmpty()) {
+            sessionStore.getOrCreate(sessionId, request.getAgentId(), request.getModel());
+            List<Message> history = sessionStore.loadMessages(sessionId, 500);
+            List<Message> merged = new ArrayList<>(history);
+            if (!sameLastUserMessage(merged, userMessage)) {
+                merged.add(Message.user(userMessage));
+            }
+            request.setMessages(merged);
+            log.info("会话历史已加载 | sessionId={} | history={} | requestMessages={}",
+                    sessionId, history.size(), merged.size());
+        }
+
+        refreshToolDefinitions(request, ctx);
+        return request;
+    }
+
+    private void applyDelegationConfig(ChatRequest request) {
+        if (request == null) return;
+        String delegationMode = resolvedConfig.getDelegationMode();
+        List<String> allowAgents = resolvedConfig.getAllowAgents();
+        if (!"none".equals(delegationMode)
+                && allowAgents != null && !allowAgents.isEmpty()
+                && toolRegistry != null) {
+            Map<String, Object> delConfig = new HashMap<>();
+            delConfig.put("delegationMode", delegationMode);
+            delConfig.put("allowAgents", new ArrayList<>(allowAgents));
+            delConfig.put("maxSpawnDepth", resolvedConfig.getMaxSpawnDepth());
+            delConfig.put("maxChildrenPerAgent", resolvedConfig.getMaxChildrenPerAgent());
+            delConfig.put("agentId", resolvedConfig.getAgentId());
+            request.getExtras().put("agent.delegation", delConfig);
+        } else {
+            request.getExtras().put("agent.delegation", Collections.emptyMap());
+        }
+    }
+
+    private void refreshToolDefinitions(ChatRequest request, AgentContext ctx) {
+        if (request == null || toolRegistry == null) return;
+        try {
+            request.setTools(toolRegistry.getAllDefinitions(request, Map.of("agentContext", ctx)));
+            log.info("工具定义已刷新 | tools={}", request.getTools() != null ? request.getTools().size() : 0);
+        } catch (Exception e) {
+            log.warn("刷新工具定义失败: {}", e.getMessage(), e);
+        }
+    }
+
+    private boolean sameLastUserMessage(List<Message> messages, String userMessage) {
+        if (messages == null || messages.isEmpty()) return false;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message message = messages.get(i);
+            if ("user".equals(message.getRole())) {
+                return Objects.equals(message.getContent(), userMessage);
+            }
+        }
+        return false;
+    }
+
+    private void persistSession(AgentContext ctx) {
+        if (sessionStore == null || ctx == null || ctx.getChatRequest() == null) {
+            return;
+        }
+        ChatRequest request = ctx.getChatRequest();
+        if (request.getSessionId() == null || request.getSessionId().isEmpty()) {
+            return;
+        }
+        sessionStore.saveMessages(request.getSessionId(), request.getMessages());
+        log.info("会话消息已保存 | sessionId={} | messages={}",
+                request.getSessionId(), request.getMessageCount());
     }
 
     private ChatRequest buildChatRequest(Method method, String userMessage, String systemPrompt) {

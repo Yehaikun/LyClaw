@@ -11,7 +11,7 @@ spring:
     host: smtp.163.com
     port: 465
     username: sterlingmon@163.com
-    password: ${MAIL_PASSWORD:JU4VC5jJLx6EvVLQ}
+    password: ${MAIL_PASSWORD:}
     protocol: smtp
     properties:
       mail.smtp.ssl.enable: true
@@ -54,6 +54,10 @@ springdoc:
       packages-to-scan: lyjew.com.lyclaw.web.controller
 
 lyclaw:
+  web:
+    persistence:
+      sqlite-path: ${LYCLAW_SQLITE_PATH:./data/lyclaw-sessions.db}
+
   # ╔══════════════════════════════════════════════════════════╗
   # ║  lyclaw.chat  —  聊天模型配置  (ChatProperties)          ║
   # ║  AutoConfiguration: ChatAutoConfiguration                ║

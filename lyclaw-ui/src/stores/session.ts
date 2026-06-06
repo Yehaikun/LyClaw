@@ -86,7 +86,8 @@ export const useSessionStore = defineStore('session', () => {
    * POST /api/agents/{agentId}/sessions
    */
   async function createSession(): Promise<Session> {
-    const session = await apiCreateSession(currentAgentId.value)
+    const raw = await apiCreateSession(currentAgentId.value)
+    const session = mapSession(raw as unknown as Record<string, unknown>)
     sessions.value.unshift(session)
     currentSessionId.value = session.sessionId
     return session
@@ -97,28 +98,35 @@ export const useSessionStore = defineStore('session', () => {
    * GET /api/agents/{agentId}/sessions
    */
   /**
-   * 将后端返回的 snake_case 字段映射为前端 camelCase Session 对象。
-   * 后端 SessionRepository.rowToMap 透传SQLite列名(session_id, created_at...)，
-   * Jackson对Map的key不做转换，因此必须在前端显式映射。
+   * 将后端会话数据映射为前端 Session 对象。
+   * 后端可能返回 SQLite 统计 Map，也可能返回框架 Session 模型，这里同时兼容。
    */
   function mapSession(raw: Record<string, unknown>): Session {
+    const sessionId = (raw.sessionId ?? raw.session_id ?? raw.id ?? '') as string
+    const createdRaw = raw.createdAt ?? raw.created_at
+    const updatedRaw = raw.updatedAt ?? raw.updated_at
+    const toIso = (value: unknown): string => {
+      if (typeof value === 'number' && value > 0) return new Date(value).toISOString()
+      if (typeof value === 'string') return value
+      return ''
+    }
     return {
-      id: raw.session_id as string ?? '',
-      sessionId: raw.session_id as string ?? '',
-      name: raw.name as string ?? '',
-      agentId: raw.agent_id as string ?? '',
+      id: sessionId,
+      sessionId,
+      name: (raw.name as string) || 'Chat',
+      agentId: (raw.agentId ?? raw.agent_id ?? currentAgentId.value) as string,
       model: raw.model as string,
-      messages: [],
-      createdAt: raw.created_at ? new Date(raw.created_at as number).toISOString() : '',
-      updatedAt: raw.updated_at ? new Date(raw.updated_at as number).toISOString() : '',
-      messageCount: raw.message_count as number ?? 0,
-      toolCallCount: raw.tool_call_count as number ?? 0,
-      totalTokens: raw.total_tokens as number ?? 0,
-      compactionCount: raw.compaction_count as number ?? 0,
-      firstMsgPreview: raw.first_msg_preview as string ?? '',
-      filePath: raw.file_path as string ?? '',
-      parentSessionId: (raw.parent_session_id as string) ?? null,
-      parentAgentId: (raw.parent_agent_id as string) ?? null,
+      messages: (raw.messages as Session['messages']) || [],
+      createdAt: toIso(createdRaw),
+      updatedAt: toIso(updatedRaw),
+      messageCount: (raw.messageCount ?? raw.message_count ?? 0) as number,
+      toolCallCount: (raw.toolCallCount ?? raw.tool_call_count ?? 0) as number,
+      totalTokens: (raw.totalTokens ?? raw.total_tokens ?? 0) as number,
+      compactionCount: (raw.compactionCount ?? raw.compaction_count ?? 0) as number,
+      firstMsgPreview: (raw.firstMsgPreview ?? raw.first_msg_preview ?? '') as string,
+      filePath: (raw.filePath ?? raw.file_path ?? '') as string,
+      parentSessionId: (raw.parentSessionId ?? raw.parent_session_id ?? null) as string | null,
+      parentAgentId: (raw.parentAgentId ?? raw.parent_agent_id ?? null) as string | null,
     }
   }
 
@@ -160,6 +168,19 @@ export const useSessionStore = defineStore('session', () => {
     currentSessionId.value = id
   }
 
+  /** 将后端创建/推送的会话合并进本地列表。 */
+  function upsertSession(raw: Record<string, unknown>): Session {
+    const session = mapSession(raw)
+    const index = sessions.value.findIndex((s) => s.sessionId === session.sessionId)
+    if (index >= 0) {
+      sessions.value[index] = { ...sessions.value[index], ...session }
+    } else {
+      sessions.value.unshift(session)
+    }
+    currentSessionId.value = session.sessionId
+    return session
+  }
+
   /**
    * 重命名会话并持久化更改。
    * PUT /api/agents/{agentId}/sessions/{sessionId}  (通过 agent update)
@@ -192,6 +213,7 @@ export const useSessionStore = defineStore('session', () => {
     fetchSessions,
     deleteSession,
     selectSession,
+    upsertSession,
     renameSession,
   }
 })

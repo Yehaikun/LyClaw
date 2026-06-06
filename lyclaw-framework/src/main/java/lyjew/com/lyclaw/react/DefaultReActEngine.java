@@ -18,7 +18,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -173,6 +175,7 @@ public class DefaultReActEngine implements ReActEngine {
             log.info("[ReAct引擎] 第{}/{}轮推理开始", round + 1, maxToolRounds);
             ModelResponse response;
             try {
+                normalizeToolProtocolMessages(messages);
                 response = chatFacade.chat(request);
             } catch (Exception e) {
                 log.error("[FAIL] [ReAct引擎] 第{}轮LLM调用失败: {}", round, e.getMessage(), e);
@@ -211,12 +214,12 @@ public class DefaultReActEngine implements ReActEngine {
                     String toolOutput = toolExecutor.execute(
                             req.getName(), actualId,
                             req.getArguments() != null ? req.getArguments() : "{}");
-                    messages.add(Message.tool(actualId, toolOutput));
+                    appendToolMessage(messages, actualId, req.getName(), toolOutput);
                     log.info("[OK] [ReAct引擎] 工具执行完成: {} | 输出长度={}", req.getName(),
                             toolOutput != null ? toolOutput.length() : 0);
                 } catch (Exception e) {
                     log.error("[FAIL] [ReAct引擎] 工具执行异常: name={} error={}", req.getName(), e.getMessage(), e);
-                    messages.add(Message.tool(actualId, "工具错误: " + e.getMessage()));
+                    appendToolMessage(messages, actualId, req.getName(), "工具错误: " + e.getMessage());
                 }
             }
         }
@@ -247,6 +250,7 @@ public class DefaultReActEngine implements ReActEngine {
         StringBuilder contentCollector = new StringBuilder();
         StringBuilder thinkingCollector = new StringBuilder();
 
+        normalizeToolProtocolMessages(request.getMessages());
         return model.stream(request)
                 .<ServerSentEvent<String>>handle((chunk, sink) -> {
                     boolean hasContent = chunk.getContent() != null && !chunk.getContent().isEmpty();
@@ -391,12 +395,12 @@ public class DefaultReActEngine implements ReActEngine {
                     ServerSentEvent<String> execEvent = SseEventFactory.toolCallExecuting(
                             dedupedId, req.getName(), "正在执行 " + req.getName() + "...", toolArgs);
 
-                    String busKey = request.getSessionId() + ":" + req.getId();
+                    String busKey = request.getSessionId() + ":" + dedupedId;
                     log.info("ProgressBus CREATED | key={}", busKey);
 
                     // Flux.create: tool executors call the emitter from any thread
                     Flux<ServerSentEvent<String>> progressFlux = Flux.<ServerSentEvent<String>>create(sink -> {
-                        registerEmitter(request.getSessionId(), req.getId(), ev -> {
+                        registerEmitter(request.getSessionId(), dedupedId, ev -> {
                             sink.next(ev);
                             log.info("PROGRESS_EVENT_FWD | key={} | event={}", busKey, ev.event());
                         });
@@ -415,7 +419,7 @@ public class DefaultReActEngine implements ReActEngine {
                             output = "工具错误: " + e.getMessage();
                             success = false;
                         }
-                        messages.add(Message.tool(dedupedId, output));
+                        appendToolMessage(messages, dedupedId, req.getName(), output);
                         log.info("{} [ReAct流式] 工具执行完成: {} | 成功={}",
                                 success ? "[OK]" : "[FAIL]", req.getName(), success);
                         return SseEventFactory.toolCallDone(
@@ -428,7 +432,7 @@ public class DefaultReActEngine implements ReActEngine {
                             progressFlux.takeUntilOther(doneEvent),
                             doneEvent
                     ).doFinally(sig -> {
-                        removeEmitter(request.getSessionId(), req.getId());
+                        removeEmitter(request.getSessionId(), dedupedId);
                     });
                 });
     }
@@ -485,7 +489,7 @@ public class DefaultReActEngine implements ReActEngine {
                 output = "用户拒绝了工具执行";
                 success = false;
             }
-            messages.add(Message.tool(req.getId() + suffix, output));
+            appendToolMessage(messages, req.getId() + suffix, req.getName(), output);
             return SseEventFactory.toolCallDone(
                     req.getId() + suffix, req.getName(), req.getName() + " 完成",
                     toolArgs, output, success);
@@ -525,6 +529,7 @@ public class DefaultReActEngine implements ReActEngine {
             log.info("[ReAct流式] 第{}/{}轮推理开始", round + 1, maxToolRounds);
             request.setStream(true);
             ChatModel model = chatFacade.resolveModel(chatFacade.route(request, null));
+            normalizeToolProtocolMessages(request.getMessages());
 
             int[] state = {0};
             List<ModelResponse> buffer = new ArrayList<>();
@@ -685,6 +690,72 @@ public class DefaultReActEngine implements ReActEngine {
     /** 向后兼容：不追加后缀。 */
     private List<ToolCall> toMessageToolCalls(ModelResponse response) {
         return toMessageToolCalls(response, "");
+    }
+
+    private void appendToolMessage(List<Message> messages, String toolCallId, String toolName, String output) {
+        if (messages == null || toolCallId == null || toolCallId.isBlank()) {
+            return;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message message = messages.get(i);
+            if ("tool".equals(message.getRole()) && toolCallId.equals(message.getToolCallId())) {
+                log.warn("[ReAct] 跳过重复工具结果消息 | toolCallId={} | tool={}", toolCallId, toolName);
+                return;
+            }
+            if ("assistant".equals(message.getRole()) && message.getToolCalls() != null) {
+                break;
+            }
+        }
+        messages.add(Message.tool(toolCallId, toolName, output));
+    }
+
+    private void normalizeToolProtocolMessages(List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        List<Message> normalized = new ArrayList<>(messages.size());
+        Set<String> pendingToolIds = new LinkedHashSet<>();
+        Set<String> emittedToolIds = new HashSet<>();
+        int removed = 0;
+
+        for (Message message : messages) {
+            String role = message.getRole();
+            if ("assistant".equals(role)) {
+                normalized.add(message);
+                pendingToolIds.clear();
+                emittedToolIds.clear();
+                if (message.getToolCalls() != null) {
+                    for (ToolCall toolCall : message.getToolCalls()) {
+                        if (toolCall.getToolCallId() != null && !toolCall.getToolCallId().isBlank()) {
+                            pendingToolIds.add(toolCall.getToolCallId());
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if ("tool".equals(role)) {
+                String toolCallId = message.getToolCallId();
+                if (toolCallId != null && pendingToolIds.contains(toolCallId) && emittedToolIds.add(toolCallId)) {
+                    normalized.add(message);
+                } else {
+                    removed++;
+                }
+                continue;
+            }
+
+            if (!pendingToolIds.isEmpty()) {
+                pendingToolIds.clear();
+                emittedToolIds.clear();
+            }
+            normalized.add(message);
+        }
+
+        if (removed > 0) {
+            messages.clear();
+            messages.addAll(normalized);
+            log.warn("[ReAct] 已清理不符合工具协议的消息 | removed={}", removed);
+        }
     }
 
     /** 将文本按自然边界拆分为 SSE 事件，模拟流式输出。保留换行以保证 Markdown 渲染正确。 */

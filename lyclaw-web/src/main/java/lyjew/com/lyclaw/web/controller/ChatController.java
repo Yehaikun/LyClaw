@@ -1,15 +1,17 @@
 package lyjew.com.lyclaw.web.controller;
 
+import java.util.List;
 import java.util.Map;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lyjew.com.lyclaw.model.ChatRequest;
+import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.Session;
 import lyjew.com.lyclaw.web.agent.ChatAgent;
-import lyjew.com.lyclaw.web.session.SessionManager;
 import lyjew.com.lyclaw.react.SessionRequestContext;
+import lyjew.com.lyclaw.session.SessionStore;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -23,11 +25,11 @@ import reactor.core.scheduler.Schedulers;
 public class ChatController {
 
     private final ChatAgent chatAgent;
-    private final SessionManager sessionManager;
+    private final SessionStore sessionStore;
 
-    public ChatController(ChatAgent chatAgent, SessionManager sessionManager) {
+    public ChatController(ChatAgent chatAgent, SessionStore sessionStore) {
         this.chatAgent = chatAgent;
-        this.sessionManager = sessionManager;
+        this.sessionStore = sessionStore;
     }
 
     @Operation(summary = "流式聊天", description = "发送消息并以SSE流式返回AI响应")
@@ -87,24 +89,57 @@ public class ChatController {
     @PostMapping("/agents/{agentId}/sessions")
     public Session createSession(@PathVariable String agentId,
                                   @RequestBody(required = false) ChatRequest request) {
-        return sessionManager.createSession(agentId,
+        return sessionStore.createSession(agentId,
                 request != null ? request.getModel() : null);
+    }
+
+    @Operation(summary = "列出会话", description = "获取指定 Agent 的会话列表")
+    @GetMapping("/agents/{agentId}/sessions")
+    public List<Map<String, Object>> listSessions(@PathVariable String agentId) {
+        return sessionStore.listSessions(agentId);
     }
 
     @Operation(summary = "获取会话", description = "获取会话信息")
     @GetMapping("/agents/{agentId}/sessions/{sessionId}")
     public Session getSession(@PathVariable String agentId,
                                @PathVariable String sessionId) {
-        Session session = sessionManager.getSession(sessionId);
+        Session session = sessionStore.getSession(sessionId).orElse(null);
         if (session == null) throw new RuntimeException("会话不存在: " + sessionId);
         return session;
     }
 
+    @Operation(summary = "获取会话消息", description = "分页获取指定会话的消息历史")
+    @GetMapping("/agents/{agentId}/sessions/{sessionId}/messages")
+    public List<Message> getMessages(@PathVariable String agentId,
+                                     @PathVariable String sessionId,
+                                     @RequestParam(defaultValue = "0") int offset,
+                                     @RequestParam(defaultValue = "200") int limit) {
+        return sessionStore.loadMessages(sessionId, offset, limit);
+    }
+
+    @Operation(summary = "重命名会话", description = "修改会话名称")
+    @PatchMapping("/agents/{agentId}/sessions/{sessionId}")
+    public Map<String, Object> renameSession(@PathVariable String agentId,
+                                             @PathVariable String sessionId,
+                                             @RequestBody Map<String, Object> body) {
+        String name = body.get("name") != null ? body.get("name").toString() : "";
+        boolean updated = sessionStore.renameSession(sessionId, name);
+        if (!updated) throw new RuntimeException("会话不存在: " + sessionId);
+        return Map.of("sessionId", sessionId, "name", name);
+    }
+
+    @Operation(summary = "删除会话", description = "删除指定会话及其消息")
+    @DeleteMapping("/agents/{agentId}/sessions/{sessionId}")
+    public Map<String, Object> deleteSession(@PathVariable String agentId,
+                                             @PathVariable String sessionId) {
+        sessionStore.deleteSession(sessionId);
+        return Map.of("deleted", true, "sessionId", sessionId);
+    }
+
     private Session resolveSession(ChatRequest request, String agentId) {
         if (request.getSessionId() != null && !request.getSessionId().isEmpty()) {
-            Session existing = sessionManager.getSession(request.getSessionId());
-            if (existing != null) return existing;
+            return sessionStore.getOrCreate(request.getSessionId(), agentId, request.getModel());
         }
-        return sessionManager.createSession(agentId, request.getModel());
+        return sessionStore.createSession(agentId, request.getModel());
     }
 }

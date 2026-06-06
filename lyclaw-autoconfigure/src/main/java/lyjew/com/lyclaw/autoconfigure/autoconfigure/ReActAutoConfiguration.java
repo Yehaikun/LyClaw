@@ -7,6 +7,8 @@ import lyjew.com.lyclaw.react.AgentHook;
 import lyjew.com.lyclaw.react.DefaultReActEngine;
 import lyjew.com.lyclaw.react.HookRegistry;
 import lyjew.com.lyclaw.react.ReActEngine;
+import lyjew.com.lyclaw.session.InMemorySessionStore;
+import lyjew.com.lyclaw.session.SessionStore;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -38,5 +40,11 @@ public class ReActAutoConfiguration {
     @ConditionalOnMissingBean
     public HookRegistry hookRegistry(List<AgentHook> hooks) {
         return new HookRegistry(hooks);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SessionStore sessionStore() {
+        return new InMemorySessionStore();
     }
 }

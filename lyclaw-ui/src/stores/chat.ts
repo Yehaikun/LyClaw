@@ -194,7 +194,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const request: ChatRequest = {
       sessionId: activeSessionId,
-      messages: messages.value.map((m) => ({ role: m.role, content: m.content })),
+      messages: [{ role: 'user', content: text }],
       stream: true,
     }
 
@@ -242,6 +242,7 @@ export const useChatStore = defineStore('chat', () => {
           liveToolCalls.value = []
           pendingApproval.value = null
           isStreaming.value = false
+          useSessionStore().fetchSessions().catch(() => {})
         },
         // 错误回调：保存已接收的部分内容，记录错误信息
         (err: Error) => {
@@ -399,20 +400,17 @@ export const useChatStore = defineStore('chat', () => {
                 currentSessionId.value = info.sessionId
                 const ss = useSessionStore()
                 ss.currentSessionId = info.sessionId
-                if (info.isNew && !ss.sessions.find(s => s.sessionId === info.sessionId)) {
-                  ss.sessions.unshift({
-                    sessionId: info.sessionId,
-                    name: 'Chat ' + new Date().toLocaleDateString(),
-                    agentId: info.agentId || ss.currentAgentId,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    messageCount: 0,
-                    toolCallCount: 0,
-                    totalTokens: 0,
-                    compactionCount: 0,
-                    firstMsgPreview: '',
-                  } as any)
-                }
+                ss.upsertSession({
+                  sessionId: info.sessionId,
+                  session_id: info.sessionId,
+                  name: 'Chat',
+                  agentId: info.agentId || ss.currentAgentId,
+                  agent_id: info.agentId || ss.currentAgentId,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  messageCount: 0,
+                  message_count: 0,
+                })
               }
             } catch { /* ignore */ }
           }
@@ -511,6 +509,7 @@ export const useChatStore = defineStore('chat', () => {
       }
       messages.value.push(assistantMsg)
       isStreaming.value = false
+      useSessionStore().fetchSessions().catch(() => {})
     } catch (fallbackErr) {
       error.value = `Chat failed: ${(fallbackErr as Error).message}`
       if (fallbackErr instanceof ApiError) {

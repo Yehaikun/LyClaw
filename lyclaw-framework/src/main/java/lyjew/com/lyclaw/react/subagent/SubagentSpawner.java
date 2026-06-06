@@ -275,13 +275,9 @@ public class SubagentSpawner {
 
         return Mono.fromCallable(() -> {
                     if (!semaphore.tryAcquire(30, TimeUnit.SECONDS)) {
-                        log.warn("[子代理] 信号量超时，尝试清理 | sessionId={} | permits={}",
+                        log.warn("[子代理] 信号量超时 | sessionId={} | permits={}",
                                 parentSessionId, semaphore.availablePermits());
-                        semaphore.drainPermits();
-                        semaphore.release(2);
-                        if (!semaphore.tryAcquire(10, TimeUnit.SECONDS)) {
-                            throw new RuntimeException("Semaphore acquisition timeout after drain");
-                        }
+                        throw new RuntimeException("Semaphore acquisition timeout");
                     }
                     return runSubagentStreaming(targetAgentId, task, childSession,
                             config, parentCtx, progressEmitter);
@@ -573,9 +569,6 @@ public class SubagentSpawner {
                 .toolChoice("auto")
                 .build();
 
-        List<ToolDefinition> tools = toolRegistry.getAllDefinitions(childRequest);
-        childRequest.setTools(tools);
-
         AgentContext childCtx = new AgentContext(
                 childSession.getSessionId(), task, systemPrompt,
                 toolRegistry, null, null,
@@ -584,6 +577,23 @@ public class SubagentSpawner {
         childCtx.setChatRequest(childRequest);
         childCtx.setLifecycle(AgentContext.Lifecycle.TRANSIENT);
         childCtx.setAttribute(ATTR_CHILD_SESSION, childSession);
+
+        Map<String, Object> delegation = new LinkedHashMap<>();
+        String mode = config.getDelegationMode();
+        List<String> allowAgents = config.getAllowAgents();
+        if (mode != null && !"off".equals(mode) && !"none".equals(mode)
+                && allowAgents != null && !allowAgents.isEmpty()) {
+            delegation.put("delegationMode", mode);
+            delegation.put("allowAgents", new ArrayList<>(allowAgents));
+            delegation.put("maxSpawnDepth", config.getMaxSpawnDepth());
+            delegation.put("maxChildrenPerAgent", config.getMaxChildrenPerAgent());
+            delegation.put("agentId", targetAgentId);
+            childRequest.getExtras().put("agent.delegation", delegation);
+        }
+
+        List<ToolDefinition> tools = toolRegistry.getAllDefinitions(
+                childRequest, Map.of("agentContext", childCtx));
+        childRequest.setTools(tools);
 
         RunMetadata parentMeta = parentCtx.getRunMetadata();
         RunMetadata childMeta = RunMetadata.childOf(parentMeta, targetAgentId);

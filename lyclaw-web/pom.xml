@@ -19,15 +19,7 @@
     <dependencies>
         <dependency>
             <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-framework</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-autoconfigure</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>lyjew.com</groupId>
-            <artifactId>lyclaw-action</artifactId>
+            <artifactId>lyclaw-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -48,6 +40,10 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springdoc</groupId>

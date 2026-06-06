@@ -79,6 +79,11 @@
                 <artifactId>lyclaw-action</artifactId>
                 <version>${project.version}</version>
             </dependency>
+            <dependency>
+                <groupId>lyjew.com</groupId>
+                <artifactId>lyclaw-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <!-- Micrometer (可观测性) -->
             <dependency>
                 <groupId>io.micrometer</groupId>
