@@ -81,9 +81,6 @@ public class DefaultAgentFactory implements AgentFactory {
 
         LLMAgentInstance instance = new LLMAgentInstance(
                 spec, engine, chatFacade, registry, effectiveMesh);
-        if (sessionService != null) {
-            instance.setSessionService(sessionService);
-        }
         log.info("Created LLM Agent: {} (model={}, tools={})",
                 spec.getAgentId(), spec.getModel(),
                 spec.getTools() != null ? spec.getTools().size() : 0);

@@ -192,6 +192,8 @@ public class DefaultSessionService implements SessionService {
     @Override
     public void appendMessages(String sessionId, List<Message> messages) {
         if (messages == null || messages.isEmpty()) return;
+        // 确保 session 存在（防止 FK 约束失败）
+        sessionStore.getOrCreate(sessionId, null, null);
         messageStore.appendBatch(sessionId, messages);
         sessionStore.getSession(sessionId).ifPresent(s -> {
             s.setLastActiveAt(System.currentTimeMillis());

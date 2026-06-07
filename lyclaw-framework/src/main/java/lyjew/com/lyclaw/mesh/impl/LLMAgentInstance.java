@@ -57,7 +57,6 @@ public class LLMAgentInstance implements AgentInstance {
     private final ChatFacade chatFacade;
     private final ToolRegistry toolRegistry;
     private final AgentMesh mesh;
-    private SessionService sessionService;
 
     private volatile boolean running;
 
@@ -75,9 +74,6 @@ public class LLMAgentInstance implements AgentInstance {
     }
 
     /** 注入 SessionService（用于跨轮次对话续接） */
-    public void setSessionService(SessionService sessionService) {
-        this.sessionService = sessionService;
-    }
 
     @Override
     public String getAgentId() { return spec.getAgentId(); }
@@ -137,11 +133,8 @@ public class LLMAgentInstance implements AgentInstance {
                     callHistory.completeCall(message.getCorrelationId(), response);
                 }
 
-                // 5. 跨轮次对话持久化：保存到 session
-                String sid = request.getSessionId();
-                if (sid != null && sessionService != null && request.getMessages() != null) {
-                    sessionService.appendMessages(sid, request.getMessages());
-                }
+                // 5. 跨轮次对话持久化：保存到 session（仅限用户显式传入 sessionId）
+                // Session saving is handled by the API layer (MeshController)
 
                 log.info("LLMAgent {} completed: resultLen={}", getAgentId(),
                         result != null ? result.length() : 0);
@@ -252,8 +245,8 @@ public class LLMAgentInstance implements AgentInstance {
         }
 
         // 跨轮次对话续接：加载 session 历史
-        if (sessionId != null && sessionService != null) {
-            List<lyjew.com.lyclaw.model.Message> history = sessionService.loadLatestMessages(sessionId, 200);
+        if (sessionId != null && getSessionService() != null) {
+            List<lyjew.com.lyclaw.model.Message> history = getSessionService().loadLatestMessages(sessionId, 200);
             // 跳过第一条如果是 system（由 buildChatRequest 注入）
             for (lyjew.com.lyclaw.model.Message hMsg : history) {
                 if (!"system".equals(hMsg.getRole())) {
@@ -373,6 +366,11 @@ public class LLMAgentInstance implements AgentInstance {
         if (mesh instanceof DefaultAgentMesh) {
             ((DefaultAgentMesh) mesh).publishExecutionEvent(event);
         }
+    }
+
+    private SessionService getSessionService() {
+        DefaultAgentMesh dam = DefaultAgentMesh.getDefault();
+        return dam != null ? dam.getSessionService() : null;
     }
 
     private String truncate(String s, int maxLen) {

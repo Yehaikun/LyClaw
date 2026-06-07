@@ -47,9 +47,11 @@ public class MeshController {
     private static final Logger log = LoggerFactory.getLogger(MeshController.class);
 
     private final AgentMesh mesh;
+    private final SessionService sessionService;
 
-    public MeshController(AgentMesh mesh) {
+    public MeshController(AgentMesh mesh, SessionService sessionService) {
         this.mesh = mesh;
+        this.sessionService = sessionService;
     }
 
     @Operation(summary = "列出所有 Agent")
@@ -148,12 +150,27 @@ public class MeshController {
 
         AgentMessage response = mesh.send(builder.build()).join();
 
+        // 跨轮次对话：保存到 session
+        String finalSessionId = sessionId != null ? sessionId
+                : java.util.UUID.randomUUID().toString().substring(0, 12);
+        if (sessionService != null && response.getType() != MessageType.ERROR) {
+            try {
+                lyjew.com.lyclaw.model.Session sess = sessionService.getOrCreate(finalSessionId, agentId, null);
+                sess.addMessage(lyjew.com.lyclaw.model.Message.user(payload));
+                sess.addMessage(lyjew.com.lyclaw.model.Message.assistant(
+                        response.getPayload() != null ? response.getPayload() : ""));
+                sessionService.appendMessages(finalSessionId, sess.getMessages());
+            } catch (Exception e) {
+                log.warn("Failed to save session: {}", e.getMessage());
+            }
+        }
+
         return Map.of(
                 "success", response.getType() != MessageType.ERROR,
                 "payload", response.getPayload() != null ? response.getPayload() : "",
                 "type", response.getType().name(),
                 "correlationId", response.getCorrelationId(),
-                "sessionId", sessionId != null ? sessionId : java.util.UUID.randomUUID().toString().substring(0, 12)
+                "sessionId", finalSessionId
         );
     }
 

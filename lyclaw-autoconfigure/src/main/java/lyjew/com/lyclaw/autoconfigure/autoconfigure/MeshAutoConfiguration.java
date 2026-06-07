@@ -59,19 +59,19 @@ public class MeshAutoConfiguration {
         factory.setReActEngine(reActEngine);
         factory.setToolRegistry(toolRegistry);
         factory.setSessionService(sessionService);
-        log.info("AgentFactory initialized (chatFacade={}, tools={})",
-                chatFacade != null ? "✓" : "✗",
-                toolRegistry != null ? toolRegistry.getAllDefinitions().size() : 0);
 
-        // 将配置好的 Factory 注入到 AgentMesh
         // @DependsOn("agentMesh") 确保此时 mesh 已创建
         DefaultAgentMesh defaultMesh = DefaultAgentMesh.getDefault();
         if (defaultMesh != null) {
             defaultMesh.configureAgentFactory(factory);
+            defaultMesh.setSessionService(sessionService);
             log.info("✓ AgentFactory wired into AgentMesh");
         } else {
             log.warn("✗ DefaultAgentMesh.getDefault() returned null");
         }
+        log.info("AgentFactory initialized (chatFacade={}, tools={})",
+                chatFacade != null ? "✓" : "✗",
+                toolRegistry != null ? toolRegistry.getAllDefinitions().size() : 0);
         return factory;
     }
 

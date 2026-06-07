@@ -96,15 +96,17 @@ public class SqliteSessionStore implements SessionStore {
         long now = now();
         try (Connection conn = open();
              PreparedStatement ps = conn.prepareStatement("""
-                     INSERT INTO sessions(session_id, agent_id, name, model, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?)
+                     INSERT INTO sessions(session_id, agent_id, name, model, status, created_at, updated_at, last_active_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                      """)) {
             ps.setString(1, sessionId);
             ps.setString(2, normalizeAgentId(agentId));
             ps.setString(3, "Chat");
             ps.setString(4, model);
-            ps.setLong(5, now);
+            ps.setString(5, SessionStatus.ACTIVE.name());
             ps.setLong(6, now);
+            ps.setLong(7, now);
+            ps.setLong(8, now);
             ps.executeUpdate();
             return Session.builder()
                     .sessionId(sessionId)
@@ -484,7 +486,7 @@ public class SqliteSessionStore implements SessionStore {
                         user_id TEXT DEFAULT '',
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL,
-                        last_active_at INTEGER NOT NULL,
+                        last_active_at INTEGER NOT NULL DEFAULT 0,
                         message_count INTEGER NOT NULL DEFAULT 0,
                         estimated_token_count INTEGER NOT NULL DEFAULT 0,
                         metadata_json TEXT DEFAULT ''

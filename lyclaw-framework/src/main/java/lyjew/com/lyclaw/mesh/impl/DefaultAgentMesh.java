@@ -23,6 +23,7 @@ import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.mesh.AgentMeshListener;
 import lyjew.com.lyclaw.mesh.AgentMeshMetrics;
 import lyjew.com.lyclaw.mesh.AgentSnapshot;
+import lyjew.com.lyclaw.session.SessionService;
 import lyjew.com.lyclaw.mesh.AgentMessage;
 import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.AgentSpec;
@@ -85,6 +86,9 @@ public class DefaultAgentMesh implements AgentMesh {
 
     // ── 执行事件存储 ──
     private final AgentExecutionStore executionStore;
+
+    // ── 跨轮次会话服务 ──
+    private SessionService sessionService;
 
     // ── 指标收集 ──
     private final AgentMeshMetrics metrics;
@@ -485,6 +489,12 @@ public class DefaultAgentMesh implements AgentMesh {
 
     /** 获取执行事件存储 */
     public AgentExecutionStore getExecutionStore() { return executionStore; }
+
+    /** 设置跨轮次会话服务 */
+    public void setSessionService(SessionService sessionService) { this.sessionService = sessionService; }
+
+    /** 获取跨轮次会话服务 */
+    public SessionService getSessionService() { return sessionService; }
 
     /** 发布执行事件（快捷方法） */
     public void publishExecutionEvent(AgentExecutionEvent event) {
