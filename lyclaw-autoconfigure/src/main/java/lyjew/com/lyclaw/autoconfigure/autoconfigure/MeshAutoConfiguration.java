@@ -9,11 +9,10 @@ import lyjew.com.lyclaw.mesh.AgentFactory;
 import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.AgentSpec;
-import lyjew.com.lyclaw.mesh.OrchestrationEngine;
 import lyjew.com.lyclaw.mesh.impl.DefaultAgentFactory;
 import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
-import lyjew.com.lyclaw.mesh.impl.DefaultOrchestrationEngine;
 import lyjew.com.lyclaw.react.ReActEngine;
+import lyjew.com.lyclaw.session.SessionService;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
@@ -53,11 +52,13 @@ public class MeshAutoConfiguration {
     @DependsOn("agentMesh")
     public DefaultAgentFactory agentFactory(ChatFacade chatFacade,
                                              ReActEngine reActEngine,
-                                             ToolRegistry toolRegistry) {
+                                             ToolRegistry toolRegistry,
+                                             SessionService sessionService) {
         DefaultAgentFactory factory = new DefaultAgentFactory();
         factory.setChatFacade(chatFacade);
         factory.setReActEngine(reActEngine);
         factory.setToolRegistry(toolRegistry);
+        factory.setSessionService(sessionService);
         log.info("AgentFactory initialized (chatFacade={}, tools={})",
                 chatFacade != null ? "✓" : "✗",
                 toolRegistry != null ? toolRegistry.getAllDefinitions().size() : 0);
@@ -72,14 +73,6 @@ public class MeshAutoConfiguration {
             log.warn("✗ DefaultAgentMesh.getDefault() returned null");
         }
         return factory;
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public OrchestrationEngine orchestrationEngine(AgentMesh mesh) {
-        DefaultOrchestrationEngine engine = new DefaultOrchestrationEngine(mesh);
-        log.info("OrchestrationEngine initialized");
-        return engine;
     }
 
     /**

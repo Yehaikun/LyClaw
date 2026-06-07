@@ -15,6 +15,7 @@ import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.react.DefaultReActEngine;
 import lyjew.com.lyclaw.react.ReActEngine;
 import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
+import lyjew.com.lyclaw.session.SessionService;
 import lyjew.com.lyclaw.tool.Tool;
 import lyjew.com.lyclaw.tool.ToolRegistry;
 
@@ -32,6 +33,7 @@ public class DefaultAgentFactory implements AgentFactory {
     private ChatFacade chatFacade;
     private ReActEngine reActEngine;
     private ToolRegistry toolRegistry;
+    private SessionService sessionService;
 
     public DefaultAgentFactory() {}
 
@@ -50,6 +52,9 @@ public class DefaultAgentFactory implements AgentFactory {
 
     /** 注入 ToolRegistry */
     public void setToolRegistry(ToolRegistry toolRegistry) { this.toolRegistry = toolRegistry; }
+
+    /** 注入 SessionService */
+    public void setSessionService(SessionService sessionService) { this.sessionService = sessionService; }
 
     @Override
     public AgentInstance create(AgentSpec spec) {
@@ -76,6 +81,9 @@ public class DefaultAgentFactory implements AgentFactory {
 
         LLMAgentInstance instance = new LLMAgentInstance(
                 spec, engine, chatFacade, registry, effectiveMesh);
+        if (sessionService != null) {
+            instance.setSessionService(sessionService);
+        }
         log.info("Created LLM Agent: {} (model={}, tools={})",
                 spec.getAgentId(), spec.getModel(),
                 spec.getTools() != null ? spec.getTools().size() : 0);

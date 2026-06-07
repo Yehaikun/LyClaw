@@ -25,13 +25,10 @@ import lyjew.com.lyclaw.mesh.AgentMeshMetrics;
 import lyjew.com.lyclaw.mesh.AgentMessage;
 import lyjew.com.lyclaw.mesh.AgentRef;
 import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
+import lyjew.com.lyclaw.session.SessionService;
 import lyjew.com.lyclaw.mesh.AgentSnapshot;
 import lyjew.com.lyclaw.mesh.AgentSpec;
 import lyjew.com.lyclaw.mesh.MessageType;
-import lyjew.com.lyclaw.mesh.OrchestrationEngine;
-import lyjew.com.lyclaw.mesh.OrchestrationPattern;
-import lyjew.com.lyclaw.mesh.OrchestrationResult;
-import lyjew.com.lyclaw.mesh.OrchestrationSpec;
 
 /**
  * Agent Mesh REST API —— 前端管理 Agent Mesh 的统一入口。
@@ -50,11 +47,9 @@ public class MeshController {
     private static final Logger log = LoggerFactory.getLogger(MeshController.class);
 
     private final AgentMesh mesh;
-    private final OrchestrationEngine orchestrationEngine;
 
-    public MeshController(AgentMesh mesh, OrchestrationEngine orchestrationEngine) {
+    public MeshController(AgentMesh mesh) {
         this.mesh = mesh;
-        this.orchestrationEngine = orchestrationEngine;
     }
 
     @Operation(summary = "列出所有 Agent")
@@ -139,22 +134,26 @@ public class MeshController {
                                             @RequestBody Map<String, Object> body) {
         String payload = (String) body.getOrDefault("payload", "");
         String correlationId = (String) body.get("correlationId");
+        String sessionId = (String) body.get("sessionId");
 
-        AgentMessage request = AgentMessage.builder()
+        AgentMessage.Builder builder = AgentMessage.builder()
                 .type(MessageType.REQUEST)
                 .to(agentId)
                 .payload(payload)
                 .correlationId(correlationId != null ? correlationId : java.util.UUID.randomUUID().toString())
-                .ttlMs(300_000)
-                .build();
+                .ttlMs(300_000);
+        if (sessionId != null && !sessionId.isEmpty()) {
+            builder.metadata("sessionId", sessionId);
+        }
 
-        AgentMessage response = mesh.send(request).join();
+        AgentMessage response = mesh.send(builder.build()).join();
 
         return Map.of(
                 "success", response.getType() != MessageType.ERROR,
                 "payload", response.getPayload() != null ? response.getPayload() : "",
                 "type", response.getType().name(),
-                "correlationId", response.getCorrelationId()
+                "correlationId", response.getCorrelationId(),
+                "sessionId", sessionId != null ? sessionId : java.util.UUID.randomUUID().toString().substring(0, 12)
         );
     }
 
@@ -179,98 +178,6 @@ public class MeshController {
             log.warn("Failed to get snapshot for agent {}: {}", agentId, e.getMessage());
             return Map.of("error", "Failed to retrieve snapshot");
         }
-    }
-
-    // ── 异步编排结果存储 ──
-    private final java.util.concurrent.ConcurrentHashMap<String, OrchestrationResult> asyncResults = new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.concurrent.ConcurrentHashMap<String, java.util.function.Consumer<OrchestrationResult>> asyncCallbacks = new java.util.concurrent.ConcurrentHashMap<>();
-
-    @Operation(summary = "执行编排（异步）—— 立刻返回 taskId，结果通过 SSE 推送")
-    @PostMapping("/orchestrate/async")
-    public Map<String, Object> orchestrateAsync(@RequestBody Map<String, Object> body) {
-        String taskId = "task-" + java.util.UUID.randomUUID().toString().substring(0, 12);
-        String pattern = (String) body.getOrDefault("pattern", "SINGLE");
-        String task = (String) body.getOrDefault("task", "");
-        @SuppressWarnings("unchecked")
-        List<String> agentIds = (List<String>) body.get("agentIds");
-        @SuppressWarnings("unchecked")
-        List<String> capabilities = (List<String>) body.get("capabilities");
-
-        OrchestrationSpec spec = OrchestrationSpec.builder()
-                .pattern(OrchestrationPattern.valueOf(pattern.toUpperCase()))
-                .task(task)
-                .agentIds(agentIds)
-                .capabilities(capabilities)
-                .aggregationStrategy((String) body.getOrDefault("aggregationStrategy", "sum"))
-                .timeoutMs(300_000)
-                .build();
-
-        // 异步执行
-        String finalTaskId = taskId;
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
-            OrchestrationResult result = orchestrationEngine.execute(spec);
-            asyncResults.put(finalTaskId, result);
-            java.util.function.Consumer<OrchestrationResult> cb = asyncCallbacks.remove(finalTaskId);
-            if (cb != null) cb.accept(result);
-        });
-
-        return Map.of("taskId", taskId, "status", "pending",
-                "pattern", pattern, "message", "编排已异步启动，结果可通过 /api/mesh/orchestrate/result/" + taskId + " 查询");
-    }
-
-    @Operation(summary = "查询异步编排结果")
-    @GetMapping("/orchestrate/result/{taskId}")
-    public Map<String, Object> getOrchestrationResult(@PathVariable String taskId) {
-        OrchestrationResult result = asyncResults.get(taskId);
-        if (result == null) {
-            return Map.of("taskId", taskId, "status", "pending", "message", "任务尚未完成");
-        }
-        return Map.of(
-                "taskId", taskId, "status", "done",
-                "success", result.isSuccess(),
-                "pattern", result.getPattern().name(),
-                "resultPreview", result.getResult() != null
-                        ? result.getResult().substring(0, Math.min(200, result.getResult().length())) : "",
-                "durationMs", result.getDurationMs()
-        );
-    }
-
-    @Operation(summary = "执行编排（阻塞，向后兼容）")
-    @PostMapping("/orchestrate")
-    public Map<String, Object> orchestrate(@RequestBody Map<String, Object> body) {
-        String pattern = (String) body.getOrDefault("pattern", "SINGLE");
-        String task = (String) body.getOrDefault("task", "");
-
-        @SuppressWarnings("unchecked")
-        List<String> agentIds = (List<String>) body.get("agentIds");
-
-        @SuppressWarnings("unchecked")
-        List<String> capabilities = (List<String>) body.get("capabilities");
-
-        OrchestrationSpec spec = OrchestrationSpec.builder()
-                .pattern(OrchestrationPattern.valueOf(pattern.toUpperCase()))
-                .task(task)
-                .agentIds(agentIds)
-                .capabilities(capabilities)
-                .aggregationStrategy((String) body.getOrDefault("aggregationStrategy", "sum"))
-                .timeoutMs(300_000)
-                .build();
-
-        OrchestrationResult result = orchestrationEngine.execute(spec);
-
-        return Map.of(
-                "success", result.isSuccess(),
-                "pattern", result.getPattern().name(),
-                "result", result.getResult() != null ? result.getResult() : "",
-                "error", result.getError() != null ? result.getError() : "",
-                "agentResults", result.getAgentResults().stream().map(r -> Map.of(
-                        "agentId", r.getAgentId(),
-                        "success", r.isSuccess(),
-                        "resultPreview", r.getResult() != null
-                                ? r.getResult().substring(0, Math.min(100, r.getResult().length())) : ""
-                )).toList(),
-                "durationMs", result.getDurationMs()
-        );
     }
 
     @Operation(summary = "SSE 事件流 —— 实时推送 Agent 执行事件")

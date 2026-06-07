@@ -21,6 +21,7 @@ import lyjew.com.lyclaw.mesh.AgentSpec;
 import lyjew.com.lyclaw.mesh.AgentMesh;
 import lyjew.com.lyclaw.mesh.MessageType;
 import lyjew.com.lyclaw.mesh.impl.DefaultAgentMesh;
+import lyjew.com.lyclaw.session.SessionService;
 import lyjew.com.lyclaw.model.ChatRequest;
 import lyjew.com.lyclaw.model.Message;
 import lyjew.com.lyclaw.model.ToolDefinition;
@@ -56,6 +57,7 @@ public class LLMAgentInstance implements AgentInstance {
     private final ChatFacade chatFacade;
     private final ToolRegistry toolRegistry;
     private final AgentMesh mesh;
+    private SessionService sessionService;
 
     private volatile boolean running;
 
@@ -70,6 +72,11 @@ public class LLMAgentInstance implements AgentInstance {
         this.toolRegistry = toolRegistry;
         this.mesh = mesh;
         this.handle.setState(AgentLifecycleState.PENDING);
+    }
+
+    /** 注入 SessionService（用于跨轮次对话续接） */
+    public void setSessionService(SessionService sessionService) {
+        this.sessionService = sessionService;
     }
 
     @Override
@@ -128,6 +135,12 @@ public class LLMAgentInstance implements AgentInstance {
                     callHistory.recordCall("llm:" + spec.getModel(), message.getPayload(),
                             message.getCorrelationId(), message.getTtlMs());
                     callHistory.completeCall(message.getCorrelationId(), response);
+                }
+
+                // 5. 跨轮次对话持久化：保存到 session
+                String sid = request.getSessionId();
+                if (sid != null && sessionService != null && request.getMessages() != null) {
+                    sessionService.appendMessages(sid, request.getMessages());
                 }
 
                 log.info("LLMAgent {} completed: resultLen={}", getAgentId(),
@@ -237,8 +250,24 @@ public class LLMAgentInstance implements AgentInstance {
         if (spec.getSystemPrompt() != null && !spec.getSystemPrompt().isEmpty()) {
             messages.add(Message.system(spec.getSystemPrompt()));
         }
-        // 用户消息
-        messages.add(Message.user(message.getPayload() != null ? message.getPayload() : ""));
+
+        // 跨轮次对话续接：加载 session 历史
+        if (sessionId != null && sessionService != null) {
+            List<lyjew.com.lyclaw.model.Message> history = sessionService.loadLatestMessages(sessionId, 200);
+            // 跳过第一条如果是 system（由 buildChatRequest 注入）
+            for (lyjew.com.lyclaw.model.Message hMsg : history) {
+                if (!"system".equals(hMsg.getRole())) {
+                    messages.add(hMsg);
+                }
+            }
+            log.info("Loaded {} history messages from session {}", history.size(), sessionId);
+        }
+
+        // 用户消息（如果历史中最后一条不是同样内容的 user 消息）
+        String userPayload = message.getPayload() != null ? message.getPayload() : "";
+        if (messages.isEmpty() || !"user".equals(messages.get(messages.size() - 1).getRole())) {
+            messages.add(Message.user(userPayload));
+        }
 
         ChatRequest request = ChatRequest.builder()
                 .sessionId(sessionId != null ? sessionId : UUID.randomUUID().toString().substring(0, 8))

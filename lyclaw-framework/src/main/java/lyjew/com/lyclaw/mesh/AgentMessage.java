@@ -168,7 +168,12 @@ public class AgentMessage {
         public Builder payload(String v) { this.payload = v; return this; }
         public Builder metadata(Map<String, Object> v) { this.metadata = v; return this; }
         public Builder metadata(String key, Object value) {
-            if (this.metadata == null) this.metadata = new LinkedHashMap<>();
+            if (this.metadata == null) {
+                this.metadata = new LinkedHashMap<>();
+            } else if (!(this.metadata instanceof LinkedHashMap)) {
+                // 如果传入的是不可变 Map，转成可变副本
+                this.metadata = new LinkedHashMap<>(this.metadata);
+            }
             this.metadata.put(key, value);
             return this;
         }
